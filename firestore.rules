@@ -46,7 +46,7 @@ service cloud.firestore {
             && notificationId == 'comment_' + data.commentId
             && get(/databases/$(database)/documents/posts/$(data.postId)).data.uid == ownerUid
             && getAfter(/databases/$(database)/documents/posts/$(data.postId)/comments/$(data.commentId)).data.uid == actorUid
-            && getAfter(/databases/$(database)/documents/posts/$(data.postId)/comments/$(data.commentId)).data.text == data.commentText))
+            && getAfter(/databases/$(database)/documents/posts/$(data.postId)/comments/$(data.commentId)).data.text == data.commentText)
         );
     }
 
