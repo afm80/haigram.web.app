@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 
 import '../web_trim.dart';
+import 'social_service.dart';
 import 'user_service.dart';
 
 enum PostType { video, photo, text, story }
@@ -220,12 +221,26 @@ class PostService {
   static Future<void> toggleLike(String postId, bool liked) async {
     final batch = _db.batch();
     final post = _db.collection('posts').doc(postId);
+    final postSnapshot = await post.get();
+    if (!postSnapshot.exists) {
+      throw StateError('المنشور غير موجود');
+    }
+    final ownerUid = postSnapshot.data()?['uid'] as String?;
     if (liked) {
       batch.delete(_likeRef(postId));
       batch.update(post, {'likes': FieldValue.increment(-1)});
     } else {
       batch.set(_likeRef(postId), {'at': FieldValue.serverTimestamp()});
       batch.update(post, {'likes': FieldValue.increment(1)});
+      if (ownerUid != null) {
+        SocialService.addLikeNotification(
+          batch: batch,
+          recipientUid: ownerUid,
+          actorUid: _user.uid,
+          actorUsername: username,
+          postId: postId,
+        );
+      }
     }
     await batch.commit();
   }
@@ -252,6 +267,12 @@ class PostService {
     } else {
       batch.set(mine, {'at': FieldValue.serverTimestamp()});
       batch.set(theirs, {'at': FieldValue.serverTimestamp()});
+      SocialService.addFollowNotification(
+        batch: batch,
+        recipientUid: targetUid,
+        actorUid: _user.uid,
+        actorUsername: username,
+      );
     }
     await batch.commit();
   }
@@ -318,7 +339,12 @@ class PostService {
 
   static Future<void> addComment(String postId, String text) async {
     final batch = _db.batch();
-    batch.set(_commentsRef(postId).doc(), {
+    final commentRef = _commentsRef(postId).doc();
+    final postSnapshot = await _db.collection('posts').doc(postId).get();
+    if (!postSnapshot.exists) {
+      throw StateError('المنشور غير موجود');
+    }
+    batch.set(commentRef, {
       'uid': _user.uid,
       'username': username,
       'name': displayName,
@@ -326,6 +352,18 @@ class PostService {
       'createdAt': FieldValue.serverTimestamp(),
     });
     batch.update(_db.collection('posts').doc(postId), {'comments': FieldValue.increment(1)});
+    final ownerUid = postSnapshot.data()?['uid'] as String?;
+    if (ownerUid != null) {
+      SocialService.addCommentNotification(
+        batch: batch,
+        recipientUid: ownerUid,
+        actorUid: _user.uid,
+        actorUsername: username,
+        postId: postId,
+        commentId: commentRef.id,
+        commentText: text,
+      );
+    }
     await batch.commit();
   }
 

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../services/post_service.dart';
+import '../services/social_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
 import 'create_flow.dart';
 import 'explore_screen.dart';
+import 'social_screens.dart';
 import 'posts_feed_screen.dart';
 import 'profile_screen.dart';
 import 'video_feed_screen.dart';
@@ -27,9 +29,16 @@ class _HomeShellState extends State<HomeShell> {
       future: _profile,
       builder: (context, snap) {
         if (snap.hasError) {
-          return Scaffold(body: Center(child: Padding(padding: const EdgeInsets.all(24), child: Text('تعذر تحميل ملفك الشخصي\n${snap.error}', textAlign: TextAlign.center))));
+          return Scaffold(
+              body: Center(
+                  child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text('تعذر تحميل ملفك الشخصي\n${snap.error}',
+                          textAlign: TextAlign.center))));
         }
-        if (!snap.hasData) return const Scaffold(body: AppLoading(message: 'جارٍ إعداد حسابك...'));
+        if (!snap.hasData)
+          return const Scaffold(
+              body: AppLoading(message: 'جارٍ إعداد حسابك...'));
         return const _Tabs();
       },
     );
@@ -45,6 +54,8 @@ class _Tabs extends StatefulWidget {
 
 class _TabsState extends State<_Tabs> {
   int _index = 0;
+  late final Stream<int> _unreadNotificationCount =
+      SocialService.unreadNotificationCount();
 
   @override
   void initState() {
@@ -69,10 +80,13 @@ class _TabsState extends State<_Tabs> {
     final navForeground = isDark ? Colors.white : Colors.black;
     final navInactive = isDark ? Colors.white60 : Colors.black54;
     final pages = [
-      VideoFeedScreen(active: _index == 0, onSearch: () => setState(() => _index = 1)),
+      VideoFeedScreen(
+          active: _index == 0, onSearch: () => setState(() => _index = 1)),
       const ExploreScreen(),
-      const SizedBox.shrink(),
       const PostsFeedScreen(),
+      const SizedBox.shrink(),
+      const InboxScreen(),
+      const NotificationsScreen(),
       const ProfileScreen(),
     ];
 
@@ -104,11 +118,27 @@ class _TabsState extends State<_Tabs> {
                     _navItem(
                         1, Icons.search_rounded, Icons.search_rounded, 'استكشف',
                         foreground: navForeground, inactive: navInactive),
-                    Expanded(child: Center(child: _createButton())),
-                    _navItem(3, Icons.dynamic_feed_outlined,
+                    _navItem(2, Icons.dynamic_feed_outlined,
                         Icons.dynamic_feed_rounded, 'المنشورات',
                         foreground: navForeground, inactive: navInactive),
-                    _navItem(4, Icons.person_outline_rounded,
+                    Expanded(child: Center(child: _createButton())),
+                    _navItem(4, Icons.mail_outline_rounded, Icons.mail_rounded,
+                        'الرسائل',
+                        foreground: navForeground, inactive: navInactive),
+                    StreamBuilder<int>(
+                      stream: _unreadNotificationCount,
+                      builder: (context, snapshot) => _navItem(
+                        5,
+                        Icons.favorite_border_rounded,
+                        Icons.favorite_rounded,
+                        'التنبيهات',
+                        foreground: navForeground,
+                        inactive: navInactive,
+                        badgeCount:
+                            snapshot.hasError ? -1 : (snapshot.data ?? 0),
+                      ),
+                    ),
+                    _navItem(6, Icons.person_outline_rounded,
                         Icons.person_rounded, 'حسابي',
                         foreground: navForeground, inactive: navInactive),
                   ],
@@ -128,6 +158,7 @@ class _TabsState extends State<_Tabs> {
     String label, {
     required Color foreground,
     required Color inactive,
+    int badgeCount = 0,
   }) {
     final selected = _index == i;
     return Expanded(
@@ -142,8 +173,42 @@ class _TabsState extends State<_Tabs> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(selected ? activeIcon : icon,
-                  color: selected ? foreground : inactive, size: 24),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(selected ? activeIcon : icon,
+                      color: selected ? foreground : inactive, size: 23),
+                  if (badgeCount != 0)
+                    Positioned(
+                      top: -5,
+                      right: -8,
+                      child: Tooltip(
+                        message: badgeCount < 0
+                            ? 'تعذر تحميل عدد الإشعارات'
+                            : '$badgeCount إشعار غير مقروء',
+                        child: Container(
+                          constraints:
+                              const BoxConstraints(minWidth: 15, minHeight: 15),
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                          alignment: Alignment.center,
+                          child: badgeCount < 0
+                              ? const SizedBox(width: 5, height: 5)
+                              : Text(
+                                  badgeCount > 99 ? '99+' : '$badgeCount',
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.w700),
+                                ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
               const SizedBox(height: 1),
               Text(
                 label,
@@ -174,7 +239,8 @@ class _TabsState extends State<_Tabs> {
             end: Alignment.bottomRight,
           ),
           boxShadow: const [
-            BoxShadow(color: Color(0x55F97316), blurRadius: 16, offset: Offset(0, 8)),
+            BoxShadow(
+                color: Color(0x55F97316), blurRadius: 16, offset: Offset(0, 8)),
           ],
         ),
         child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
