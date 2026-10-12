@@ -5,6 +5,8 @@ class AppColors {
   static const accent = Color(0xFFF97316);
   static const accent2 = Color(0xFFFB923C);
   static const accent3 = Color(0xFFC2410C);
+  static const videoLike = Color(0xFFFE2C55);
+  static const postLike = Color(0xFFFF3040);
   static const success = Color(0xFF34D399);
 
   static AppPalette forBrightness(Brightness brightness) =>

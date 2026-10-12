@@ -50,12 +50,14 @@ class _PostsFeedScreenState extends State<PostsFeedScreen> {
                 IconButton(
                   tooltip: 'الكاميرا',
                   onPressed: () => startCreate(context, CreateKind.post),
-                  icon: const Icon(Icons.photo_camera_rounded, size: 24),
+                  icon: Icon(Icons.photo_camera_rounded,
+                      size: 24, color: context.appColors.text),
                 ),
                 IconButton(
                   tooltip: 'إرسال',
                   onPressed: () {},
-                  icon: const Icon(Icons.send_rounded, size: 22),
+                  icon: Icon(Icons.send_rounded,
+                      size: 22, color: context.appColors.text),
                 ),
               ],
             ),

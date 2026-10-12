@@ -64,6 +64,10 @@ class _TabsState extends State<_Tabs> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final navBackground = isDark ? Colors.black : Colors.white;
+    final navForeground = isDark ? Colors.white : Colors.black;
+    final navInactive = isDark ? Colors.white60 : Colors.black54;
     final pages = [
       VideoFeedScreen(active: _index == 0, onSearch: () => setState(() => _index = 1)),
       const ExploreScreen(),
@@ -75,34 +79,40 @@ class _TabsState extends State<_Tabs> {
     return Scaffold(
       extendBody: true,
       body: IndexedStack(index: _index, children: pages),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Theme.of(context).brightness == Brightness.dark
-                  ? Colors.black.withOpacity(_index == 0 ? 0.45 : 0.75)
-                  : context.appColors.bg.withOpacity(0.65),
-              context.appColors.bg.withOpacity(0.92),
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+      bottomNavigationBar: ColoredBox(
+        color: navBackground,
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border(
+              top: BorderSide(
+                color: isDark ? Colors.white12 : Colors.black12,
+                width: 0.5,
+              ),
+            ),
           ),
-          border: Border(top: BorderSide(color: context.appColors.text.withOpacity(0.08), width: 1)),
-        ),
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.only(left: 10, right: 10, bottom: 4),
-            child: SizedBox(
-              height: 66,
-              child: Row(
-                children: [
-                  _navItem(0, Icons.videocam_rounded, Icons.videocam_rounded, 'ريلز'),
-                  _navItem(1, Icons.search_rounded, Icons.search_rounded, 'استكشف'),
-                  Expanded(child: Center(child: _createButton())),
-                  _navItem(3, Icons.home_rounded, Icons.home_rounded, 'المنشورات'),
-                  _navItem(4, Icons.person_rounded, Icons.person_rounded, 'حسابي'),
-                ],
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 10, right: 10, bottom: 4),
+              child: SizedBox(
+                height: 58,
+                child: Row(
+                  children: [
+                    _navItem(0, Icons.video_library_outlined,
+                        Icons.video_library_rounded, 'ريلز',
+                        foreground: navForeground, inactive: navInactive),
+                    _navItem(1, Icons.search_rounded, Icons.search_rounded,
+                        'استكشف',
+                        foreground: navForeground, inactive: navInactive),
+                    Expanded(child: Center(child: _createButton())),
+                    _navItem(3, Icons.grid_on_outlined, Icons.grid_on_rounded,
+                        'المنشورات',
+                        foreground: navForeground, inactive: navInactive),
+                    _navItem(4, Icons.person_outline_rounded,
+                        Icons.person_rounded, 'حسابي',
+                        foreground: navForeground, inactive: navInactive),
+                  ],
+                ),
               ),
             ),
           ),
@@ -111,7 +121,14 @@ class _TabsState extends State<_Tabs> {
     );
   }
 
-  Widget _navItem(int i, IconData icon, IconData activeIcon, String label) {
+  Widget _navItem(
+    int i,
+    IconData icon,
+    IconData activeIcon,
+    String label, {
+    required Color foreground,
+    required Color inactive,
+  }) {
     final selected = _index == i;
     return Expanded(
       child: GestureDetector(
@@ -120,22 +137,21 @@ class _TabsState extends State<_Tabs> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 220),
           curve: Curves.easeOutCubic,
-          margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          decoration: selected
-              ? BoxDecoration(
-                  color: Colors.white.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(16),
-                )
-              : null,
+          margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+          padding: const EdgeInsets.symmetric(vertical: 4),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(selected ? activeIcon : icon,               color: selected ? Theme.of(context).colorScheme.primary : context.appColors.textDim, size: 24),
-              const SizedBox(height: 2),
+              Icon(selected ? activeIcon : icon,
+                  color: selected ? foreground : inactive, size: 24),
+              const SizedBox(height: 1),
               Text(
                 label,
-                style: TextStyle(fontSize: 10, fontWeight: selected ? FontWeight.w700 : FontWeight.w500, color: selected ? Theme.of(context).colorScheme.primary : context.appColors.textDim),
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  color: selected ? foreground : inactive,
+                ),
               ),
             ],
           ),

@@ -13,7 +13,8 @@ class StoryViewed {
   static final Set<String> _seen = {};
   static void mark(String id) => _seen.add(id);
   static bool isSeen(String id) => _seen.contains(id);
-  static bool allSeen(StoryGroup g) => g.stories.every((s) => _seen.contains(s.id));
+  static bool allSeen(StoryGroup g) =>
+      g.stories.every((s) => _seen.contains(s.id));
 }
 
 /// شريط القصص أعلى صفحة المنشورات (مثل إنستغرام).
@@ -29,8 +30,10 @@ class _StoriesBarState extends State<StoriesBar> {
     await Navigator.of(context).push(
       PageRouteBuilder(
         opaque: true,
-        pageBuilder: (_, __, ___) => StoryViewer(groups: ordered, initial: index),
-        transitionsBuilder: (_, a, __, child) => FadeTransition(opacity: a, child: child),
+        pageBuilder: (_, __, ___) =>
+            StoryViewer(groups: ordered, initial: index),
+        transitionsBuilder: (_, a, __, child) =>
+            FadeTransition(opacity: a, child: child),
       ),
     );
     if (mounted) setState(() {});
@@ -61,7 +64,8 @@ class _StoriesBarState extends State<StoriesBar> {
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                 children: [
-                  _myItem(mine.isEmpty ? null : mine.first, () => _open(ordered, 0)),
+                  _myItem(mine.isEmpty ? null : mine.first,
+                      () => _open(ordered, 0)),
                   for (var i = 0; i < rest.length; i++)
                     _item(
                       uid: rest[i].uid,
@@ -83,13 +87,17 @@ class _StoriesBarState extends State<StoriesBar> {
     return _cell(
       label: 'قصتك',
       child: GestureDetector(
-        onTap: mine == null ? () => startCreate(context, CreateKind.story) : open,
+        onTap:
+            mine == null ? () => startCreate(context, CreateKind.story) : open,
         child: SizedBox(
           width: 68,
           height: 68,
           child: Stack(
             children: [
-              Center(child: _ring(me, PostService.username, seen: mine != null && StoryViewed.allSeen(mine), active: mine != null)),
+              Center(
+                  child: _ring(me, PostService.username,
+                      seen: mine != null && StoryViewed.allSeen(mine),
+                      active: mine != null)),
               PositionedDirectional(
                 end: 0,
                 bottom: 0,
@@ -98,7 +106,11 @@ class _StoriesBarState extends State<StoriesBar> {
                   child: Container(
                     width: 22,
                     height: 22,
-                    decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accent, border: Border.all(color: context.appColors.bg, width: 2)),
+                    decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.accent,
+                        border:
+                            Border.all(color: context.appColors.bg, width: 2)),
                     child: const Icon(Icons.add, size: 15),
                   ),
                 ),
@@ -110,10 +122,15 @@ class _StoriesBarState extends State<StoriesBar> {
     );
   }
 
-  Widget _item({required String uid, required String label, required bool seen, required VoidCallback onTap}) {
+  Widget _item(
+      {required String uid,
+      required String label,
+      required bool seen,
+      required VoidCallback onTap}) {
     return _cell(
       label: label,
-      child: GestureDetector(onTap: onTap, child: _ring(uid, label, seen: seen, active: true)),
+      child: GestureDetector(
+          onTap: onTap, child: _ring(uid, label, seen: seen, active: true)),
     );
   }
 
@@ -126,25 +143,44 @@ class _StoriesBarState extends State<StoriesBar> {
           children: [
             child,
             const SizedBox(height: 4),
-            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+            Text(label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12)),
           ],
         ),
       ),
     );
   }
 
-  Widget _ring(String uid, String name, {required bool seen, required bool active}) {
+  Widget _ring(String uid, String name,
+      {required bool seen, required bool active}) {
     return Container(
       width: 66,
       height: 66,
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: active && !seen ? const LinearGradient(colors: [AppColors.accent, AppColors.accent2], begin: Alignment.topRight, end: Alignment.bottomLeft) : null,
-        color: active && !seen ? null : (active ? const Color(0x55FFFFFF) : Colors.transparent),
+        gradient: active && !seen
+            ? const LinearGradient(
+                colors: [
+                  Color(0xFFFEDA75),
+                  Color(0xFFFA7E1E),
+                  Color(0xFFD62976),
+                  Color(0xFF962FBF),
+                  Color(0xFF4F5BD5),
+                ],
+                begin: Alignment.topRight,
+                end: Alignment.bottomLeft,
+              )
+            : null,
+        color: active && !seen
+            ? null
+            : (active ? const Color(0x55FFFFFF) : Colors.transparent),
       ),
       child: Container(
-        decoration: BoxDecoration(shape: BoxShape.circle, color: context.appColors.bg),
+        decoration:
+            BoxDecoration(shape: BoxShape.circle, color: context.appColors.bg),
         padding: const EdgeInsets.all(2),
         child: UserAvatar(uid: uid, fallbackName: name, radius: 28),
       ),
@@ -162,7 +198,8 @@ class StoryViewer extends StatefulWidget {
   State<StoryViewer> createState() => _StoryViewerState();
 }
 
-class _StoryViewerState extends State<StoryViewer> with SingleTickerProviderStateMixin {
+class _StoryViewerState extends State<StoryViewer>
+    with SingleTickerProviderStateMixin {
   late int _g = widget.initial;
   late int _s;
   bool _paused = false;
@@ -249,7 +286,8 @@ class _StoryViewerState extends State<StoryViewer> with SingleTickerProviderStat
 
   Future<void> _openAuthor() async {
     _pause();
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => UserProfileScreen(uid: _group.uid)));
+    await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => UserProfileScreen(uid: _group.uid)));
     if (mounted) _resume();
   }
 
@@ -260,8 +298,13 @@ class _StoryViewerState extends State<StoryViewer> with SingleTickerProviderStat
       builder: (ctx) => AlertDialog(
         title: const Text('حذف القصة؟'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف', style: TextStyle(color: AppColors.accent2))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('إلغاء')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('حذف',
+                  style: TextStyle(color: AppColors.accent2))),
         ],
       ),
     );
@@ -295,14 +338,23 @@ class _StoryViewerState extends State<StoryViewer> with SingleTickerProviderStat
         child: Stack(
           fit: StackFit.expand,
           children: [
-            _StoryMedia(key: ValueKey(story.id), story: story, paused: _paused, onReady: _onReady),
+            _StoryMedia(
+                key: ValueKey(story.id),
+                story: story,
+                paused: _paused,
+                onReady: _onReady),
             const Positioned(
               top: 0,
               left: 0,
               right: 0,
               height: 140,
               child: IgnorePointer(
-                child: DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x99000000), Colors.transparent]))),
+                child: DecoratedBox(
+                    decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Color(0x99000000), Colors.transparent]))),
               ),
             ),
             SafeArea(
@@ -317,14 +369,17 @@ class _StoryViewerState extends State<StoryViewer> with SingleTickerProviderStat
                           for (var i = 0; i < _group.stories.length; i++)
                             Expanded(
                               child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 2),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 2),
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(2),
                                   child: LinearProgressIndicator(
-                                    value: i < _s ? 1 : (i == _s ? _t.value : 0),
+                                    value:
+                                        i < _s ? 1 : (i == _s ? _t.value : 0),
                                     minHeight: 2.5,
                                     backgroundColor: Colors.white30,
-                                    valueColor: const AlwaysStoppedAnimation(Colors.white),
+                                    valueColor: const AlwaysStoppedAnimation(
+                                        Colors.white),
                                   ),
                                 ),
                               ),
@@ -342,17 +397,29 @@ class _StoryViewerState extends State<StoryViewer> with SingleTickerProviderStat
                           behavior: HitTestBehavior.opaque,
                           child: Row(
                             children: [
-                              UserAvatar(uid: _group.uid, fallbackName: _group.username, radius: 17),
+                              UserAvatar(
+                                  uid: _group.uid,
+                                  fallbackName: _group.username,
+                                  radius: 17),
                               const SizedBox(width: 10),
-                              Text(_group.username, style: const TextStyle(fontWeight: FontWeight.w700)),
+                              Text(_group.username,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w700)),
                               const SizedBox(width: 8),
-                              Text(timeAgo(story.createdAt), style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                              Text(timeAgo(story.createdAt),
+                                  style: const TextStyle(
+                                      color: Colors.white70, fontSize: 12)),
                             ],
                           ),
                         ),
                         const Spacer(),
-                        if (mine) IconButton(onPressed: _delete, icon: const Icon(Icons.delete_outline_rounded)),
-                        IconButton(onPressed: () => Navigator.of(context).pop(), icon: const Icon(Icons.close_rounded)),
+                        if (mine)
+                          IconButton(
+                              onPressed: _delete,
+                              icon: const Icon(Icons.delete_outline_rounded)),
+                        IconButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            icon: const Icon(Icons.close_rounded)),
                       ],
                     ),
                   ),
@@ -361,9 +428,14 @@ class _StoryViewerState extends State<StoryViewer> with SingleTickerProviderStat
                     Padding(
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        decoration: BoxDecoration(color: const Color(0x99000000), borderRadius: BorderRadius.circular(14)),
-                        child: Text(story.caption, textAlign: TextAlign.center, style: const TextStyle(fontSize: 17, height: 1.4)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                            color: const Color(0x99000000),
+                            borderRadius: BorderRadius.circular(14)),
+                        child: Text(story.caption,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 17, height: 1.4)),
                       ),
                     ),
                 ],
@@ -380,7 +452,11 @@ class _StoryMedia extends StatefulWidget {
   final Post story;
   final bool paused;
   final void Function(Duration) onReady;
-  const _StoryMedia({super.key, required this.story, required this.paused, required this.onReady});
+  const _StoryMedia(
+      {super.key,
+      required this.story,
+      required this.paused,
+      required this.onReady});
 
   @override
   State<_StoryMedia> createState() => _StoryMediaState();
@@ -396,7 +472,8 @@ class _StoryMediaState extends State<_StoryMedia> {
     if (widget.story.isVideoMedia) {
       _initVideo();
     } else {
-      WidgetsBinding.instance.addPostFrameCallback((_) => widget.onReady(const Duration(seconds: 5)));
+      WidgetsBinding.instance.addPostFrameCallback(
+          (_) => widget.onReady(const Duration(seconds: 5)));
     }
   }
 
@@ -444,7 +521,9 @@ class _StoryMediaState extends State<_StoryMedia> {
     if (widget.story.isVideoMedia) {
       final vc = _vc;
       if (vc != null) {
-        body = Center(child: AspectRatio(aspectRatio: vc.value.aspectRatio, child: VideoPlayer(vc)));
+        body = Center(
+            child: AspectRatio(
+                aspectRatio: vc.value.aspectRatio, child: VideoPlayer(vc)));
       } else if (_failed) {
         body = const Center(child: Text('تعذر تشغيل القصة'));
       } else {

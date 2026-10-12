@@ -361,7 +361,7 @@ class _VideoPageState extends State<_VideoPage> with SingleTickerProviderStateMi
               return _action(
                 liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                 '${p.likes}',
-                color: liked ? AppColors.accent2 : Colors.white,
+                color: liked ? AppColors.videoLike : Colors.white,
                 onTap: () => PostService.toggleLike(p.id, liked),
               );
             },

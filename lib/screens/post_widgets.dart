@@ -193,16 +193,32 @@ class _PostCardState extends State<PostCard> {
               scale: _liked ? 1.12 : 1,
               duration: const Duration(milliseconds: 180),
               curve: Curves.easeOutBack,
-              child: Icon(_liked ? Icons.favorite_rounded : Icons.favorite_border_rounded, size: 28, color: _liked ? AppColors.accent2 : Colors.white),
+              child: Icon(
+                _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                size: 28,
+                color: _liked
+                    ? AppColors.postLike
+                    : Theme.of(context).brightness == Brightness.dark
+                        ? Colors.white
+                        : Colors.black,
+              ),
             ),
           ),
           IconButton(
             onPressed: () => showCommentsSheet(context, p),
-            icon: const Icon(Icons.mode_comment_outlined, size: 26),
+            icon: Icon(
+              Icons.mode_comment_outlined,
+              size: 26,
+              color: context.appColors.text,
+            ),
           ),
           IconButton(
             onPressed: _copyLink,
-            icon: Transform.scale(scaleX: -1, child: const Icon(Icons.send_outlined, size: 26)),
+            icon: Transform.scale(
+              scaleX: -1,
+              child: Icon(Icons.send_outlined,
+                  size: 26, color: context.appColors.text),
+            ),
           ),
           const Spacer(),
           StreamBuilder<bool>(
@@ -211,7 +227,11 @@ class _PostCardState extends State<PostCard> {
               final saved = s.data ?? false;
               return IconButton(
                 onPressed: () => PostService.toggleSave(p.id, saved),
-                icon: Icon(saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded, size: 28),
+                icon: Icon(
+                  saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                  size: 28,
+                  color: context.appColors.text,
+                ),
               );
             },
           ),
