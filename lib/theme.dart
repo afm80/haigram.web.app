@@ -203,27 +203,11 @@ class LamhaLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return Image.asset(
+      'assets/haigram-mark.png',
       width: size,
       height: size,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(size * 0.32),
-        color: AppPalette.dark.bg,
-        boxShadow: [
-          BoxShadow(
-            color: context.appColors.shadow,
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(size * 0.32),
-        child: Image.asset(
-          'assets/haigram-mark.png',
-          fit: BoxFit.contain,
-        ),
-      ),
+      fit: BoxFit.contain,
     );
   }
 }

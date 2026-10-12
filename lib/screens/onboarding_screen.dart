@@ -19,6 +19,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   static const _slides = [
     _OnboardingSlide(
       icon: Icons.play_circle_fill_rounded,
+      isBrand: true,
       title: 'لحظات قصيرة، حكايات كثيرة',
       description:
           'اكتشف فيديوهات قصيرة تناسب اهتماماتك، ومرّر للأعلى لتجد حكاية جديدة.',
@@ -98,17 +99,31 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               children: [
                 Row(
                   children: [
-                    const LamhaLogo(size: 40),
-                    const SizedBox(width: 10),
-                    const HaigramWordmark(
-                        style: TextStyle(
-                            fontSize: 21, fontWeight: FontWeight.w800)),
-                    const Spacer(),
-                    if (_page < _slides.length - 1)
-                      TextButton(
-                        onPressed: _saving ? null : _finish,
-                        child: const Text('تخطي'),
+                    Expanded(
+                      child: Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: _page < _slides.length - 1
+                            ? TextButton(
+                                onPressed: _saving ? null : _finish,
+                                child: const Text('تخطي'),
+                              )
+                            : const SizedBox.shrink(),
                       ),
+                    ),
+                    const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        LamhaLogo(size: 44),
+                        SizedBox(height: 4),
+                        HaigramWordmark(
+                          style: TextStyle(
+                            fontSize: 21,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Expanded(child: SizedBox()),
                   ],
                 ),
                 Expanded(
@@ -166,11 +181,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
 class _OnboardingSlide {
   final IconData icon;
+  final bool isBrand;
   final String title;
   final String description;
 
   const _OnboardingSlide({
     required this.icon,
+    this.isBrand = false,
     required this.title,
     required this.description,
   });
@@ -188,25 +205,28 @@ class _SlideView extends StatelessWidget {
         key: ValueKey(slide.title),
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            width: 220,
-            height: 220,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [AppColors.accent, AppColors.accent2],
+          if (slide.isBrand)
+            const LamhaLogo(size: 180)
+          else
+            Container(
+              width: 220,
+              height: 220,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppColors.accent, AppColors.accent2],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                      color: AppColors.accent.withOpacity(0.24),
+                      blurRadius: 60,
+                      spreadRadius: 8),
+                ],
               ),
-              boxShadow: [
-                BoxShadow(
-                    color: AppColors.accent.withOpacity(0.24),
-                    blurRadius: 60,
-                    spreadRadius: 8),
-              ],
+              child: Icon(slide.icon, size: 112, color: Colors.white),
             ),
-            child: Icon(slide.icon, size: 112, color: Colors.white),
-          ),
           const SizedBox(height: 48),
           Text(slide.title,
               textAlign: TextAlign.center,

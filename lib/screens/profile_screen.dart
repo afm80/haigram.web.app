@@ -4,12 +4,15 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/post_service.dart';
+import '../services/social_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
 import 'post_widgets.dart';
+import 'social_screens.dart' show ChatScreen;
 import 'video_feed_screen.dart';
 
 /// تبويب "حسابي": ملفي الشخصي.
@@ -143,6 +146,18 @@ class _Header extends StatelessWidget {
     }
   }
 
+  void _showProfileShareSheet(BuildContext context, AppUser user) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: context.appColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _ProfileShareSheet(user: user),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<AppUser?>(
@@ -221,8 +236,8 @@ class _Header extends StatelessWidget {
                 alignment: AlignmentDirectional.centerStart,
                 child: Text(
                   '@${u.username}',
-                  style: TextStyle(
-                      fontSize: 14, color: context.appColors.textDim),
+                  style:
+                      TextStyle(fontSize: 14, color: context.appColors.textDim),
                 ),
               ),
               if (u.bio.trim().isNotEmpty) ...[
@@ -270,13 +285,11 @@ class _Header extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         Expanded(
-          child: _pillButton(context, 'نسخ الرابط', () async {
-            await Clipboard.setData(ClipboardData(text: u.link));
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('تم نسخ رابط الملف الشخصي')));
-            }
-          }),
+          child: _pillButton(
+            context,
+            'مشاركة الملف الشخصي',
+            () => _showProfileShareSheet(context, u),
+          ),
         ),
       ],
     );
@@ -285,19 +298,24 @@ class _Header extends StatelessWidget {
   Widget _otherButtons(BuildContext context, AppUser u) {
     return Row(
       children: [
-        Expanded(
-          flex: 2,
-          child: FollowActionButton(uid: uid),
-        ),
+        Expanded(child: FollowActionButton(uid: uid, compact: true)),
         const SizedBox(width: 8),
-        Expanded(
-          child: _pillButton(context, 'نسخ الرابط', () async {
-            await Clipboard.setData(ClipboardData(text: u.link));
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('تم نسخ رابط الملف الشخصي')));
-            }
-          }),
+        Expanded(child: _MessageActionButton(uid: uid)),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 42,
+          height: 42,
+          child: IconButton(
+            tooltip: 'مشاركة الملف الشخصي',
+            style: IconButton.styleFrom(
+              backgroundColor: context.appColors.surfaceHigh,
+              foregroundColor: context.appColors.text,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => _showProfileShareSheet(context, u),
+            icon: const Icon(Icons.share_outlined),
+          ),
         ),
       ],
     );
@@ -418,30 +436,425 @@ class FollowActionButton extends StatelessWidget {
         }
 
         final following = snapshot.data!;
+        final style = FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(42),
+          padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 14),
+          backgroundColor:
+              following ? context.appColors.surfaceHigh : AppColors.brandRed,
+          foregroundColor: following ? context.appColors.text : Colors.white,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        );
+        final label = Text(
+          following ? 'إلغاء المتابعة' : 'متابعة',
+          style: TextStyle(fontSize: compact ? 11 : 14),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        );
+        if (compact) {
+          return FilledButton(
+            onPressed: () => _toggle(context, following),
+            style: style,
+            child: label,
+          );
+        }
         return FilledButton.icon(
           onPressed: () => _toggle(context, following),
           icon: Icon(
             following ? Icons.person_remove_alt_1 : Icons.person_add_alt_1,
-            size: compact ? 16 : 18,
+            size: 18,
           ),
-          label: Text(
-            following ? 'إلغاء المتابعة' : 'متابعة',
-            style: TextStyle(fontSize: compact ? 10 : 14),
+          label: label,
+          style: style,
+        );
+      },
+    );
+  }
+}
+
+class _MessageActionButton extends StatefulWidget {
+  final String uid;
+
+  const _MessageActionButton({required this.uid});
+
+  @override
+  State<_MessageActionButton> createState() => _MessageActionButtonState();
+}
+
+class _MessageActionButtonState extends State<_MessageActionButton> {
+  late Future<bool> _mutualFriendship =
+      SocialService.areMutualFriends(widget.uid);
+  bool _opening = false;
+
+  Future<void> _openChat() async {
+    setState(() => _opening = true);
+    try {
+      final conversationId = await SocialService.startConversation(widget.uid);
+      if (!mounted) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(
+            conversationId: conversationId,
+            otherUid: widget.uid,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر فتح المحادثة: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _opening = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return FutureBuilder<bool>(
+      future: _mutualFriendship,
+      builder: (context, snapshot) {
+        final canMessage = snapshot.data ?? false;
+        final button = OutlinedButton.icon(
+          onPressed: snapshot.hasError
+              ? () => ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                          'تعذر التحقق من إمكانية المراسلة: ${snapshot.error}'),
+                    ),
+                  )
+              : canMessage && !_opening
+                  ? _openChat
+                  : null,
+          icon: _opening || (!snapshot.hasData && !snapshot.hasError)
+              ? SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: colors.textDim,
+                  ),
+                )
+              : const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+          label: const Text(
+            'مراسلة',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-          style: FilledButton.styleFrom(
-            minimumSize: compact ? const Size(132, 34) : const Size.fromHeight(42),
-            padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 14),
-            backgroundColor:
-                following ? context.appColors.surfaceHigh : AppColors.accent,
-            foregroundColor:
-                following ? context.appColors.text : Colors.white,
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size.fromHeight(42),
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            backgroundColor: colors.surfaceHigh,
+            foregroundColor: colors.text,
+            side: BorderSide.none,
+            textStyle: const TextStyle(fontSize: 12),
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );
+        if (!canMessage && !snapshot.hasError) {
+          return Tooltip(
+            message: 'تتاح المراسلة عندما يتابع كل منكما الآخر',
+            child: button,
+          );
+        }
+        return button;
       },
+    );
+  }
+}
+
+class _ProfileShareSheet extends StatefulWidget {
+  final AppUser user;
+
+  const _ProfileShareSheet({required this.user});
+
+  @override
+  State<_ProfileShareSheet> createState() => _ProfileShareSheetState();
+}
+
+class _ProfileShareSheetState extends State<_ProfileShareSheet> {
+  late final Future<List<AppUser>> _friends = _loadFriends();
+  String? _sharingUid;
+
+  Future<List<AppUser>> _loadFriends() async {
+    final ids = await SocialService.mutualFriendIds();
+    final users = await Future.wait(ids.map(UserService.profileOf));
+    return users.whereType<AppUser>().toList();
+  }
+
+  Future<void> _copyLink() async {
+    await Clipboard.setData(ClipboardData(text: widget.user.link));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم نسخ رابط الملف الشخصي')),
+    );
+  }
+
+  Uri _shareUri(String platform) {
+    final link = widget.user.link;
+    final text = 'شاهد ملف @${widget.user.username} على Haigram';
+    return switch (platform) {
+      'whatsapp' => Uri.https('wa.me', '/', {'text': '$text $link'}),
+      'telegram' => Uri.https(
+          't.me',
+          '/share/url',
+          {'url': link, 'text': text},
+        ),
+      'facebook' => Uri.https(
+          'www.facebook.com',
+          '/sharer/sharer.php',
+          {'u': link},
+        ),
+      'x' => Uri.https(
+          'twitter.com',
+          '/intent/tweet',
+          {'url': link, 'text': text},
+        ),
+      _ => throw ArgumentError.value(platform, 'platform'),
+    };
+  }
+
+  Future<void> _shareExternally(String platform) async {
+    try {
+      final opened = await launchUrl(
+        _shareUri(platform),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened) throw StateError('تعذر فتح تطبيق المشاركة');
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذرت المشاركة: $error')),
+        );
+      }
+    }
+  }
+
+  Future<void> _shareWithFriend(AppUser friend) async {
+    if (_sharingUid != null) return;
+    setState(() => _sharingUid = friend.uid);
+    try {
+      final conversationId = await SocialService.startConversation(friend.uid);
+      await SocialService.sendMessage(
+        conversationId,
+        'شاهد ملف @${widget.user.username} على Haigram\n${widget.user.link}',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تمت مشاركة الملف مع @${friend.username}')),
+      );
+      Navigator.of(context).pop();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذرت مشاركة الملف: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sharingUid = null);
+    }
+  }
+
+  Widget _socialOption(
+    String label,
+    IconData icon,
+    Color color,
+    VoidCallback onTap,
+  ) {
+    return SizedBox(
+      width: 56,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Column(
+            children: [
+              CircleAvatar(
+                radius: 21,
+                backgroundColor: color,
+                foregroundColor: Colors.white,
+                child: Icon(icon, size: 21),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    TextStyle(color: context.appColors.textDim, fontSize: 10),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final sheetHeight = MediaQuery.sizeOf(context).height * 0.84;
+    return SafeArea(
+      child: SizedBox(
+        height: sheetHeight,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Column(
+            children: [
+              Container(
+                width: 38,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: colors.textDim.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'مشاركة الملف الشخصي',
+                style:
+                    TextStyle(color: colors.text, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  UserAvatar(
+                    uid: widget.user.uid,
+                    fallbackName: widget.user.username,
+                    radius: 24,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(widget.user.displayName,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w700)),
+                        Text('@${widget.user.username}',
+                            style: TextStyle(color: colors.textDim)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                runAlignment: WrapAlignment.center,
+                spacing: 4,
+                runSpacing: 4,
+                children: [
+                  _socialOption(
+                    'واتساب',
+                    Icons.chat_rounded,
+                    const Color(0xFF25D366),
+                    () => _shareExternally('whatsapp'),
+                  ),
+                  _socialOption(
+                    'تلغرام',
+                    Icons.send_rounded,
+                    const Color(0xFF229ED9),
+                    () => _shareExternally('telegram'),
+                  ),
+                  _socialOption(
+                    'فيسبوك',
+                    Icons.facebook,
+                    const Color(0xFF1877F2),
+                    () => _shareExternally('facebook'),
+                  ),
+                  _socialOption(
+                    'X',
+                    Icons.alternate_email_rounded,
+                    colors.text,
+                    () => _shareExternally('x'),
+                  ),
+                  _socialOption(
+                    'نسخ الرابط',
+                    Icons.copy_rounded,
+                    colors.surfaceHigh,
+                    _copyLink,
+                  ),
+                ],
+              ),
+              const Divider(height: 24),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(
+                  'إرسال إلى الأصدقاء',
+                  style: TextStyle(
+                      color: colors.text, fontWeight: FontWeight.w700),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Expanded(
+                child: FutureBuilder<List<AppUser>>(
+                  future: _friends,
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Text(
+                          'تعذر تحميل الأصدقاء\n${snapshot.error}',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: colors.textDim),
+                        ),
+                      );
+                    }
+                    if (!snapshot.hasData) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final friends = snapshot.data!;
+                    if (friends.isEmpty) {
+                      return Center(
+                        child: Text(
+                          'ستظهر هنا الحسابات التي تتابعك وتتابعها.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: colors.textDim),
+                        ),
+                      );
+                    }
+                    return ListView.separated(
+                      itemCount: friends.length,
+                      separatorBuilder: (_, __) =>
+                          Divider(height: 1, color: colors.surfaceHigh),
+                      itemBuilder: (context, index) {
+                        final friend = friends[index];
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: UserAvatar(
+                            uid: friend.uid,
+                            fallbackName: friend.username,
+                            radius: 21,
+                          ),
+                          title: Text(friend.displayName,
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                          subtitle: Text('@${friend.username}',
+                              style: TextStyle(color: colors.textDim)),
+                          trailing: _sharingUid == friend.uid
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.send_rounded),
+                          onTap: _sharingUid == null
+                              ? () => _shareWithFriend(friend)
+                              : null,
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

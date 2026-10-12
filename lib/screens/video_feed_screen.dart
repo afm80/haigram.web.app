@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
+import 'create_flow.dart';
 import '../services/post_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
@@ -30,7 +31,11 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     return Stack(
       children: [
         Positioned.fill(child: _body()),
-        Positioned(top: 0, left: 0, right: 0, child: SafeArea(bottom: false, child: _topBar())),
+        Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(bottom: false, child: _topBar())),
       ],
     );
   }
@@ -43,9 +48,12 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
           stream: _videos,
           builder: (context, snap) {
             if (snap.hasError) {
-              return Center(child: Text('تعذر تحميل الفيديوهات\n${snap.error}', textAlign: TextAlign.center));
+              return Center(
+                  child: Text('تعذر تحميل الفيديوهات\n${snap.error}',
+                      textAlign: TextAlign.center));
             }
-            if (!snap.hasData) return const AppLoading(message: 'نحضّر لك الفيديوهات...');
+            if (!snap.hasData)
+              return const AppLoading(message: 'نحضّر لك الفيديوهات...');
             var posts = snap.data!;
             if (_following) {
               final ids = followSnap.data ?? const <String>[];
@@ -54,11 +62,16 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
             if (posts.isEmpty) {
               return EmptyState(
                 icon: Icons.play_arrow_rounded,
-                title: _following ? 'لا توجد فيديوهات في المتابعة' : 'ابدأ المشاهدة',
-                message: _following ? 'تابع صُنّاع المحتوى لتظهر فيديوهاتهم هنا.' : 'لا توجد فيديوهات بعد. كن أول من يشارك لحظته!',
+                title: _following
+                    ? 'لا توجد فيديوهات في المتابعة'
+                    : 'ابدأ المشاهدة',
+                message: _following
+                    ? 'تابع صُنّاع المحتوى لتظهر فيديوهاتهم هنا.'
+                    : 'لا توجد فيديوهات بعد. كن أول من يشارك لحظته!',
               );
             }
-            return VideoPager(key: ValueKey(_following), posts: posts, active: widget.active);
+            return VideoPager(
+                key: ValueKey(_following), posts: posts, active: widget.active);
           },
         );
       },
@@ -66,22 +79,36 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   }
 
   Widget _topBar() {
-    Widget tab(String label, bool selected, VoidCallback onTap) => GestureDetector(
+    Widget tab(String label, bool selected, VoidCallback onTap) =>
+        GestureDetector(
           onTap: onTap,
           behavior: HitTestBehavior.opaque,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: selected ? BoxDecoration(color: Colors.white.withOpacity(0.08), borderRadius: BorderRadius.circular(14)) : null,
+            decoration: selected
+                ? BoxDecoration(
+                    color: Colors.white.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(14))
+                : null,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   label,
-                  style: TextStyle(fontSize: 16, fontWeight: selected ? FontWeight.w800 : FontWeight.w600, color: selected ? Colors.white : Colors.white70, shadows: _shadow),
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                      color: selected ? Colors.white : Colors.white70,
+                      shadows: _shadow),
                 ),
                 const SizedBox(height: 4),
-                Container(width: 20, height: 3, decoration: BoxDecoration(color: selected ? Colors.white : Colors.transparent, borderRadius: BorderRadius.circular(3))),
+                Container(
+                    width: 20,
+                    height: 3,
+                    decoration: BoxDecoration(
+                        color: selected ? Colors.white : Colors.transparent,
+                        borderRadius: BorderRadius.circular(3))),
               ],
             ),
           ),
@@ -103,15 +130,22 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                tab('أتابعهم', _following, () => setState(() => _following = true)),
-                tab('لك', !_following, () => setState(() => _following = false)),
+                tab('أتابعهم', _following,
+                    () => setState(() => _following = true)),
+                tab('لك', !_following,
+                    () => setState(() => _following = false)),
               ],
             ),
           ),
           Container(
             margin: const EdgeInsets.only(left: 10, right: 8),
-            decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), borderRadius: BorderRadius.circular(12)),
-            child: IconButton(onPressed: widget.onSearch, icon: const Icon(Icons.search_rounded, size: 24, shadows: _shadow)),
+            decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12)),
+            child: IconButton(
+                onPressed: widget.onSearch,
+                icon: const Icon(Icons.search_rounded,
+                    size: 24, shadows: _shadow)),
           ),
         ],
       ),
@@ -123,7 +157,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
 class VideoViewerScreen extends StatelessWidget {
   final List<Post> posts;
   final int initialIndex;
-  const VideoViewerScreen({super.key, required this.posts, required this.initialIndex});
+  const VideoViewerScreen(
+      {super.key, required this.posts, required this.initialIndex});
 
   @override
   Widget build(BuildContext context) {
@@ -131,11 +166,184 @@ class VideoViewerScreen extends StatelessWidget {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          Positioned.fill(child: VideoPager(posts: posts, active: true, initialIndex: initialIndex, bottomBase: 28)),
+          Positioned.fill(
+              child: VideoPager(
+                  posts: posts,
+                  active: true,
+                  initialIndex: initialIndex,
+                  bottomBase: 28)),
           SafeArea(
             child: Align(
               alignment: AlignmentDirectional.topStart,
-              child: IconButton(onPressed: () => Navigator.of(context).pop(), icon: const Icon(Icons.arrow_back_rounded, shadows: _shadow)),
+              child: IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.arrow_back_rounded, shadows: _shadow)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class SoundScreen extends StatelessWidget {
+  final Post sound;
+
+  const SoundScreen({super.key, required this.sound});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return Scaffold(
+      appBar: AppBar(title: const Text('الصوت')),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+            child: Row(
+              children: [
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    color: AppColors.accent2,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(
+                    Icons.music_note_rounded,
+                    color: Colors.white,
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'الصوت الأصلي',
+                        style: TextStyle(
+                            fontSize: 17, fontWeight: FontWeight.w800),
+                      ),
+                      Text(
+                        '@${sound.username}',
+                        style: TextStyle(color: colors.textDim),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () =>
+                    startCreate(context, CreateKind.reel, sound: sound),
+                icon: const Icon(Icons.video_call_rounded),
+                label: const Text('استخدام هذا الصوت'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.brandRed,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          Expanded(
+            child: StreamBuilder<List<Post>>(
+              stream: PostService.videosWithSound(sound),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Text(
+                      'تعذر تحميل الفيديوهات\n${snapshot.error}',
+                      textAlign: TextAlign.center,
+                    ),
+                  );
+                }
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final videos = snapshot.data!;
+                if (videos.isEmpty) {
+                  return Center(
+                    child: Text(
+                      'لا توجد فيديوهات بهذا الصوت بعد.',
+                      style: TextStyle(color: colors.textDim),
+                    ),
+                  );
+                }
+                return GridView.builder(
+                  padding: const EdgeInsets.all(12),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 10,
+                    childAspectRatio: 0.78,
+                  ),
+                  itemCount: videos.length,
+                  itemBuilder: (context, index) {
+                    final video = videos[index];
+                    return Material(
+                      color: colors.surfaceHigh,
+                      borderRadius: BorderRadius.circular(14),
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => VideoViewerScreen(
+                              posts: videos,
+                              initialIndex: index,
+                            ),
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Center(
+                                  child: Icon(
+                                    Icons.play_circle_outline_rounded,
+                                    color: colors.textDim,
+                                    size: 44,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                video.caption.isEmpty
+                                    ? 'فيديو @${video.username}'
+                                    : video.caption,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: colors.text,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '@${video.username}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: colors.textDim,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
             ),
           ),
         ],
@@ -150,14 +358,20 @@ class VideoPager extends StatefulWidget {
   final bool active;
   final int initialIndex;
   final double bottomBase;
-  const VideoPager({super.key, required this.posts, required this.active, this.initialIndex = 0, this.bottomBase = 78});
+  const VideoPager(
+      {super.key,
+      required this.posts,
+      required this.active,
+      this.initialIndex = 0,
+      this.bottomBase = 78});
 
   @override
   State<VideoPager> createState() => _VideoPagerState();
 }
 
 class _VideoPagerState extends State<VideoPager> {
-  late final PageController _controller = PageController(initialPage: widget.initialIndex);
+  late final PageController _controller =
+      PageController(initialPage: widget.initialIndex);
   late int _page = widget.initialIndex;
 
   @override
@@ -188,17 +402,25 @@ class _VideoPage extends StatefulWidget {
   final Post post;
   final bool playing;
   final double bottomBase;
-  const _VideoPage({super.key, required this.post, required this.playing, required this.bottomBase});
+  const _VideoPage(
+      {super.key,
+      required this.post,
+      required this.playing,
+      required this.bottomBase});
 
   @override
   State<_VideoPage> createState() => _VideoPageState();
 }
 
-class _VideoPageState extends State<_VideoPage> with SingleTickerProviderStateMixin {
+class _VideoPageState extends State<_VideoPage>
+    with SingleTickerProviderStateMixin {
   VideoPlayerController? _vc;
-  late final AnimationController _disc = AnimationController(vsync: this, duration: const Duration(seconds: 6));
+  VideoPlayerController? _soundVc;
+  late final AnimationController _disc =
+      AnimationController(vsync: this, duration: const Duration(seconds: 6));
   bool _ready = false;
   bool _failed = false;
+  String? _soundError;
 
   @override
   void initState() {
@@ -214,11 +436,39 @@ class _VideoPageState extends State<_VideoPage> with SingleTickerProviderStateMi
       _vc = vc;
       await vc.setLooping(true);
       await vc.initialize();
+      await vc.setVolume(widget.post.soundPostId == null ? 1 : 0);
       if (!mounted) return;
       setState(() => _ready = true);
       _sync();
+      final soundPostId = widget.post.soundPostId;
+      if (soundPostId != null) _openSoundTrack(soundPostId);
     } catch (_) {
       if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  Future<void> _openSoundTrack(String postId) async {
+    VideoPlayerController? soundController;
+    try {
+      final source = await PostService.postById(postId);
+      if (source == null || source.type != PostType.video) {
+        throw StateError('مصدر الصوت غير متاح');
+      }
+      final url = await PostService.videoUrl(source);
+      soundController = VideoPlayerController.networkUrl(Uri.parse(url));
+      await soundController.setLooping(true);
+      await soundController.initialize();
+      await soundController.setVolume(1);
+      if (!mounted) {
+        await soundController.dispose();
+        return;
+      }
+      _soundVc = soundController;
+      if (widget.playing) await soundController.play();
+      setState(() {});
+    } catch (error) {
+      await soundController?.dispose();
+      if (mounted) setState(() => _soundError = '$error');
     }
   }
 
@@ -232,9 +482,11 @@ class _VideoPageState extends State<_VideoPage> with SingleTickerProviderStateMi
     if (!_ready) return;
     if (widget.playing) {
       _vc!.play();
+      if (_soundVc != null) _soundVc!.play();
       _disc.repeat();
     } else {
       _vc!.pause();
+      _soundVc?.pause();
       _disc.stop();
     }
   }
@@ -242,20 +494,57 @@ class _VideoPageState extends State<_VideoPage> with SingleTickerProviderStateMi
   @override
   void dispose() {
     _vc?.dispose();
+    _soundVc?.dispose();
     _disc.dispose();
     super.dispose();
   }
 
   void _togglePlay() {
     if (!_ready) return;
-    setState(() => _vc!.value.isPlaying ? _vc!.pause() : _vc!.play());
+    if (_vc!.value.isPlaying) {
+      _vc!.pause();
+      _soundVc?.pause();
+      _disc.stop();
+    } else {
+      _vc!.play();
+      _soundVc?.play();
+      _disc.repeat();
+    }
   }
 
   /// يفتح ملف صاحب الفيديو ويوقف التشغيل أثناء غيابه.
   Future<void> _goProfile(String uid) async {
     _vc?.pause();
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => UserProfileScreen(uid: uid)));
-    if (mounted && widget.playing) _vc?.play();
+    _soundVc?.pause();
+    await Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => UserProfileScreen(uid: uid)));
+    if (mounted && widget.playing) _sync();
+  }
+
+  Future<void> _openSound() async {
+    final soundId = widget.post.soundPostId;
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final sound =
+          soundId == null ? widget.post : await PostService.postById(soundId);
+      if (sound == null || sound.type != PostType.video) {
+        throw StateError('الصوت الأصلي غير متاح');
+      }
+      if (!mounted) return;
+      _vc?.pause();
+      _soundVc?.pause();
+      await navigator.push<void>(
+        MaterialPageRoute(builder: (_) => SoundScreen(sound: sound)),
+      );
+      if (mounted && widget.playing) _sync();
+    } catch (error) {
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('تعذر فتح الصوت: $error')),
+        );
+      }
+    }
   }
 
   @override
@@ -285,9 +574,24 @@ class _VideoPageState extends State<_VideoPage> with SingleTickerProviderStateMi
           else
             const AppLoading(message: 'جارٍ تحميل الفيديو...'),
           if (_ready && !_vc!.value.isPlaying)
-            const Center(child: Icon(Icons.play_arrow_rounded, size: 90, color: Colors.white70)),
+            const Center(
+                child: Icon(Icons.play_arrow_rounded,
+                    size: 90, color: Colors.white70)),
+          if (_soundVc != null)
+            Positioned(
+              left: 0,
+              top: 0,
+              width: 1,
+              height: 1,
+              child: IgnorePointer(
+                child: Opacity(
+                  opacity: 0,
+                  child: VideoPlayer(_soundVc!),
+                ),
+              ),
+            ),
           // تدرّج أسفل الشاشة لتحسين قراءة النص
-          const Positioned(
+          Positioned(
             left: 0,
             right: 0,
             bottom: 0,
@@ -298,7 +602,7 @@ class _VideoPageState extends State<_VideoPage> with SingleTickerProviderStateMi
                   gradient: LinearGradient(
                     begin: Alignment.bottomCenter,
                     end: Alignment.topCenter,
-                    colors: [Color(0xCC000000), Colors.transparent],
+                    colors: [const Color(0xCC000000), Colors.transparent],
                   ),
                 ),
               ),
@@ -317,6 +621,8 @@ class _VideoPageState extends State<_VideoPage> with SingleTickerProviderStateMi
   }
 
   Widget _bottomInfo(Post p) {
+    const labelColor = Colors.white;
+    const labelShadow = Shadow(color: Colors.black87, blurRadius: 4);
     return Positioned(
       right: 14,
       left: 84,
@@ -327,18 +633,55 @@ class _VideoPageState extends State<_VideoPage> with SingleTickerProviderStateMi
         children: [
           GestureDetector(
             onTap: () => _goProfile(p.uid),
-            child: Text('@${p.username}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, shadows: _shadow)),
+            child: Text(
+              '@${p.username}',
+              style: TextStyle(
+                color: labelColor,
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
+                shadows: [labelShadow],
+              ),
+            ),
           ),
           if (p.caption.isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text(p.caption, maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(shadows: _shadow)),
+            Text(
+              p.caption,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: labelColor, shadows: [labelShadow]),
+            ),
           ],
           const SizedBox(height: 10),
-          Row(children: [
-            const Icon(Icons.music_note_rounded, size: 16),
-            const SizedBox(width: 4),
-            Expanded(child: Text('الصوت الأصلي - ${p.username}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, shadows: _shadow))),
-          ]),
+          GestureDetector(
+            onTap: _openSound,
+            child: Row(children: [
+              Icon(
+                _soundError == null
+                    ? Icons.music_note_rounded
+                    : Icons.music_off_rounded,
+                size: 16,
+                color: labelColor,
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  _soundError != null
+                      ? 'الصوت غير متاح'
+                      : p.soundPostId == null
+                          ? 'الصوت الأصلي - ${p.username}'
+                          : 'الصوت الأصلي - ${p.soundUsername ?? 'مستخدم'}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: labelColor,
+                    fontSize: 13,
+                    shadows: [labelShadow],
+                  ),
+                ),
+              ),
+            ]),
+          ),
         ],
       ),
     );
@@ -387,8 +730,11 @@ class _VideoPageState extends State<_VideoPage> with SingleTickerProviderStateMi
             },
           ),
           _action(Icons.reply_rounded, 'مشاركة', flip: true, onTap: () async {
-            await Clipboard.setData(ClipboardData(text: UserService.linkFor(p.username)));
-            if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تم نسخ رابط حساب @${p.username}')));
+            await Clipboard.setData(
+                ClipboardData(text: UserService.linkFor(p.username)));
+            if (mounted)
+              ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('تم نسخ رابط حساب @${p.username}')));
           }, scale: actionScale),
           SizedBox(height: 8 * actionScale),
           Transform.scale(
@@ -400,7 +746,11 @@ class _VideoPageState extends State<_VideoPage> with SingleTickerProviderStateMi
                 height: 44,
                 decoration: const BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: SweepGradient(colors: [AppColors.accent, AppColors.accent2, AppColors.accent]),
+                  gradient: SweepGradient(colors: [
+                    AppColors.accent,
+                    AppColors.accent2,
+                    AppColors.accent
+                  ]),
                 ),
                 child: const Icon(Icons.music_note_rounded, size: 22),
               ),
@@ -426,8 +776,14 @@ class _VideoPageState extends State<_VideoPage> with SingleTickerProviderStateMi
               Container(
                 width: 50,
                 height: 50,
-                decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 1.5)),
-                child: UserAvatar(uid: p.uid, fallbackName: p.username, radius: 24, onTap: () => _goProfile(p.uid)),
+                decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5)),
+                child: UserAvatar(
+                    uid: p.uid,
+                    fallbackName: p.username,
+                    radius: 24,
+                    onTap: () => _goProfile(p.uid)),
               ),
               if (!isMine && !following)
                 Positioned(
@@ -437,7 +793,8 @@ class _VideoPageState extends State<_VideoPage> with SingleTickerProviderStateMi
                     child: Container(
                       width: 22,
                       height: 22,
-                      decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.accent2),
+                      decoration: const BoxDecoration(
+                          shape: BoxShape.circle, color: AppColors.accent2),
                       child: const Icon(Icons.add, size: 16),
                     ),
                   ),
@@ -468,6 +825,7 @@ class _VideoPageState extends State<_VideoPage> with SingleTickerProviderStateMi
             SizedBox(height: 2 * scale),
             Text(label,
                 style: TextStyle(
+                    color: Colors.white,
                     fontSize: 12 * scale,
                     fontWeight: FontWeight.w600,
                     shadows: _shadow)),

@@ -71,7 +71,10 @@ class InboxScreen extends StatelessWidget {
                     subtitle: Text(
                       conversation.lastMessage.isEmpty
                           ? 'ابدأ المحادثة'
-                          : conversation.lastMessage,
+                          : conversation.lastSenderUid ==
+                                  SocialService.currentUid
+                              ? 'أنت: ${conversation.lastMessage}'
+                              : conversation.lastMessage,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(color: colors.textDim),
@@ -260,10 +263,24 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 const SizedBox(width: 10),
                 Flexible(
-                  child: Text(
-                    user?.displayName ?? 'محادثة',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        user?.displayName ?? 'محادثة',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (user != null)
+                        Text(
+                          '@${user.username}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: context.appColors.textDim, fontSize: 12),
+                        ),
+                    ],
                   ),
                 ),
               ],
@@ -300,22 +317,43 @@ class _ChatScreenState extends State<ChatScreen> {
                     final message = messages[messages.length - 1 - index];
                     final mine = message.senderUid == SocialService.currentUid;
                     return Align(
-                      alignment:
-                          mine ? Alignment.centerLeft : Alignment.centerRight,
+                      alignment: mine
+                          ? AlignmentDirectional.centerEnd
+                          : AlignmentDirectional.centerStart,
                       child: Container(
                         constraints: BoxConstraints(
-                            maxWidth: MediaQuery.sizeOf(context).width * 0.76),
+                            maxWidth: MediaQuery.sizeOf(context).width * 0.78),
                         margin: const EdgeInsets.symmetric(vertical: 4),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
                           color: mine ? AppColors.accent : colors.surfaceHigh,
-                          borderRadius: BorderRadius.circular(18),
+                          borderRadius: BorderRadiusDirectional.only(
+                            topStart: const Radius.circular(18),
+                            topEnd: const Radius.circular(18),
+                            bottomStart: Radius.circular(mine ? 18 : 4),
+                            bottomEnd: Radius.circular(mine ? 4 : 18),
+                          ),
                         ),
-                        child: Text(
-                          message.text,
-                          style: TextStyle(
-                              color: mine ? Colors.white : colors.text),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              message.text,
+                              style: TextStyle(
+                                  color: mine ? Colors.white : colors.text),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              timeAgo(message.createdAt),
+                              style: TextStyle(
+                                color: mine
+                                    ? Colors.white70
+                                    : colors.textDim,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     );

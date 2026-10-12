@@ -27,9 +27,10 @@ String _kindTitle(CreateKind k) => switch (k) {
     };
 
 /// يفتح شاشة الإنشاء (كاميرا أو ملفات الجهاز) للنوع المطلوب.
-void startCreate(BuildContext context, CreateKind kind) {
+void startCreate(BuildContext context, CreateKind kind, {Post? sound}) {
   Navigator.of(context).push(MaterialPageRoute(
-      fullscreenDialog: true, builder: (_) => CaptureScreen(kind: kind)));
+      fullscreenDialog: true,
+      builder: (_) => CaptureScreen(kind: kind, sound: sound)));
 }
 
 /// الشريط السفلي الصغير: منشور / قصة / ريلز (مثل إنستغرام).
@@ -183,7 +184,8 @@ Future<PickedMedia?> pickMedia(
 /// الخطوة الأولى: اختيار المصدر (كاميرا أو ملفات الجهاز) كما في إنستغرام.
 class CaptureScreen extends StatefulWidget {
   final CreateKind kind;
-  const CaptureScreen({super.key, required this.kind});
+  final Post? sound;
+  const CaptureScreen({super.key, required this.kind, this.sound});
 
   @override
   State<CaptureScreen> createState() => _CaptureScreenState();
@@ -221,7 +223,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
         return;
       }
       Navigator.of(context).pushReplacement(MaterialPageRoute(
-          builder: (_) => ComposeScreen(kind: widget.kind, media: media)));
+          builder: (_) => ComposeScreen(
+              kind: widget.kind, media: media, sound: widget.sound)));
     } on MediaError catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
@@ -406,7 +409,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
 class ComposeScreen extends StatefulWidget {
   final CreateKind kind;
   final PickedMedia? media; // null = منشور نصي فقط
-  const ComposeScreen({super.key, required this.kind, this.media});
+  final Post? sound;
+  const ComposeScreen({super.key, required this.kind, this.media, this.sound});
 
   @override
   State<ComposeScreen> createState() => _ComposeScreenState();
@@ -455,7 +459,12 @@ class _ComposeScreenState extends State<ComposeScreen> {
           CreateKind.reel => PostType.video,
         };
         await PostService.publishMedia(type, m.bytes,
-            mime: m.mime, ext: m.ext, caption: caption, onProgress: onProgress);
+            mime: m.mime,
+            ext: m.ext,
+            caption: caption,
+            onProgress: onProgress,
+            soundPostId: widget.sound?.id,
+            soundUsername: widget.sound?.username);
       }
       nav.popUntil((r) => r.isFirst);
       messenger.showSnackBar(SnackBar(
@@ -513,6 +522,14 @@ class _ComposeScreenState extends State<ComposeScreen> {
                   textAlign: TextAlign.center,
                   style:
                       TextStyle(color: context.appColors.textDim, fontSize: 12),
+                ),
+              ),
+            if (widget.sound != null)
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.music_note_rounded),
+                  title: Text('الصوت الأصلي - @${widget.sound!.username}'),
+                  subtitle: const Text('سيُضاف هذا الصوت إلى الفيديو المنشور'),
                 ),
               ),
             const SizedBox(height: 16),

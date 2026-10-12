@@ -48,8 +48,7 @@ class ChatMessage {
     required this.createdAt,
   });
 
-  factory ChatMessage.fromDoc(
-      QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+  factory ChatMessage.fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data();
     final createdAt = data['createdAt'];
     return ChatMessage(
@@ -115,9 +114,9 @@ class SocialService {
       _db.collection('users').doc(uid).collection('notifications');
 
   static Stream<List<Conversation>> conversations() => _chats
-      .where('participants', arrayContains: _uid)
-      .snapshots()
-      .map((snapshot) {
+          .where('participants', arrayContains: _uid)
+          .snapshots()
+          .map((snapshot) {
         final items = snapshot.docs.map(Conversation.fromDoc).toList()
           ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
         return items;
@@ -131,6 +130,25 @@ class SocialService {
       .snapshots()
       .map((snapshot) => snapshot.docs.map(ChatMessage.fromDoc).toList());
 
+  static Future<bool> areMutualFriends(String otherUid) async {
+    if (otherUid.isEmpty || otherUid == _uid) return false;
+    final snapshots = await Future.wait([
+      _db
+          .collection('users')
+          .doc(_uid)
+          .collection('following')
+          .doc(otherUid)
+          .get(),
+      _db
+          .collection('users')
+          .doc(otherUid)
+          .collection('following')
+          .doc(_uid)
+          .get(),
+    ]);
+    return snapshots.every((snapshot) => snapshot.exists);
+  }
+
   static Future<String> startConversation(String otherUid) async {
     if (otherUid.isEmpty || otherUid == _uid) {
       throw ArgumentError.value(otherUid, 'otherUid', 'مستخدم غير صالح');
@@ -143,8 +161,8 @@ class SocialService {
     await _db.runTransaction((transaction) async {
       final snapshot = await transaction.get(reference);
       if (snapshot.exists) {
-        final stored = List<String>.from(
-            snapshot.data()!['participants'] as List);
+        final stored =
+            List<String>.from(snapshot.data()!['participants'] as List);
         if (stored.toSet().difference(participants.toSet()).isNotEmpty ||
             participants.toSet().difference(stored.toSet()).isNotEmpty) {
           throw StateError('المحادثة لا تخص هذين المستخدمين');
@@ -191,16 +209,10 @@ class SocialService {
   }
 
   static Future<List<String>> mutualFriendIds() async {
-    final following = _db
-        .collection('users')
-        .doc(_uid)
-        .collection('following')
-        .get();
-    final followers = _db
-        .collection('users')
-        .doc(_uid)
-        .collection('followers')
-        .get();
+    final following =
+        _db.collection('users').doc(_uid).collection('following').get();
+    final followers =
+        _db.collection('users').doc(_uid).collection('followers').get();
     final results = await Future.wait([following, followers]);
     final followingIds = results[0].docs.map((doc) => doc.id).toSet();
     final followerIds = results[1].docs.map((doc) => doc.id).toSet();
@@ -227,10 +239,8 @@ class SocialService {
   static Future<void> markAllNotificationsRead() async {
     final notifications = _notifications(_uid);
     while (true) {
-      final snapshot = await notifications
-          .where('read', isEqualTo: false)
-          .limit(450)
-          .get();
+      final snapshot =
+          await notifications.where('read', isEqualTo: false).limit(450).get();
       if (snapshot.docs.isEmpty) return;
       final batch = _db.batch();
       for (final doc in snapshot.docs) {
@@ -296,5 +306,4 @@ class SocialService {
       'createdAt': FieldValue.serverTimestamp(),
     });
   }
-
 }
