@@ -404,6 +404,7 @@ class _StoryViewerState extends State<StoryViewer>
                               const SizedBox(width: 10),
                               Text(_group.username,
                                   style: const TextStyle(
+                                      color: Colors.white,
                                       fontWeight: FontWeight.w700)),
                               const SizedBox(width: 8),
                               Text(timeAgo(story.createdAt),
@@ -416,10 +417,12 @@ class _StoryViewerState extends State<StoryViewer>
                         if (mine)
                           IconButton(
                               onPressed: _delete,
-                              icon: const Icon(Icons.delete_outline_rounded)),
+                              icon: const Icon(Icons.delete_outline_rounded,
+                                  color: Colors.white)),
                         IconButton(
                             onPressed: () => Navigator.of(context).pop(),
-                            icon: const Icon(Icons.close_rounded)),
+                            icon: const Icon(Icons.close_rounded,
+                                color: Colors.white)),
                       ],
                     ),
                   ),
@@ -435,7 +438,10 @@ class _StoryViewerState extends State<StoryViewer>
                             borderRadius: BorderRadius.circular(14)),
                         child: Text(story.caption,
                             textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 17, height: 1.4)),
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 17,
+                                height: 1.4)),
                       ),
                     ),
                 ],
@@ -525,7 +531,9 @@ class _StoryMediaState extends State<_StoryMedia> {
             child: AspectRatio(
                 aspectRatio: vc.value.aspectRatio, child: VideoPlayer(vc)));
       } else if (_failed) {
-        body = const Center(child: Text('تعذر تشغيل القصة'));
+        body = const Center(
+            child: Text('تعذر تشغيل القصة',
+                style: TextStyle(color: Colors.white)));
       } else {
         body = const Center(child: CircularProgressIndicator());
       }

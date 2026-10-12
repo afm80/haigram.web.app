@@ -38,7 +38,8 @@ class _PostCardState extends State<PostCard> {
   }
 
   Future<void> _copyPostLink() async {
-    await Clipboard.setData(ClipboardData(text: PostService.postLink(widget.post)));
+    await Clipboard.setData(
+        ClipboardData(text: PostService.postLink(widget.post)));
     if (mounted)
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('تم نسخ رابط المنشور')));
@@ -89,6 +90,9 @@ class _PostCardState extends State<PostCard> {
     final p = widget.post;
     final mine = p.uid == PostService.uidOrEmpty;
     final isText = p.type == PostType.text;
+    final colors = context.appColors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPostForeground = isDark ? Colors.white : const Color(0xFF352A33);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -108,20 +112,24 @@ class _PostCardState extends State<PostCard> {
                       constraints: const BoxConstraints(minHeight: 160),
                       padding: const EdgeInsets.all(24),
                       alignment: Alignment.center,
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         gradient: LinearGradient(
-                            colors: [Color(0xFF7C2D12), Color(0xFF431407)],
+                            colors: isDark
+                                ? const [Color(0xFF7C2D12), Color(0xFF431407)]
+                                : const [Color(0xFFFFE4E6), Color(0xFFFFF1E6)],
                             begin: Alignment.topRight,
                             end: Alignment.bottomLeft),
                       ),
                       child: Text.rich(
                           _captionSpans(
                               p.caption,
-                              const TextStyle(
+                              TextStyle(
+                                  color: textPostForeground,
                                   fontSize: 20,
                                   height: 1.5,
                                   fontWeight: FontWeight.w600)),
-                          textAlign: TextAlign.center),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: textPostForeground)),
                     )
                   else
                     LayoutBuilder(
@@ -161,7 +169,8 @@ class _PostCardState extends State<PostCard> {
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
             child: Text('${p.likes} إعجاب',
-                style: const TextStyle(fontWeight: FontWeight.w700)),
+                style:
+                    TextStyle(color: colors.text, fontWeight: FontWeight.w700)),
           ),
         if (!isText && p.caption.isNotEmpty)
           Padding(
@@ -178,7 +187,7 @@ class _PostCardState extends State<PostCard> {
                   ..._captionSpans(p.caption, null).children!,
                 ],
               ),
-              style: const TextStyle(height: 1.4),
+              style: TextStyle(color: colors.text, height: 1.4),
             ),
           ),
         Padding(
