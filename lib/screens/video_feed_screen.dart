@@ -838,9 +838,12 @@ class _VideoPageState extends State<_VideoPage>
                 }
                 return ClipRect(
                   child: Center(
-                    child: AspectRatio(
-                      aspectRatio: aspectRatio,
-                      child: VideoPlayer(_vc!),
+                    child: Directionality(
+                      textDirection: TextDirection.ltr,
+                      child: AspectRatio(
+                        aspectRatio: aspectRatio,
+                        child: VideoPlayer(_vc!),
+                      ),
                     ),
                   ),
                 );
