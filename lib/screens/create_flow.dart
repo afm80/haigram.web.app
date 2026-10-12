@@ -12,10 +12,13 @@ enum CreateKind { post, story, reel }
 
 /// حدود الرفع للحفاظ على مجانية الخدمة.
 const maxVideoSeconds = 60;
-const maxSourceBytes = 300 * 1024 * 1024; // أقصى حجم أصلي يمكن قصّه داخل المتصفح
+const maxSourceBytes =
+    300 * 1024 * 1024; // أقصى حجم أصلي يمكن قصّه داخل المتصفح
 // في وضع التجربة (Firestore) الحدود أصغر حفاظاً على الحصة المجانية.
-int get maxVideoBytes => PostService.useStorage ? 40 * 1024 * 1024 : 15 * 1024 * 1024;
-int get maxPhotoBytes => PostService.useStorage ? 5 * 1024 * 1024 : 3 * 1024 * 1024;
+int get maxVideoBytes =>
+    PostService.useStorage ? 40 * 1024 * 1024 : 15 * 1024 * 1024;
+int get maxPhotoBytes =>
+    PostService.useStorage ? 5 * 1024 * 1024 : 3 * 1024 * 1024;
 
 String _kindTitle(CreateKind k) => switch (k) {
       CreateKind.post => 'منشور جديد',
@@ -25,7 +28,8 @@ String _kindTitle(CreateKind k) => switch (k) {
 
 /// يفتح شاشة الإنشاء (كاميرا أو ملفات الجهاز) للنوع المطلوب.
 void startCreate(BuildContext context, CreateKind kind) {
-  Navigator.of(context).push(MaterialPageRoute(fullscreenDialog: true, builder: (_) => CaptureScreen(kind: kind)));
+  Navigator.of(context).push(MaterialPageRoute(
+      fullscreenDialog: true, builder: (_) => CaptureScreen(kind: kind)));
 }
 
 /// الشريط السفلي الصغير: منشور / قصة / ريلز (مثل إنستغرام).
@@ -33,7 +37,8 @@ void showCreateSheet(BuildContext context) {
   showModalBottomSheet(
     context: context,
     backgroundColor: context.appColors.surface,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
     builder: (ctx) {
       Widget tile(IconData icon, String title, CreateKind kind) => ListTile(
             leading: Icon(icon, size: 26),
@@ -48,10 +53,16 @@ void showCreateSheet(BuildContext context) {
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 8),
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: context.appColors.textDim, borderRadius: BorderRadius.circular(2))),
+            Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: context.appColors.textDim,
+                    borderRadius: BorderRadius.circular(2))),
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('إنشاء', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              child: Text('إنشاء',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
             ),
             const Divider(height: 1, color: Color(0x22FFFFFF)),
             tile(Icons.grid_on_rounded, 'منشور', CreateKind.post),
@@ -72,7 +83,13 @@ class PickedMedia {
   final String name;
   final bool isVideo;
   final bool trimmed;
-  PickedMedia({required this.bytes, required this.ext, required this.mime, required this.name, required this.isVideo, this.trimmed = false});
+  PickedMedia(
+      {required this.bytes,
+      required this.ext,
+      required this.mime,
+      required this.name,
+      required this.isVideo,
+      this.trimmed = false});
 }
 
 class MediaError implements Exception {
@@ -102,14 +119,16 @@ Future<PickedMedia?> pickMedia(
   void Function(bool)? onTrimming,
 }) async {
   if (video) {
-    final f = await picker.pickVideo(source: source, maxDuration: const Duration(seconds: maxVideoSeconds));
+    final f = await picker.pickVideo(
+        source: source, maxDuration: const Duration(seconds: maxVideoSeconds));
     if (f == null) return null;
     final dot = f.name.lastIndexOf('.');
     var ext = dot > 0 ? f.name.substring(dot + 1).toLowerCase() : 'mp4';
     final secs = await _videoSeconds(f);
     if (secs == null) throw MediaError('تعذر قراءة الفيديو. جرّب صيغة MP4.');
     if (await f.length() > maxSourceBytes) {
-      throw MediaError('الملف كبير جداً للمعالجة داخل المتصفح (الحد ${maxSourceBytes ~/ (1024 * 1024)}MB).');
+      throw MediaError(
+          'الملف كبير جداً للمعالجة داخل المتصفح (الحد ${maxSourceBytes ~/ (1024 * 1024)}MB).');
     }
 
     Uint8List bytes;
@@ -131,18 +150,34 @@ Future<PickedMedia?> pickMedia(
     }
 
     if (bytes.length > maxVideoBytes) {
-      throw MediaError('حجم الفيديو بعد المعالجة ${(bytes.length / (1024 * 1024)).toStringAsFixed(0)}MB والحد ${maxVideoBytes ~/ (1024 * 1024)}MB. صوّره بجودة أقل (مثل 720p).');
+      throw MediaError(
+          'حجم الفيديو بعد المعالجة ${(bytes.length / (1024 * 1024)).toStringAsFixed(0)}MB والحد ${maxVideoBytes ~/ (1024 * 1024)}MB. صوّره بجودة أقل (مثل 720p).');
     }
     if (ext == 'mov') ext = 'quicktime';
-    return PickedMedia(bytes: bytes, ext: ext, mime: 'video/$ext', name: f.name, isVideo: true, trimmed: trimmed);
+    return PickedMedia(
+        bytes: bytes,
+        ext: ext,
+        mime: 'video/$ext',
+        name: f.name,
+        isVideo: true,
+        trimmed: trimmed);
   }
 
   // الصور تُضغط داخل المتصفح (تصغير الأبعاد + جودة 60%) قبل الرفع.
-  final f = await picker.pickImage(source: source, maxWidth: 1080, maxHeight: tall ? 1920 : 1080, imageQuality: 60);
+  final f = await picker.pickImage(
+      source: source,
+      maxWidth: 1080,
+      maxHeight: tall ? 1920 : 1080,
+      imageQuality: 60);
   if (f == null) return null;
   final bytes = await f.readAsBytes();
   if (bytes.length > maxPhotoBytes) throw MediaError('الصورة كبيرة جداً');
-  return PickedMedia(bytes: bytes, ext: 'jpg', mime: 'image/jpeg', name: f.name, isVideo: false);
+  return PickedMedia(
+      bytes: bytes,
+      ext: 'jpg',
+      mime: 'image/jpeg',
+      name: f.name,
+      isVideo: false);
 }
 
 /// الخطوة الأولى: اختيار المصدر (كاميرا أو ملفات الجهاز) كما في إنستغرام.
@@ -161,7 +196,9 @@ class _CaptureScreenState extends State<CaptureScreen> {
   bool _busy = false;
   String? _error;
 
-  bool get _video => widget.kind == CreateKind.reel || (widget.kind == CreateKind.story && _storyVideo);
+  bool get _video =>
+      widget.kind == CreateKind.reel ||
+      (widget.kind == CreateKind.story && _storyVideo);
 
   Future<void> _pick(ImageSource source) async {
     if (_busy) return;
@@ -183,7 +220,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
         if (mounted) setState(() => _busy = false);
         return;
       }
-      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => ComposeScreen(kind: widget.kind, media: media)));
+      Navigator.of(context).pushReplacement(MaterialPageRoute(
+          builder: (_) => ComposeScreen(kind: widget.kind, media: media)));
     } on MediaError catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
@@ -205,8 +243,14 @@ class _CaptureScreenState extends State<CaptureScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
               child: Row(
                 children: [
-                  IconButton(onPressed: () => Navigator.of(context).pop(), icon: const Icon(Icons.close_rounded, size: 28)),
-                  Expanded(child: Text(_kindTitle(kind), textAlign: TextAlign.center, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700))),
+                  IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close_rounded, size: 28)),
+                  Expanded(
+                      child: Text(_kindTitle(kind),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              fontSize: 17, fontWeight: FontWeight.w700))),
                   const SizedBox(width: 48),
                 ],
               ),
@@ -220,7 +264,10 @@ class _CaptureScreenState extends State<CaptureScreen> {
                           CircularProgressIndicator(),
                           SizedBox(height: 12),
                           Text('الفيديو أطول من دقيقة، جارٍ قصّه تلقائياً...'),
-                          Text('قد يستغرق ذلك لحظات', style: TextStyle(color: context.appColors.textDim, fontSize: 12)),
+                          Text('قد يستغرق ذلك لحظات',
+                              style: TextStyle(
+                                  color: context.appColors.textDim,
+                                  fontSize: 12)),
                         ],
                       )
                     : Padding(
@@ -231,19 +278,33 @@ class _CaptureScreenState extends State<CaptureScreen> {
                             Container(
                               width: 110,
                               height: 110,
-                              decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [AppColors.accent, AppColors.accent2])),
-                              child: Icon(_video ? Icons.videocam_rounded : Icons.photo_camera_rounded, size: 52),
+                              decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: LinearGradient(colors: [
+                                    AppColors.accent,
+                                    AppColors.accent2
+                                  ])),
+                              child: Icon(
+                                  _video
+                                      ? Icons.videocam_rounded
+                                      : Icons.photo_camera_rounded,
+                                  size: 52),
                             ),
                             const SizedBox(height: 20),
                             Text(
-                              _video ? 'صوّر فيديو (حتى دقيقة) أو اختر من ملفاتك' : 'التقط صورة أو اختر من ملفاتك',
+                              _video
+                                  ? 'صوّر فيديو (حتى دقيقة) أو اختر من ملفاتك'
+                                  : 'التقط صورة أو اختر من ملفاتك',
                               textAlign: TextAlign.center,
                               style: const TextStyle(fontSize: 16),
                             ),
                             if (_error != null)
                               Padding(
                                 padding: const EdgeInsets.only(top: 16),
-                                child: Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.accent2)),
+                                child: Text(_error!,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                        color: context.appColors.text)),
                               ),
                           ],
                         ),
@@ -256,9 +317,15 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    ChoiceChip(label: const Text('صورة'), selected: !_storyVideo, onSelected: (_) => setState(() => _storyVideo = false)),
+                    ChoiceChip(
+                        label: const Text('صورة'),
+                        selected: !_storyVideo,
+                        onSelected: (_) => setState(() => _storyVideo = false)),
                     const SizedBox(width: 10),
-                    ChoiceChip(label: const Text('فيديو'), selected: _storyVideo, onSelected: (_) => setState(() => _storyVideo = true)),
+                    ChoiceChip(
+                        label: const Text('فيديو'),
+                        selected: _storyVideo,
+                        onSelected: (_) => setState(() => _storyVideo = true)),
                   ],
                 ),
               ),
@@ -268,23 +335,35 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  _sideButton(Icons.photo_library_rounded, 'ملفات الجهاز', () => _pick(ImageSource.gallery)),
+                  _sideButton(Icons.photo_library_rounded, 'ملفات الجهاز',
+                      () => _pick(ImageSource.gallery)),
                   GestureDetector(
                     onTap: () => _pick(ImageSource.camera),
                     child: Container(
                       width: 78,
                       height: 78,
                       padding: const EdgeInsets.all(5),
-                      decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 4)),
+                      decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 4)),
                       child: Container(
-                        decoration: BoxDecoration(shape: BoxShape.circle, color: _video ? AppColors.accent2 : Colors.white),
-                        child: _busy ? const Padding(padding: EdgeInsets.all(18), child: CircularProgressIndicator(strokeWidth: 3)) : null,
+                        decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _video ? AppColors.accent2 : Colors.white),
+                        child: _busy
+                            ? const Padding(
+                                padding: EdgeInsets.all(18),
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 3))
+                            : null,
                       ),
                     ),
                   ),
                   kind == CreateKind.post
                       ? _sideButton(Icons.edit_note_rounded, 'نص فقط', () {
-                          Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => ComposeScreen(kind: kind)));
+                          Navigator.of(context).pushReplacement(
+                              MaterialPageRoute(
+                                  builder: (_) => ComposeScreen(kind: kind)));
                         })
                       : const SizedBox(width: 72),
                 ],
@@ -307,11 +386,15 @@ class _CaptureScreenState extends State<CaptureScreen> {
             Container(
               width: 46,
               height: 46,
-              decoration: BoxDecoration(color: context.appColors.surfaceHigh, borderRadius: BorderRadius.circular(12)),
+              decoration: BoxDecoration(
+                  color: context.appColors.surfaceHigh,
+                  borderRadius: BorderRadius.circular(12)),
               child: Icon(icon),
             ),
             const SizedBox(height: 6),
-            Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 11)),
+            Text(label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 11)),
           ],
         ),
       ),
@@ -338,7 +421,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
   bool get _textOnly => widget.media == null;
 
   String get _hint => switch (widget.kind) {
-        CreateKind.post => _textOnly ? 'بماذا تفكر؟ أضف #هاشتاق' : 'اكتب وصفاً...',
+        CreateKind.post =>
+          _textOnly ? 'بماذا تفكر؟ أضف #هاشتاق' : 'اكتب وصفاً...',
         CreateKind.story => 'أضف نصاً للقصة (اختياري)',
         CreateKind.reel => 'اكتب وصفاً مع #هاشتاقات',
       };
@@ -370,10 +454,14 @@ class _ComposeScreenState extends State<ComposeScreen> {
           CreateKind.story => PostType.story,
           CreateKind.reel => PostType.video,
         };
-        await PostService.publishMedia(type, m.bytes, mime: m.mime, ext: m.ext, caption: caption, onProgress: onProgress);
+        await PostService.publishMedia(type, m.bytes,
+            mime: m.mime, ext: m.ext, caption: caption, onProgress: onProgress);
       }
       nav.popUntil((r) => r.isFirst);
-      messenger.showSnackBar(SnackBar(content: Text(widget.kind == CreateKind.story ? 'تمت إضافة القصة' : 'تم النشر بنجاح')));
+      messenger.showSnackBar(SnackBar(
+          content: Text(widget.kind == CreateKind.story
+              ? 'تمت إضافة القصة'
+              : 'تم النشر بنجاح')));
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -393,7 +481,10 @@ class _ComposeScreenState extends State<ComposeScreen> {
         actions: [
           TextButton(
             onPressed: _busy ? null : _publish,
-            child: Text(widget.kind == CreateKind.story ? 'إضافة' : 'مشاركة', style: const TextStyle(color: AppColors.accent, fontWeight: FontWeight.w800, fontSize: 16)),
+            child: Text(
+              widget.kind == CreateKind.story ? 'إضافة' : 'مشاركة',
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+            ),
           ),
         ],
       ),
@@ -406,15 +497,23 @@ class _ComposeScreenState extends State<ComposeScreen> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(14),
                   child: ConstrainedBox(
-                    constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
-                    child: m.isVideo ? _VideoPreview(bytes: m.bytes, mime: m.mime) : Image.memory(m.bytes, fit: BoxFit.contain),
+                    constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(context).size.height * 0.5),
+                    child: m.isVideo
+                        ? _VideoPreview(bytes: m.bytes, mime: m.mime)
+                        : Image.memory(m.bytes, fit: BoxFit.contain),
                   ),
                 ),
               ),
             if (m != null && m.trimmed)
-              const Padding(
-                padding: EdgeInsets.only(top: 8),
-                child: Text('تم قصّ الفيديو إلى أول 60 ثانية', textAlign: TextAlign.center, style: TextStyle(color: AppColors.accent, fontSize: 12)),
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'تم قصّ الفيديو إلى أول 60 ثانية',
+                  textAlign: TextAlign.center,
+                  style:
+                      TextStyle(color: context.appColors.textDim, fontSize: 12),
+                ),
               ),
             const SizedBox(height: 16),
             TextField(
@@ -424,17 +523,28 @@ class _ComposeScreenState extends State<ComposeScreen> {
               maxLength: 500,
               decoration: InputDecoration(hintText: _hint),
             ),
-            if (_error != null) Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text(_error!, style: const TextStyle(color: AppColors.accent2))),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(_error!,
+                    style: TextStyle(color: context.appColors.text)),
+              ),
             if (_busy && !_textOnly) ...[
               const SizedBox(height: 8),
-              LinearProgressIndicator(value: _progress, minHeight: 6, borderRadius: BorderRadius.circular(3)),
+              LinearProgressIndicator(
+                  value: _progress,
+                  minHeight: 6,
+                  borderRadius: BorderRadius.circular(3)),
               const SizedBox(height: 4),
-              Text('${(_progress * 100).toStringAsFixed(0)}%', textAlign: TextAlign.center),
+              Text('${(_progress * 100).toStringAsFixed(0)}%',
+                  textAlign: TextAlign.center),
             ],
             const SizedBox(height: 16),
             FilledButton(
               onPressed: _busy ? null : _publish,
-              child: Text(widget.kind == CreateKind.story ? 'إضافة إلى قصتك' : 'مشاركة'),
+              child: Text(widget.kind == CreateKind.story
+                  ? 'إضافة إلى قصتك'
+                  : 'مشاركة'),
             ),
           ],
         ),
@@ -463,7 +573,8 @@ class _VideoPreviewState extends State<_VideoPreview> {
 
   Future<void> _init() async {
     try {
-      final vc = VideoPlayerController.networkUrl(Uri.parse(makeBlobUrl(widget.bytes, widget.mime)));
+      final vc = VideoPlayerController.networkUrl(
+          Uri.parse(makeBlobUrl(widget.bytes, widget.mime)));
       await vc.initialize();
       await vc.setLooping(true);
       await vc.setVolume(0);
@@ -485,14 +596,19 @@ class _VideoPreviewState extends State<_VideoPreview> {
   @override
   Widget build(BuildContext context) {
     final vc = _vc;
-    if (vc == null) return const SizedBox(height: 240, child: Center(child: CircularProgressIndicator()));
+    if (vc == null)
+      return const SizedBox(
+          height: 240, child: Center(child: CircularProgressIndicator()));
     return GestureDetector(
       onTap: () => setState(() => vc.value.isPlaying ? vc.pause() : vc.play()),
       child: Stack(
         alignment: Alignment.center,
         children: [
-          AspectRatio(aspectRatio: vc.value.aspectRatio, child: VideoPlayer(vc)),
-          if (!vc.value.isPlaying) const Icon(Icons.play_arrow_rounded, size: 72, color: Colors.white70),
+          AspectRatio(
+              aspectRatio: vc.value.aspectRatio, child: VideoPlayer(vc)),
+          if (!vc.value.isPlaying)
+            const Icon(Icons.play_arrow_rounded,
+                size: 72, color: Colors.white70),
         ],
       ),
     );

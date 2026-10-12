@@ -303,8 +303,7 @@ class _StoryViewerState extends State<StoryViewer>
               child: const Text('إلغاء')),
           TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('حذف',
-                  style: TextStyle(color: AppColors.accent2))),
+              child: const Text('حذف')),
         ],
       ),
     );

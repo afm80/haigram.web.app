@@ -50,7 +50,9 @@ class _PostCardState extends State<PostCard> {
         content: const Text('لا يمكن التراجع عن هذا الإجراء.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف', style: TextStyle(color: AppColors.accent2))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('حذف')),
         ],
       ),
     );
@@ -174,7 +176,9 @@ class _PostCardState extends State<PostCard> {
             },
             itemBuilder: (_) => [
               const PopupMenuItem(value: 'link', child: Text('نسخ رابط الحساب')),
-              if (mine) const PopupMenuItem(value: 'delete', child: Text('حذف المنشور', style: TextStyle(color: AppColors.accent2))),
+              if (mine)
+                const PopupMenuItem(
+                    value: 'delete', child: Text('حذف المنشور')),
             ],
           ),
         ],
@@ -241,13 +245,15 @@ class _PostCardState extends State<PostCard> {
   }
 }
 
-/// يلوّن الهاشتاقات داخل النص.
+/// يميز الهاشتاقات داخل النص.
 TextSpan _captionSpans(String text, TextStyle? style) {
   final spans = <InlineSpan>[];
   var last = 0;
   for (final m in RegExp(r'#[\p{L}\p{N}_]+', unicode: true).allMatches(text)) {
     if (m.start > last) spans.add(TextSpan(text: text.substring(last, m.start)));
-    spans.add(TextSpan(text: m.group(0), style: const TextStyle(color: AppColors.accent2, fontWeight: FontWeight.w600)));
+    spans.add(TextSpan(
+        text: m.group(0),
+        style: const TextStyle(fontWeight: FontWeight.w600)));
     last = m.end;
   }
   if (last < text.length) spans.add(TextSpan(text: text.substring(last)));

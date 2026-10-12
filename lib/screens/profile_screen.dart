@@ -643,8 +643,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ListTile(
                 leading: const Icon(Icons.delete_outline_rounded,
                     color: AppColors.accent2),
-                title: const Text('إزالة الصورة',
-                    style: TextStyle(color: AppColors.accent2)),
+                title: const Text('إزالة الصورة'),
                 onTap: () {
                   Navigator.pop(ctx);
                   setState(() => _photoB64 = null);
@@ -748,10 +747,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           TextButton(
             onPressed: _busy ? null : _save,
             child: const Text('حفظ',
-                style: TextStyle(
-                    color: AppColors.accent,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16)),
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
           ),
         ],
       ),
@@ -799,7 +795,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Text(_error!,
-                      style: const TextStyle(color: AppColors.accent2))),
+                      style: TextStyle(color: context.appColors.text))),
             const SizedBox(height: 12),
             FilledButton(
                 onPressed: _busy ? null : _save,

@@ -83,7 +83,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             end: Alignment.bottomLeft,
             colors: Theme.of(context).brightness == Brightness.dark
                 ? [AppPalette.dark.bg2, AppPalette.dark.bg, AppPalette.dark.bg]
-                : [AppPalette.light.surfaceHigh, AppPalette.light.bg, AppPalette.light.bg],
+                : [
+                    AppPalette.light.surfaceHigh,
+                    AppPalette.light.bg,
+                    AppPalette.light.bg
+                  ],
             stops: [0, 0.55, 1],
           ),
         ),
@@ -137,7 +141,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 if (_error != null) ...[
                   Text(_error!,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.accent2)),
+                      style: TextStyle(color: context.appColors.text)),
                   const SizedBox(height: 12),
                 ],
                 FilledButton(
