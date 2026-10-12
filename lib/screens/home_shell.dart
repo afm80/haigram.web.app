@@ -98,15 +98,15 @@ class _TabsState extends State<_Tabs> {
                 height: 58,
                 child: Row(
                   children: [
-                    _navItem(0, Icons.video_library_outlined,
-                        Icons.video_library_rounded, 'ريلز',
+                    _navItem(
+                        0, Icons.home_outlined, Icons.home_rounded, 'الرئيسية',
                         foreground: navForeground, inactive: navInactive),
-                    _navItem(1, Icons.search_rounded, Icons.search_rounded,
-                        'استكشف',
+                    _navItem(
+                        1, Icons.search_rounded, Icons.search_rounded, 'استكشف',
                         foreground: navForeground, inactive: navInactive),
                     Expanded(child: Center(child: _createButton())),
-                    _navItem(3, Icons.grid_on_outlined, Icons.grid_on_rounded,
-                        'المنشورات',
+                    _navItem(3, Icons.dynamic_feed_outlined,
+                        Icons.dynamic_feed_rounded, 'المنشورات',
                         foreground: navForeground, inactive: navInactive),
                     _navItem(4, Icons.person_outline_rounded,
                         Icons.person_rounded, 'حسابي',
