@@ -501,15 +501,18 @@ class _VideoPageState extends State<_VideoPage>
 
   void _togglePlay() {
     if (!_ready) return;
-    if (_vc!.value.isPlaying) {
-      _vc!.pause();
-      _soundVc?.pause();
-      _disc.stop();
-    } else {
-      _vc!.play();
-      _soundVc?.play();
-      _disc.repeat();
-    }
+    final shouldPlay = !_vc!.value.isPlaying;
+    setState(() {
+      if (shouldPlay) {
+        _vc!.play();
+        _soundVc?.play();
+        _disc.repeat();
+      } else {
+        _vc!.pause();
+        _soundVc?.pause();
+        _disc.stop();
+      }
+    });
   }
 
   /// يفتح ملف صاحب الفيديو ويوقف التشغيل أثناء غيابه.

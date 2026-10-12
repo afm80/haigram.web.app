@@ -1,4 +1,3 @@
-
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -14,12 +13,136 @@ import 'theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.web);
-  final preferences = await SharedPreferences.getInstance();
-  runApp(LamhaApp(
-    preferences: preferences,
-    showOnboarding: !(preferences.getBool('onboarding_complete') ?? false),
-  ));
+  runApp(const HaigramBootstrap());
+}
+
+class HaigramBootstrap extends StatefulWidget {
+  const HaigramBootstrap({super.key});
+
+  @override
+  State<HaigramBootstrap> createState() => _HaigramBootstrapState();
+}
+
+class _HaigramBootstrapState extends State<HaigramBootstrap> {
+  late Future<SharedPreferences> _startup = _initialize();
+
+  Future<SharedPreferences> _initialize() async {
+    try {
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp(options: DefaultFirebaseOptions.web);
+      }
+      return await SharedPreferences.getInstance();
+    } catch (error, stackTrace) {
+      debugPrint('Haigram startup failed: $error\n$stackTrace');
+      rethrow;
+    }
+  }
+
+  void _retry() {
+    setState(() => _startup = _initialize());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<SharedPreferences>(
+      future: _startup,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return MaterialApp(
+            debugShowCheckedModeBanner: false,
+            theme: buildTheme(Brightness.light),
+            darkTheme: buildTheme(Brightness.dark),
+            themeMode: ThemeMode.system,
+            home: _StartupErrorScreen(
+              error: snapshot.error!,
+              onRetry: _retry,
+            ),
+          );
+        }
+        if (!snapshot.hasData) {
+          return MaterialApp(
+            debugShowCheckedModeBanner: false,
+            theme: buildTheme(Brightness.light),
+            darkTheme: buildTheme(Brightness.dark),
+            themeMode: ThemeMode.system,
+            home: const Scaffold(
+              body: AppLoading(message: 'جارٍ تجهيز التطبيق...'),
+            ),
+          );
+        }
+        final preferences = snapshot.data!;
+        return LamhaApp(
+          preferences: preferences,
+          showOnboarding:
+              !(preferences.getBool('onboarding_complete') ?? false),
+        );
+      },
+    );
+  }
+}
+
+class _StartupErrorScreen extends StatelessWidget {
+  final Object error;
+  final VoidCallback onRetry;
+
+  const _StartupErrorScreen({required this.error, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const LamhaLogo(size: 84),
+                  const SizedBox(height: 20),
+                  Text(
+                    'تعذر تشغيل التطبيق',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: colors.text,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'تحقق من اتصال الإنترنت ثم أعد المحاولة.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: colors.textDim),
+                  ),
+                  const SizedBox(height: 8),
+                  SelectableText(
+                    '$error',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: colors.textDim, fontSize: 12),
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: onRetry,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.brandRed,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('إعادة المحاولة'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class LamhaApp extends StatefulWidget {
@@ -73,23 +196,42 @@ class _LamhaAppState extends State<LamhaApp> {
       ],
       home: _showOnboarding
           ? OnboardingScreen(onComplete: _completeOnboarding)
-          : StreamBuilder<User?>(
-              stream: FirebaseAuth.instance.authStateChanges(),
-              builder: (context, snap) {
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return const Scaffold(
-                      body: AppLoading(message: 'جارٍ تجهيز التطبيق...'));
-                }
-                return AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 280),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  child: snap.data == null
-                      ? const AuthScreen(key: ValueKey('auth'))
-                      : const HomeShell(key: ValueKey('home')),
-                );
-              },
-            ),
+          : _buildAuthenticatedHome(),
     );
+  }
+
+  Widget _buildAuthenticatedHome() {
+    try {
+      return StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, snap) {
+          if (snap.hasError) {
+            return _StartupErrorScreen(
+              error: snap.error!,
+              onRetry: () => setState(() {}),
+            );
+          }
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Scaffold(
+              body: AppLoading(message: 'جارٍ تجهيز التطبيق...'),
+            );
+          }
+          return AnimatedSwitcher(
+            duration: const Duration(milliseconds: 280),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            child: snap.data == null
+                ? const AuthScreen(key: ValueKey('auth'))
+                : const HomeShell(key: ValueKey('home')),
+          );
+        },
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Firebase Auth initialization failed: $error\n$stackTrace');
+      return _StartupErrorScreen(
+        error: error,
+        onRetry: () => setState(() {}),
+      );
+    }
   }
 }

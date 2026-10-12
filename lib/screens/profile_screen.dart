@@ -1,5 +1,4 @@
 import 'dart:convert';
-
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1227,6 +1226,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
 // ---------------- شبكات المحتوى ----------------
 
+int _profileGridColumns(double width) => (width / 150).floor().clamp(3, 6);
+
 class _ProfileGrid extends StatelessWidget {
   final String uid;
   const _ProfileGrid({required this.uid});
@@ -1278,43 +1279,46 @@ class _VideoGrid extends StatelessWidget {
               title: 'لا توجد فيديوهات بعد',
               message: 'ستظهر فيديوهات هذا الحساب هنا.');
         }
-        return GridView.builder(
-          padding: const EdgeInsets.all(2),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
+        return LayoutBuilder(
+          builder: (context, constraints) => GridView.builder(
+            padding: const EdgeInsets.all(2),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: _profileGridColumns(constraints.maxWidth),
               mainAxisSpacing: 2,
               crossAxisSpacing: 2,
-              childAspectRatio: 9 / 14),
-          itemCount: list.length,
-          itemBuilder: (_, i) => GestureDetector(
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) =>
-                    VideoViewerScreen(posts: list, initialIndex: i))),
-            child: Container(
-              decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                      colors: [Color(0xFF7C2D12), Color(0xFF431407)],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter)),
-              child: Stack(
-                children: [
-                  const Center(
-                      child: Icon(Icons.play_circle_outline_rounded,
-                          size: 34, color: Colors.white54)),
-                  PositionedDirectional(
-                    start: 6,
-                    bottom: 6,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.play_arrow_outlined, size: 18),
-                        Text('${list[i].views}',
-                            style: const TextStyle(
-                                fontSize: 12, fontWeight: FontWeight.w600)),
-                      ],
+              childAspectRatio: 9 / 14,
+            ),
+            itemCount: list.length,
+            itemBuilder: (_, i) => GestureDetector(
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) =>
+                      VideoViewerScreen(posts: list, initialIndex: i))),
+              child: Container(
+                decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                        colors: [Color(0xFF7C2D12), Color(0xFF431407)],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter)),
+                child: Stack(
+                  children: [
+                    const Center(
+                        child: Icon(Icons.play_circle_outline_rounded,
+                            size: 34, color: Colors.white54)),
+                    PositionedDirectional(
+                      start: 6,
+                      bottom: 6,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.play_arrow_outlined, size: 18),
+                          Text('${list[i].views}',
+                              style: const TextStyle(
+                                  fontSize: 12, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -1357,35 +1361,51 @@ class _PostGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GridView.builder(
-      padding: const EdgeInsets.all(2),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3, mainAxisSpacing: 2, crossAxisSpacing: 2),
-      itemCount: list.length,
-      itemBuilder: (_, i) {
-        final p = list[i];
-        return GestureDetector(
-          onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => PostDetailScreen(post: p))),
-          child: switch (p.type) {
-            PostType.photo => PostImage(post: p, height: 140),
-            PostType.video => Container(
-                color: context.appColors.surfaceHigh,
-                child: const Center(
-                    child: Icon(Icons.play_circle_outline_rounded,
-                        size: 34, color: Colors.white54)),
-              ),
-            _ => Container(
-                color: context.appColors.surfaceHigh,
-                padding: const EdgeInsets.all(8),
-                child: Text(p.caption,
-                    maxLines: 5,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12)),
-              ),
-          },
-        );
-      },
+    final videos = list.where((post) => post.type == PostType.video).toList();
+    return LayoutBuilder(
+      builder: (context, constraints) => GridView.builder(
+        padding: const EdgeInsets.all(2),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: _profileGridColumns(constraints.maxWidth),
+          mainAxisSpacing: 2,
+          crossAxisSpacing: 2,
+        ),
+        itemCount: list.length,
+        itemBuilder: (_, i) {
+          final post = list[i];
+          return GestureDetector(
+            onTap: () {
+              if (post.type == PostType.video) {
+                final videoIndex =
+                    videos.indexWhere((video) => video.id == post.id);
+                Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => VideoViewerScreen(
+                        posts: videos, initialIndex: videoIndex)));
+                return;
+              }
+              Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => PostDetailScreen(post: post)));
+            },
+            child: switch (post.type) {
+              PostType.photo => PostImage(post: post),
+              PostType.video => Container(
+                  color: context.appColors.surfaceHigh,
+                  child: const Center(
+                      child: Icon(Icons.play_circle_outline_rounded,
+                          size: 34, color: Colors.white54)),
+                ),
+              _ => Container(
+                  color: context.appColors.surfaceHigh,
+                  padding: const EdgeInsets.all(8),
+                  child: Text(post.caption,
+                      maxLines: 5,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12)),
+                ),
+            },
+          );
+        },
+      ),
     );
   }
 }

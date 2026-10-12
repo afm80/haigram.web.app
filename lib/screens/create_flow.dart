@@ -42,8 +42,11 @@ void showCreateSheet(BuildContext context) {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
     builder: (ctx) {
       Widget tile(IconData icon, String title, CreateKind kind) => ListTile(
-            leading: Icon(icon, size: 26),
-            title: Text(title, style: const TextStyle(fontSize: 16)),
+            leading: Icon(icon, size: 26, color: Colors.white),
+            title: Text(
+              title,
+              style: const TextStyle(fontSize: 16, color: Colors.white),
+            ),
             onTap: () {
               Navigator.pop(ctx);
               startCreate(context, kind);
@@ -63,7 +66,10 @@ void showCreateSheet(BuildContext context) {
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
               child: Text('إنشاء',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700)),
             ),
             const Divider(height: 1, color: Color(0x22FFFFFF)),
             tile(Icons.grid_on_rounded, 'منشور', CreateKind.post),
