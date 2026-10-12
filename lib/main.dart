@@ -77,7 +77,8 @@ class _LamhaAppState extends State<LamhaApp> {
               stream: FirebaseAuth.instance.authStateChanges(),
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
-                  return const Scaffold(body: AppLoading(message: 'جارٍ تجهيز Haigram...'));
+                  return const Scaffold(
+                      body: AppLoading(message: 'جارٍ تجهيز التطبيق...'));
                 }
                 return AnimatedSwitcher(
                   duration: const Duration(milliseconds: 280),

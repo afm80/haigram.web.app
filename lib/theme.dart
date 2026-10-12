@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
-/// لوحة الألوان المشتركة لهوية Haigram البرتقالية.
+/// لوحة الألوان المشتركة لهوية Haigram.
 class AppColors {
-  static const accent = Color(0xFFF97316);
-  static const accent2 = Color(0xFFFB923C);
-  static const accent3 = Color(0xFFC2410C);
+  static const brandRed = Color(0xFFFF0051);
+  static const brandCyan = Color(0xFF42D4F4);
+  static const accent = Color(0xFF087F94);
+  static const accent2 = brandRed;
+  static const accent3 = Color(0xFF006577);
   static const videoLike = Color(0xFFFE2C55);
   static const postLike = Color(0xFFFF3040);
   static const success = Color(0xFF34D399);
@@ -26,9 +28,10 @@ class HaigramWordmark extends StatelessWidget {
     return Text.rich(
       TextSpan(
         children: [
-          TextSpan(text: 'H', style: style.copyWith(color: AppColors.accent2)),
+          TextSpan(text: 'H', style: style.copyWith(color: AppColors.brandRed)),
           const TextSpan(text: 'ai'),
-          TextSpan(text: 'g', style: style.copyWith(color: AppColors.accent2)),
+          TextSpan(
+              text: 'g', style: style.copyWith(color: AppColors.brandCyan)),
           const TextSpan(text: 'ram'),
         ],
       ),
@@ -196,44 +199,30 @@ ThemeData buildTheme(Brightness brightness) {
 
 class LamhaLogo extends StatelessWidget {
   final double size;
-  final bool monochrome;
-  const LamhaLogo({super.key, this.size = 72, this.monochrome = false});
+  const LamhaLogo({super.key, this.size = 72});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: size,
       height: size,
-      padding: EdgeInsets.all(size * 0.1),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(size * 0.32),
-        color: monochrome ? Colors.white : null,
-        gradient: monochrome
-            ? null
-            : const LinearGradient(
-                colors: [AppColors.accent, AppColors.accent2],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-        boxShadow: monochrome
-            ? null
-            : [
-                BoxShadow(
-                  color: context.appColors.shadow,
-                  blurRadius: 18,
-                  offset: const Offset(0, 10),
-                ),
-              ],
+        color: AppPalette.dark.bg,
+        boxShadow: [
+          BoxShadow(
+            color: context.appColors.shadow,
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
-      child: CustomPaint(
-        painter: _PlayTrianglePainter(
-          color: monochrome
-              ? (Theme.of(context).brightness == Brightness.dark
-                  ? AppPalette.dark.bg
-                  : AppPalette.light.bg)
-              : Colors.white,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(size * 0.32),
+        child: Image.asset(
+          'assets/haigram-mark.png',
+          fit: BoxFit.contain,
         ),
-        child: const SizedBox.expand(),
       ),
     );
   }
@@ -314,25 +303,4 @@ class EmptyState extends StatelessWidget {
       ),
     );
   }
-}
-
-class _PlayTrianglePainter extends CustomPainter {
-  final Color color;
-
-  const _PlayTrianglePainter({this.color = Colors.white});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color;
-    final path = Path();
-    path.moveTo(size.width * 0.27, size.height * 0.18);
-    path.lineTo(size.width * 0.82, size.height * 0.5);
-    path.lineTo(size.width * 0.27, size.height * 0.82);
-    path.close();
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _PlayTrianglePainter oldDelegate) =>
-      oldDelegate.color != color;
 }

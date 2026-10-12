@@ -33,7 +33,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       icon: Icons.add_a_photo_rounded,
       title: 'شارك لمحتك',
       description:
-          'أنشئ منشوراً أو قصة أو ريلز، واجعل لحظاتك جزءاً من مجتمع Haigram.',
+          'أنشئ منشوراً أو قصة أو ريلز، واجعل لحظاتك جزءاً من مجتمعنا.',
     ),
   ];
 

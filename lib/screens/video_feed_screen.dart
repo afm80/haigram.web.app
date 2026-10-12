@@ -269,8 +269,7 @@ class _VideoPageState extends State<_VideoPage> with SingleTickerProviderStateMi
           const ColoredBox(color: Colors.black),
           if (_ready)
             FittedBox(
-              fit: BoxFit.cover,
-              clipBehavior: Clip.hardEdge,
+              fit: BoxFit.contain,
               child: SizedBox(
                 width: _vc!.value.size.width,
                 height: _vc!.value.size.height,
@@ -346,14 +345,19 @@ class _VideoPageState extends State<_VideoPage> with SingleTickerProviderStateMi
   }
 
   Widget _sideActions(Post p) {
+    final actionScale =
+        (MediaQuery.sizeOf(context).height / 700).clamp(0.72, 1.0).toDouble();
     return Positioned(
       left: 10,
-      bottom: widget.bottomBase - 8,
+      bottom: widget.bottomBase * actionScale - 8,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _avatarWithPlus(p),
-          const SizedBox(height: 18),
+          Transform.scale(
+            scale: actionScale,
+            child: _avatarWithPlus(p),
+          ),
+          SizedBox(height: 18 * actionScale),
           StreamBuilder<bool>(
             stream: PostService.isLiked(p.id),
             builder: (context, s) {
@@ -363,10 +367,12 @@ class _VideoPageState extends State<_VideoPage> with SingleTickerProviderStateMi
                 '${p.likes}',
                 color: liked ? AppColors.videoLike : Colors.white,
                 onTap: () => PostService.toggleLike(p.id, liked),
+                scale: actionScale,
               );
             },
           ),
-          _action(Icons.chat_bubble_outline_rounded, '${p.comments}', onTap: () => showCommentsSheet(context, p)),
+          _action(Icons.chat_bubble_outline_rounded, '${p.comments}',
+              onTap: () => showCommentsSheet(context, p), scale: actionScale),
           StreamBuilder<bool>(
             stream: PostService.isSaved(p.id),
             builder: (context, s) {
@@ -376,24 +382,28 @@ class _VideoPageState extends State<_VideoPage> with SingleTickerProviderStateMi
                 'حفظ',
                 color: saved ? AppColors.accent : Colors.white,
                 onTap: () => PostService.toggleSave(p.id, saved),
+                scale: actionScale,
               );
             },
           ),
           _action(Icons.reply_rounded, 'مشاركة', flip: true, onTap: () async {
             await Clipboard.setData(ClipboardData(text: UserService.linkFor(p.username)));
             if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تم نسخ رابط حساب @${p.username}')));
-          }),
-          const SizedBox(height: 8),
-          RotationTransition(
-            turns: _disc,
-            child: Container(
-              width: 44,
-              height: 44,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: SweepGradient(colors: [AppColors.accent, AppColors.accent2, AppColors.accent]),
+          }, scale: actionScale),
+          SizedBox(height: 8 * actionScale),
+          Transform.scale(
+            scale: actionScale,
+            child: RotationTransition(
+              turns: _disc,
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: SweepGradient(colors: [AppColors.accent, AppColors.accent2, AppColors.accent]),
+                ),
+                child: const Icon(Icons.music_note_rounded, size: 22),
               ),
-              child: const Icon(Icons.music_note_rounded, size: 22),
             ),
           ),
         ],
@@ -439,17 +449,28 @@ class _VideoPageState extends State<_VideoPage> with SingleTickerProviderStateMi
     );
   }
 
-  Widget _action(IconData icon, String label, {Color color = Colors.white, bool flip = false, VoidCallback? onTap}) {
+  Widget _action(IconData icon, String label,
+      {Color color = Colors.white,
+      bool flip = false,
+      VoidCallback? onTap,
+      double scale = 1}) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: EdgeInsets.only(bottom: 16 * scale),
       child: GestureDetector(
         onTap: onTap,
         behavior: HitTestBehavior.opaque,
         child: Column(
           children: [
-            Transform.scale(scaleX: flip ? -1 : 1, child: Icon(icon, size: 34, color: color, shadows: _shadow)),
-            const SizedBox(height: 2),
-            Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, shadows: _shadow)),
+            Transform.scale(
+                scaleX: flip ? -1 : 1,
+                child: Icon(icon,
+                    size: 34 * scale, color: color, shadows: _shadow)),
+            SizedBox(height: 2 * scale),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 12 * scale,
+                    fontWeight: FontWeight.w600,
+                    shadows: _shadow)),
           ],
         ),
       ),

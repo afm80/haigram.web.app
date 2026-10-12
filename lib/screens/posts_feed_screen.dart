@@ -105,7 +105,7 @@ class _FeedListState extends State<_FeedList> {
                   return EmptyState(
                     icon: Icons.photo_library_outlined,
                     title: widget.onlyFollowing ? 'منشورات أتابعهم ستظهر هنا' : 'لا توجد منشورات بعد',
-                    message: widget.onlyFollowing ? 'تابع حسابات لتبقى على اطلاع بآخر صورهم وقصصهم.' : 'شارك أول صورة أو خاطرة مع مجتمع Haigram.',
+                    message: widget.onlyFollowing ? 'تابع حسابات لتبقى على اطلاع بآخر صورهم وقصصهم.' : 'شارك أول صورة أو خاطرة مع مجتمعنا.',
                   );
                 }
                 return PostCard(post: list[i - 1]);

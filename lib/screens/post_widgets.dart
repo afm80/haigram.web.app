@@ -38,8 +38,11 @@ class _PostCardState extends State<PostCard> {
   }
 
   Future<void> _copyLink() async {
-    await Clipboard.setData(ClipboardData(text: UserService.linkFor(widget.post.username)));
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم نسخ الرابط')));
+    await Clipboard.setData(
+        ClipboardData(text: UserService.linkFor(widget.post.username)));
+    if (mounted)
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('تم نسخ الرابط')));
   }
 
   Future<void> _confirmDelete() async {
@@ -49,7 +52,9 @@ class _PostCardState extends State<PostCard> {
         title: const Text('حذف المنشور؟'),
         content: const Text('لا يمكن التراجع عن هذا الإجراء.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('إلغاء')),
           TextButton(
               onPressed: () => Navigator.pop(ctx, true),
               child: const Text('حذف')),
@@ -84,16 +89,37 @@ class _PostCardState extends State<PostCard> {
                       padding: const EdgeInsets.all(24),
                       alignment: Alignment.center,
                       decoration: const BoxDecoration(
-                        gradient: LinearGradient(colors: [Color(0xFF7C2D12), Color(0xFF431407)], begin: Alignment.topRight, end: Alignment.bottomLeft),
+                        gradient: LinearGradient(
+                            colors: [Color(0xFF7C2D12), Color(0xFF431407)],
+                            begin: Alignment.topRight,
+                            end: Alignment.bottomLeft),
                       ),
-                      child: Text.rich(_captionSpans(p.caption, const TextStyle(fontSize: 20, height: 1.5, fontWeight: FontWeight.w600)), textAlign: TextAlign.center),
+                      child: Text.rich(
+                          _captionSpans(
+                              p.caption,
+                              const TextStyle(
+                                  fontSize: 20,
+                                  height: 1.5,
+                                  fontWeight: FontWeight.w600)),
+                          textAlign: TextAlign.center),
                     )
                   else
                     LayoutBuilder(
-                      builder: (context, c) => ConstrainedBox(
-                        constraints: BoxConstraints(maxHeight: c.maxWidth * 1.25),
-                        child: PostImage(post: p),
-                      ),
+                      builder: (context, c) {
+                        final mediaHeight =
+                            (MediaQuery.sizeOf(context).height * 0.62)
+                                .clamp(1.0, c.maxWidth * 1.25)
+                                .toDouble();
+                        return SizedBox(
+                          width: double.infinity,
+                          height: mediaHeight,
+                          child: PostImage(
+                            post: p,
+                            fit: BoxFit.contain,
+                            height: mediaHeight,
+                          ),
+                        );
+                      },
                     ),
                   AnimatedScale(
                     scale: _heart ? 1 : 0.3,
@@ -101,7 +127,8 @@ class _PostCardState extends State<PostCard> {
                     child: AnimatedOpacity(
                       opacity: _heart ? 1 : 0,
                       duration: const Duration(milliseconds: 200),
-                      child: const Icon(Icons.favorite_rounded, size: 100, color: Colors.white),
+                      child: const Icon(Icons.favorite_rounded,
+                          size: 100, color: Colors.white),
                     ),
                   ),
                 ],
@@ -113,7 +140,8 @@ class _PostCardState extends State<PostCard> {
         if (p.likes > 0)
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
-            child: Text('${p.likes} إعجاب', style: const TextStyle(fontWeight: FontWeight.w700)),
+            child: Text('${p.likes} إعجاب',
+                style: const TextStyle(fontWeight: FontWeight.w700)),
           ),
         if (!isText && p.caption.isNotEmpty)
           Padding(
@@ -124,7 +152,8 @@ class _PostCardState extends State<PostCard> {
                   TextSpan(
                     text: '${p.username} ',
                     style: const TextStyle(fontWeight: FontWeight.w700),
-                    recognizer: TapGestureRecognizer()..onTap = () => openProfile(context, p.uid),
+                    recognizer: TapGestureRecognizer()
+                      ..onTap = () => openProfile(context, p.uid),
                   ),
                   ..._captionSpans(p.caption, null).children!,
                 ],
@@ -137,14 +166,17 @@ class _PostCardState extends State<PostCard> {
           child: GestureDetector(
             onTap: () => showCommentsSheet(context, p),
             child: Text(
-              p.comments > 0 ? 'عرض كل ${p.comments} تعليقات' : 'أضف تعليقاً...',
+              p.comments > 0
+                  ? 'عرض كل ${p.comments} تعليقات'
+                  : 'أضف تعليقاً...',
               style: TextStyle(color: context.appColors.textDim, fontSize: 14),
             ),
           ),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(14, 4, 14, 18),
-          child: Text(timeAgo(p.createdAt), style: TextStyle(color: context.appColors.textDim, fontSize: 11)),
+          child: Text(timeAgo(p.createdAt),
+              style: TextStyle(color: context.appColors.textDim, fontSize: 11)),
         ),
       ],
     );
@@ -162,7 +194,9 @@ class _PostCardState extends State<PostCard> {
               children: [
                 UserAvatar(uid: p.uid, fallbackName: p.username, radius: 17),
                 const SizedBox(width: 10),
-                Text(p.username, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                Text(p.username,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 14)),
               ],
             ),
           ),
@@ -175,7 +209,8 @@ class _PostCardState extends State<PostCard> {
               if (v == 'delete') _confirmDelete();
             },
             itemBuilder: (_) => [
-              const PopupMenuItem(value: 'link', child: Text('نسخ رابط الحساب')),
+              const PopupMenuItem(
+                  value: 'link', child: Text('نسخ رابط الحساب')),
               if (mine)
                 const PopupMenuItem(
                     value: 'delete', child: Text('حذف المنشور')),
@@ -232,7 +267,9 @@ class _PostCardState extends State<PostCard> {
               return IconButton(
                 onPressed: () => PostService.toggleSave(p.id, saved),
                 icon: Icon(
-                  saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                  saved
+                      ? Icons.bookmark_rounded
+                      : Icons.bookmark_border_rounded,
                   size: 28,
                   color: context.appColors.text,
                 ),
@@ -250,10 +287,10 @@ TextSpan _captionSpans(String text, TextStyle? style) {
   final spans = <InlineSpan>[];
   var last = 0;
   for (final m in RegExp(r'#[\p{L}\p{N}_]+', unicode: true).allMatches(text)) {
-    if (m.start > last) spans.add(TextSpan(text: text.substring(last, m.start)));
+    if (m.start > last)
+      spans.add(TextSpan(text: text.substring(last, m.start)));
     spans.add(TextSpan(
-        text: m.group(0),
-        style: const TextStyle(fontWeight: FontWeight.w600)));
+        text: m.group(0), style: const TextStyle(fontWeight: FontWeight.w600)));
     last = m.end;
   }
   if (last < text.length) spans.add(TextSpan(text: text.substring(last)));
@@ -275,7 +312,8 @@ class PostDetailScreen extends StatelessWidget {
           initialData: post,
           builder: (context, snap) {
             final live = snap.data;
-            if (live == null) return const Center(child: Text('هذا المنشور لم يعد متاحاً'));
+            if (live == null)
+              return const Center(child: Text('هذا المنشور لم يعد متاحاً'));
             return ListView(children: [PostCard(post: live)]);
           },
         ),
@@ -289,20 +327,26 @@ class PostImage extends StatelessWidget {
   final Post post;
   final BoxFit fit;
   final double? height;
-  const PostImage({super.key, required this.post, this.fit = BoxFit.cover, this.height});
+  const PostImage(
+      {super.key, required this.post, this.fit = BoxFit.cover, this.height});
 
   @override
   Widget build(BuildContext context) {
-    final loading = SizedBox(height: height ?? 240, child: const Center(child: CircularProgressIndicator()));
+    final loading = SizedBox(
+        height: height ?? 240,
+        child: const Center(child: CircularProgressIndicator()));
     final broken = SizedBox(
       height: height ?? 120,
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.broken_image_outlined, color: context.appColors.textDim, size: 30),
+            Icon(Icons.broken_image_outlined,
+                color: context.appColors.textDim, size: 30),
             SizedBox(height: 6),
-            Text('تعذر تحميل الصورة', style: TextStyle(color: context.appColors.textDim, fontSize: 12)),
+            Text('تعذر تحميل الصورة',
+                style:
+                    TextStyle(color: context.appColors.textDim, fontSize: 12)),
           ],
         ),
       ),
@@ -323,7 +367,11 @@ class PostImage extends StatelessWidget {
       builder: (_, s) {
         if (s.hasError) return broken;
         if (!s.hasData) return loading;
-        return Image.memory(s.data!, width: double.infinity, height: height, fit: fit, gaplessPlayback: true);
+        return Image.memory(s.data!,
+            width: double.infinity,
+            height: height,
+            fit: fit,
+            gaplessPlayback: true);
       },
     );
   }
