@@ -135,8 +135,11 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final navForeground = isDark ? Colors.white : Colors.black;
-    final navInactive = isDark ? Colors.white60 : Colors.black54;
+    final videoTabSelected = _index == 0;
+    final navForeground =
+        videoTabSelected || isDark ? Colors.white : Colors.black;
+    final navInactive =
+        videoTabSelected || isDark ? Colors.white70 : Colors.black54;
 
     return Scaffold(
       extendBody: true,

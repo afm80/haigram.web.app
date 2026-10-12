@@ -358,6 +358,179 @@ class SoundScreen extends StatelessWidget {
   }
 }
 
+class _VideoScrubber extends StatefulWidget {
+  final VideoPlayerController controller;
+
+  const _VideoScrubber({required this.controller});
+
+  @override
+  State<_VideoScrubber> createState() => _VideoScrubberState();
+}
+
+class _VideoScrubberState extends State<_VideoScrubber> {
+  bool _dragging = false;
+  double? _scrubProgress;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onVideoChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _VideoScrubber oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onVideoChanged);
+      widget.controller.addListener(_onVideoChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onVideoChanged);
+    super.dispose();
+  }
+
+  void _onVideoChanged() {
+    if (mounted) setState(() {});
+  }
+
+  double _progress(Duration value, Duration duration) {
+    if (duration.inMicroseconds <= 0) return 0;
+    return (value.inMicroseconds / duration.inMicroseconds)
+        .clamp(0.0, 1.0)
+        .toDouble();
+  }
+
+  void _seekTo(double localX, double width, {bool dragging = false}) {
+    if (width <= 0) return;
+    final duration = widget.controller.value.duration;
+    if (duration.inMicroseconds <= 0) return;
+    final ratio = (localX / width).clamp(0.0, 1.0);
+    if (dragging) {
+      setState(() {
+        _dragging = true;
+        _scrubProgress = ratio;
+      });
+    }
+    unawaited(widget.controller.seekTo(
+      Duration(microseconds: (duration.inMicroseconds * ratio).round()),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final value = widget.controller.value;
+    final played = _progress(value.position, value.duration);
+    final displayProgress = _scrubProgress ?? played;
+    final buffered = value.buffered.fold<double>(
+      displayProgress,
+      (furthest, range) => _progress(range.end, value.duration) > furthest
+          ? _progress(range.end, value.duration)
+          : furthest,
+    );
+
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: LayoutBuilder(
+        builder: (context, constraints) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (details) =>
+              _seekTo(details.localPosition.dx, constraints.maxWidth),
+          onHorizontalDragStart: (details) {
+            _seekTo(details.localPosition.dx, constraints.maxWidth,
+                dragging: true);
+          },
+          onHorizontalDragUpdate: (details) => _seekTo(
+              details.localPosition.dx, constraints.maxWidth,
+              dragging: true),
+          onHorizontalDragEnd: (_) => setState(() {
+            _dragging = false;
+            _scrubProgress = null;
+          }),
+          onHorizontalDragCancel: () => setState(() {
+            _dragging = false;
+            _scrubProgress = null;
+          }),
+          child: SizedBox(
+            height: 30,
+            child: Center(
+              child: SizedBox(
+                height: 18,
+                child: Stack(
+                  alignment: Alignment.centerLeft,
+                  children: [
+                    Positioned.fill(
+                      child: Center(
+                        child: Container(
+                          height: _dragging ? 5 : 3,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.38),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ),
+                    ),
+                    FractionallySizedBox(
+                      widthFactor: buffered,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          height: 3,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.52),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ),
+                    ),
+                    FractionallySizedBox(
+                      widthFactor: displayProgress,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          height: _dragging ? 5 : 3,
+                          decoration: BoxDecoration(
+                            color: AppColors.brandRed,
+                            borderRadius: BorderRadius.circular(4),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Colors.black38,
+                                blurRadius: 3,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment(displayProgress * 2 - 1, 0),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 120),
+                        width: _dragging ? 12 : 8,
+                        height: _dragging ? 12 : 8,
+                        decoration: BoxDecoration(
+                          color: AppColors.brandRed,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 1.5),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black45, blurRadius: 4),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// تمرير عمودي لا نهائي مع تشغيل تلقائي.
 class VideoPager extends StatefulWidget {
   final List<Post> posts;
@@ -619,21 +792,11 @@ class _VideoPageState extends State<_VideoPage>
           ),
           if (_ready)
             Positioned(
-              left: 0,
-              right: 0,
+              left: 12,
+              right: 12,
               bottom: widget.bottomBase - 3,
-              child: GestureDetector(
-                onTap: () {},
-                child: VideoProgressIndicator(
-                  _vc!,
-                  allowScrubbing: true,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  colors: VideoProgressColors(
-                    playedColor: AppColors.brandRed,
-                    bufferedColor: Colors.white54,
-                    backgroundColor: Colors.white30,
-                  ),
-                ),
+              child: _VideoScrubber(
+                controller: _vc!,
               ),
             ),
           _bottomInfo(p),
@@ -765,22 +928,46 @@ class _VideoPageState extends State<_VideoPage>
             scale: actionScale,
           ),
           SizedBox(height: 8 * actionScale),
-          Transform.scale(
-            scale: actionScale,
-            child: RotationTransition(
-              turns: _disc,
-              child: Container(
-                width: 44,
-                height: 44,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: SweepGradient(colors: [
-                    AppColors.accent,
-                    AppColors.accent2,
-                    AppColors.accent
-                  ]),
+          Tooltip(
+            message: 'فتح صفحة الصوت',
+            child: Material(
+              color: Colors.transparent,
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: _openSound,
+                child: Padding(
+                  padding: const EdgeInsets.all(3),
+                  child: Transform.scale(
+                    scale: actionScale,
+                    child: RotationTransition(
+                      turns: _disc,
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: const SweepGradient(colors: [
+                            AppColors.accent,
+                            AppColors.accent2,
+                            AppColors.accent
+                          ]),
+                          border: Border.all(
+                              color: Colors.white.withOpacity(0.85), width: 2),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Colors.black45,
+                              blurRadius: 8,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(Icons.music_note_rounded,
+                            size: 22, color: Colors.white),
+                      ),
+                    ),
+                  ),
                 ),
-                child: const Icon(Icons.music_note_rounded, size: 22),
               ),
             ),
           ),
@@ -843,8 +1030,9 @@ class _VideoPageState extends State<_VideoPage>
                     title: Text(saved ? 'إزالة من المحفوظات' : 'حفظ الفيديو'),
                     onTap: () => runAction(
                       () => PostService.toggleSave(post.id, saved),
-                      successMessage:
-                          saved ? 'تمت إزالة الفيديو من المحفوظات' : 'تم حفظ الفيديو',
+                      successMessage: saved
+                          ? 'تمت إزالة الفيديو من المحفوظات'
+                          : 'تم حفظ الفيديو',
                     ),
                   );
                 },
@@ -1075,8 +1263,7 @@ class _VideoPageState extends State<_VideoPage>
                       width: 22,
                       height: 22,
                       decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: AppColors.brandRed),
+                          shape: BoxShape.circle, color: AppColors.brandRed),
                       child: const Icon(Icons.add, size: 16),
                     ),
                   ),
