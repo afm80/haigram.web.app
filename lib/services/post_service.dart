@@ -103,6 +103,16 @@ class PostService {
     return q.limit(limit).snapshots().map((s) => s.docs.map(Post.fromDoc).toList());
   }
 
+  static Stream<List<Post>> profilePosts(String uid, {int limit = 90}) =>
+      _db
+          .collection('posts')
+          .where('type', whereIn: const ['video', 'photo', 'text'])
+          .where('uid', isEqualTo: uid)
+          .orderBy('createdAt', descending: true)
+          .limit(limit)
+          .snapshots()
+          .map((snapshot) => snapshot.docs.map(Post.fromDoc).toList());
+
   static Future<List<Post>> search(String text) async {
     final snap = await _db.collection('posts').orderBy('createdAt', descending: true).limit(150).get();
     final all = snap.docs.map(Post.fromDoc);

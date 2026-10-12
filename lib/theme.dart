@@ -124,6 +124,20 @@ ThemeData buildTheme(Brightness brightness) {
       bodyLarge: TextStyle(color: colors.text),
       bodyMedium: TextStyle(color: colors.text),
     ),
+    iconTheme: IconThemeData(color: colors.text),
+    primaryIconTheme: IconThemeData(color: colors.text),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(foregroundColor: colors.text),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(foregroundColor: colors.text),
+    ),
+    tabBarTheme: TabBarTheme(
+      labelColor: colors.text,
+      unselectedLabelColor: colors.textDim,
+      indicatorColor: colors.text,
+      dividerColor: colors.surfaceHigh,
+    ),
     appBarTheme: AppBarTheme(
       backgroundColor: Colors.transparent,
       elevation: 0,

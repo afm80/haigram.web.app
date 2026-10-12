@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../services/user_service.dart';
@@ -19,6 +20,7 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _register = false;
   bool _obscurePassword = true;
   bool _busy = false;
+  bool _rememberMe = true;
   String? _error;
 
   @override
@@ -86,6 +88,10 @@ class _AuthScreenState extends State<AuthScreen> {
           // يُنشأ ملف المستخدم باسمه المختار (وإن حُجز في الأثناء يُولَّد اسم بديل ويمكن تعديله لاحقاً).
           await UserService.ensureProfile(preferredUsername: username);
         } else {
+          if (kIsWeb) {
+            await auth.setPersistence(
+                _rememberMe ? Persistence.LOCAL : Persistence.SESSION);
+          }
           await auth.signInWithEmailAndPassword(
               email: _email.text.trim(), password: _pass.text);
         }
@@ -93,15 +99,18 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Future<void> _google() => _run(() async {
         // على الويب يعمل popup مباشرة عبر Firebase Auth دون إعداد إضافي.
-        await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider());
+        final auth = FirebaseAuth.instance;
+        if (kIsWeb) {
+          await auth.setPersistence(
+              _rememberMe ? Persistence.LOCAL : Persistence.SESSION);
+        }
+        await auth.signInWithPopup(GoogleAuthProvider());
       });
 
   @override
   Widget build(BuildContext context) {
     final currentTheme = Theme.of(context);
-    final controlColor = currentTheme.brightness == Brightness.dark
-        ? Colors.white
-        : AppPalette.light.text;
+    final controlColor = context.appColors.text;
     final authTheme = currentTheme.copyWith(
       colorScheme: currentTheme.colorScheme.copyWith(primary: controlColor),
       inputDecorationTheme: currentTheme.inputDecorationTheme.copyWith(
@@ -209,6 +218,28 @@ class _AuthScreenState extends State<AuthScreen> {
                               ],
                             ),
                           ),
+                          if (!_register && kIsWeb) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Checkbox(
+                                  value: _rememberMe,
+                                  activeColor: AppColors.accent,
+                                  onChanged: _busy
+                                      ? null
+                                      : (value) => setState(
+                                          () => _rememberMe = value ?? false),
+                                ),
+                                GestureDetector(
+                                  onTap: _busy
+                                      ? null
+                                      : () => setState(
+                                          () => _rememberMe = !_rememberMe),
+                                  child: const Text('تذكرني على هذا الجهاز'),
+                                ),
+                              ],
+                            ),
+                          ],
                           if (_error != null) ...[
                             const SizedBox(height: 14),
                             Container(
@@ -234,8 +265,8 @@ class _AuthScreenState extends State<AuthScreen> {
                           FilledButton(
                             onPressed: _busy ? null : _emailAuth,
                             style: FilledButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: const Color(0xFF1C1B22),
+                              backgroundColor: context.appColors.surfaceHigh,
+                              foregroundColor: context.appColors.text,
                               side: BorderSide(
                                   color: context.appColors.textDim
                                       .withOpacity(0.25)),
@@ -261,9 +292,11 @@ class _AuthScreenState extends State<AuthScreen> {
                             label: const Text('المتابعة بحساب Google'),
                             style: OutlinedButton.styleFrom(
                               minimumSize: const Size.fromHeight(52),
-                              backgroundColor: Colors.white,
-                              foregroundColor: const Color(0xFF1C1B22),
-                              side: const BorderSide(color: Color(0xFFD5D3DB)),
+                              backgroundColor: context.appColors.surfaceHigh,
+                              foregroundColor: context.appColors.text,
+                              side: BorderSide(
+                                  color: context.appColors.textDim
+                                      .withOpacity(0.25)),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16)),
                             ),
