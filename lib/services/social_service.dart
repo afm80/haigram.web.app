@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -6,6 +9,7 @@ class Conversation {
   final List<String> participants;
   final String lastMessage;
   final String lastSenderUid;
+  final String lastMessageId;
   final DateTime updatedAt;
 
   const Conversation({
@@ -13,6 +17,7 @@ class Conversation {
     required this.participants,
     required this.lastMessage,
     required this.lastSenderUid,
+    required this.lastMessageId,
     required this.updatedAt,
   });
 
@@ -28,6 +33,7 @@ class Conversation {
       participants: List<String>.from(data['participants'] as List),
       lastMessage: data['lastMessage'] as String? ?? '',
       lastSenderUid: data['lastSenderUid'] as String? ?? '',
+      lastMessageId: data['lastMessageId'] as String? ?? '',
       updatedAt: updatedAt is Timestamp
           ? updatedAt.toDate()
           : DateTime.fromMillisecondsSinceEpoch(0),
@@ -40,12 +46,20 @@ class ChatMessage {
   final String senderUid;
   final String text;
   final DateTime createdAt;
+  final List<String> deliveredTo;
+  final List<String> readBy;
+  final String kind;
+  final Uint8List? imageBytes;
 
   const ChatMessage({
     required this.id,
     required this.senderUid,
     required this.text,
     required this.createdAt,
+    required this.deliveredTo,
+    required this.readBy,
+    required this.kind,
+    required this.imageBytes,
   });
 
   factory ChatMessage.fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
@@ -58,8 +72,24 @@ class ChatMessage {
       createdAt: createdAt is Timestamp
           ? createdAt.toDate()
           : DateTime.fromMillisecondsSinceEpoch(0),
+      deliveredTo: List<String>.from(data['deliveredTo'] as List? ?? const []),
+      readBy: List<String>.from(data['readBy'] as List? ?? const []),
+      kind: data['kind'] as String? ?? 'text',
+      imageBytes: (data['image'] as Blob?)?.bytes,
     );
   }
+}
+
+class ChatBlockState {
+  final bool blockedByMe;
+  final bool blockedByThem;
+
+  const ChatBlockState({
+    required this.blockedByMe,
+    required this.blockedByThem,
+  });
+
+  bool get blocked => blockedByMe || blockedByThem;
 }
 
 class SocialNotification {
@@ -113,22 +143,138 @@ class SocialService {
   static CollectionReference<Map<String, dynamic>> _notifications(String uid) =>
       _db.collection('users').doc(uid).collection('notifications');
 
+  static DocumentReference<Map<String, dynamic>> _blockRef(
+          String ownerUid, String otherUid) =>
+      _db
+          .collection('userBlocks')
+          .doc(ownerUid)
+          .collection('blocked')
+          .doc(otherUid);
+
+  static Stream<ChatBlockState> blockState(String otherUid) {
+    late final StreamController<ChatBlockState> controller;
+    StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? mineSub;
+    StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? theirsSub;
+    bool? blockedByMe;
+    bool? blockedByThem;
+
+    void emitIfReady() {
+      if (blockedByMe != null && blockedByThem != null) {
+        controller.add(ChatBlockState(
+          blockedByMe: blockedByMe!,
+          blockedByThem: blockedByThem!,
+        ));
+      }
+    }
+
+    controller = StreamController<ChatBlockState>(
+      onListen: () {
+        mineSub = _blockRef(_uid, otherUid).snapshots().listen(
+          (snapshot) {
+            blockedByMe = snapshot.exists;
+            emitIfReady();
+          },
+          onError: controller.addError,
+        );
+        theirsSub = _blockRef(otherUid, _uid).snapshots().listen(
+          (snapshot) {
+            blockedByThem = snapshot.exists;
+            emitIfReady();
+          },
+          onError: controller.addError,
+        );
+      },
+      onCancel: () async {
+        await mineSub?.cancel();
+        await theirsSub?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
+  static Future<bool> isBlockedEither(String otherUid) async {
+    final snapshots = await Future.wait([
+      _blockRef(_uid, otherUid).get(),
+      _blockRef(otherUid, _uid).get(),
+    ]);
+    return snapshots.any((snapshot) => snapshot.exists);
+  }
+
+  static Future<void> setBlocked(String otherUid, bool blocked) async {
+    if (otherUid.isEmpty || otherUid == _uid) {
+      throw ArgumentError.value(otherUid, 'otherUid', 'مستخدم غير صالح');
+    }
+    final reference = _blockRef(_uid, otherUid);
+    if (blocked) {
+      await reference.set({'createdAt': FieldValue.serverTimestamp()});
+    } else {
+      await reference.delete();
+    }
+  }
+
   static Stream<List<Conversation>> conversations() => _chats
           .where('participants', arrayContains: _uid)
           .snapshots()
           .map((snapshot) {
         final items = snapshot.docs.map(Conversation.fromDoc).toList()
           ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+        for (final conversation in items) {
+          if (conversation.lastSenderUid != _uid &&
+              conversation.lastMessageId.isNotEmpty) {
+            unawaited(_markDelivered(
+              conversation.id,
+              conversation.lastMessageId,
+            ));
+          }
+        }
         return items;
       });
 
   static Stream<List<ChatMessage>> messages(String conversationId) => _chats
-      .doc(conversationId)
-      .collection('messages')
-      .orderBy('createdAt')
-      .limitToLast(100)
-      .snapshots()
-      .map((snapshot) => snapshot.docs.map(ChatMessage.fromDoc).toList());
+          .doc(conversationId)
+          .collection('messages')
+          .orderBy('createdAt')
+          .limitToLast(100)
+          .snapshots()
+          .map((snapshot) {
+        final messages = snapshot.docs.map(ChatMessage.fromDoc).toList();
+        unawaited(_markMessagesRead(snapshot.docs));
+        return messages;
+      });
+
+  static Future<void> _markDelivered(
+      String conversationId, String messageId) async {
+    final reference =
+        _chats.doc(conversationId).collection('messages').doc(messageId);
+    final snapshot = await reference.get();
+    final data = snapshot.data();
+    if (data == null || data['senderUid'] == _uid) return;
+    final deliveredTo = List<String>.from(data['deliveredTo'] as List? ?? []);
+    if (deliveredTo.contains(_uid)) return;
+    await reference.update({
+      'deliveredTo': FieldValue.arrayUnion([_uid]),
+    });
+  }
+
+  static Future<void> _markMessagesRead(
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> documents) async {
+    final batch = _db.batch();
+    var hasUpdates = false;
+    for (final document in documents) {
+      final data = document.data();
+      if (data['senderUid'] == _uid) continue;
+      final deliveredTo =
+          List<String>.from(data['deliveredTo'] as List? ?? const []);
+      final readBy = List<String>.from(data['readBy'] as List? ?? const []);
+      if (readBy.contains(_uid) && deliveredTo.contains(_uid)) continue;
+      batch.update(document.reference, {
+        'deliveredTo': FieldValue.arrayUnion([_uid]),
+        'readBy': FieldValue.arrayUnion([_uid]),
+      });
+      hasUpdates = true;
+    }
+    if (hasUpdates) await batch.commit();
+  }
 
   static Future<bool> areMutualFriends(String otherUid) async {
     if (otherUid.isEmpty || otherUid == _uid) return false;
@@ -145,13 +291,21 @@ class SocialService {
           .collection('following')
           .doc(_uid)
           .get(),
+      _blockRef(_uid, otherUid).get(),
+      _blockRef(otherUid, _uid).get(),
     ]);
-    return snapshots.every((snapshot) => snapshot.exists);
+    return snapshots[0].exists &&
+        snapshots[1].exists &&
+        !snapshots[2].exists &&
+        !snapshots[3].exists;
   }
 
   static Future<String> startConversation(String otherUid) async {
     if (otherUid.isEmpty || otherUid == _uid) {
       throw ArgumentError.value(otherUid, 'otherUid', 'مستخدم غير صالح');
+    }
+    if (await isBlockedEither(otherUid)) {
+      throw StateError('لا يمكن بدء محادثة مع مستخدم محظور');
     }
     final participants = [_uid, otherUid]..sort();
     final conversationId =
@@ -173,6 +327,7 @@ class SocialService {
         'participants': participants,
         'lastMessage': '',
         'lastSenderUid': '',
+        'lastMessageId': '',
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -185,9 +340,52 @@ class SocialService {
     if (trimmed.isEmpty || trimmed.length > 2000) {
       throw ArgumentError('يجب أن تكون الرسالة بين حرف واحد و2000 حرف');
     }
+    await _sendChatMessage(conversationId, text: trimmed, kind: 'text');
+  }
 
+  static Future<void> sendSticker(String conversationId, String sticker) async {
+    if (sticker.isEmpty || sticker.length > 24) {
+      throw ArgumentError.value(sticker, 'sticker', 'ملصق غير صالح');
+    }
+    await _sendChatMessage(conversationId, text: sticker, kind: 'sticker');
+  }
+
+  static Future<void> sendImage(
+      String conversationId, Uint8List imageBytes) async {
+    if (imageBytes.isEmpty || imageBytes.length > 700 * 1024) {
+      throw ArgumentError('حجم الصورة يجب ألا يتجاوز 700 كيلوبايت');
+    }
+    await _sendChatMessage(
+      conversationId,
+      text: '📷 صورة',
+      kind: 'image',
+      imageBytes: imageBytes,
+    );
+  }
+
+  static Future<void> _sendChatMessage(
+    String conversationId, {
+    required String text,
+    required String kind,
+    Uint8List? imageBytes,
+  }) async {
     final chat = _chats.doc(conversationId);
     final message = chat.collection('messages').doc();
+    final conversation = await chat.get();
+    if (!conversation.exists) {
+      throw StateError('المحادثة غير موجودة');
+    }
+    final participants =
+        List<String>.from(conversation.data()!['participants'] as List);
+    if (!participants.contains(_uid)) {
+      throw StateError('لا تملك صلاحية إرسال رسالة في هذه المحادثة');
+    }
+    final otherUid =
+        participants.firstWhere((participant) => participant != _uid);
+    if (await isBlockedEither(otherUid)) {
+      throw StateError('لا يمكن إرسال الرسائل بعد الحظر');
+    }
+
     await _db.runTransaction((transaction) async {
       final snapshot = await transaction.get(chat);
       if (!snapshot.exists ||
@@ -195,16 +393,22 @@ class SocialService {
               .contains(_uid)) {
         throw StateError('لا تملك صلاحية إرسال رسالة في هذه المحادثة');
       }
+      final messageData = <String, dynamic>{
+        'senderUid': _uid,
+        'text': text,
+        'kind': kind,
+        'deliveredTo': [_uid],
+        'readBy': [_uid],
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+      if (imageBytes != null) messageData['image'] = Blob(imageBytes);
       transaction.update(chat, {
-        'lastMessage': trimmed,
+        'lastMessage': text,
         'lastSenderUid': _uid,
+        'lastMessageId': message.id,
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      transaction.set(message, {
-        'senderUid': _uid,
-        'text': trimmed,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+      transaction.set(message, messageData);
     });
   }
 

@@ -1,14 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../services/post_service.dart';
+import '../services/presence_service.dart';
 import '../services/social_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
-import 'common_widgets.dart';
 import 'create_flow.dart';
 import 'explore_screen.dart';
 import 'social_screens.dart';
 import 'posts_feed_screen.dart';
+import 'post_widgets.dart' show PostDetailScreen;
 import 'profile_screen.dart';
 import 'video_feed_screen.dart';
 
@@ -52,103 +55,168 @@ class _Tabs extends StatefulWidget {
   State<_Tabs> createState() => _TabsState();
 }
 
-class _TabsState extends State<_Tabs> {
+class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   int _index = 0;
+  bool _appVisible = true;
+  Timer? _presenceHeartbeat;
+  final _selectedTab = ValueNotifier<int>(0);
+  final _tabNavigators =
+      List.generate(7, (_) => GlobalKey<NavigatorState>());
   late final Stream<int> _unreadNotificationCount =
       SocialService.unreadNotificationCount();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _updatePresence(true);
+    _presenceHeartbeat = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _updatePresence(_appVisible),
+    );
     // حذف قصصي المنتهية (أقدم من 24 ساعة) لتوفير الحصة المجانية.
     PostService.cleanupMyExpiredStories().catchError((_) {});
-    // رابط ملف شخصي: https://موقعك/?u=username
-    WidgetsBinding.instance.addPostFrameCallback((_) => _openLinkedProfile());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _openDeepLink());
   }
 
-  Future<void> _openLinkedProfile() async {
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _presenceHeartbeat?.cancel();
+    _updatePresence(false);
+    _selectedTab.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appVisible = state == AppLifecycleState.resumed;
+    _updatePresence(_appVisible);
+  }
+
+  Future<void> _updatePresence(bool online) async {
+    try {
+      await PresenceService.setOnline(online);
+    } catch (error, stackTrace) {
+      debugPrint('Unable to update user presence: $error\n$stackTrace');
+    }
+  }
+
+  Future<void> _openDeepLink() async {
     final u = Uri.base.queryParameters['u'];
-    if (u == null || u.isEmpty) return;
-    final user = await UserService.byUsername(u);
-    if (user != null && mounted) openProfile(context, user.uid);
+    if (u != null && u.isNotEmpty) {
+      final user = await UserService.byUsername(u);
+      if (!mounted || user == null) return;
+      _tabNavigators[0].currentState?.push<void>(
+        MaterialPageRoute(builder: (_) => UserProfileScreen(uid: user.uid)),
+      );
+      return;
+    }
+    final postId = Uri.base.queryParameters['p'];
+    if (postId != null && postId.isNotEmpty) {
+      final post = await PostService.postById(postId);
+      if (!mounted || post == null) return;
+      _tabNavigators[0].currentState?.push<void>(
+        MaterialPageRoute(builder: (_) => PostDetailScreen(post: post)),
+      );
+      return;
+    }
+    final videoId = Uri.base.queryParameters['v'];
+    if (videoId == null || videoId.isEmpty) return;
+    final post = await PostService.postById(videoId);
+    if (!mounted || post == null || post.type != PostType.video) return;
+    _tabNavigators[0].currentState?.push<void>(
+      MaterialPageRoute(
+        builder: (_) => VideoViewerScreen(posts: [post], initialIndex: 0),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final navBackground = isDark ? Colors.black : Colors.white;
     final navForeground = isDark ? Colors.white : Colors.black;
     final navInactive = isDark ? Colors.white60 : Colors.black54;
-    final pages = [
-      VideoFeedScreen(
-          active: _index == 0, onSearch: () => setState(() => _index = 1)),
-      const ExploreScreen(),
-      const PostsFeedScreen(),
-      const SizedBox.shrink(),
-      const InboxScreen(),
-      const NotificationsScreen(),
-      const ProfileScreen(),
-    ];
 
     return Scaffold(
       extendBody: true,
-      body: IndexedStack(index: _index, children: pages),
-      bottomNavigationBar: ColoredBox(
-        color: navBackground,
-        child: Container(
-          decoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(
-                color: isDark ? Colors.white12 : Colors.black12,
-                width: 0.5,
-              ),
-            ),
-          ),
-          child: SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.only(left: 10, right: 10, bottom: 4),
-              child: SizedBox(
-                height: 58,
-                child: Row(
-                  children: [
-                    _navItem(
-                        0, Icons.home_outlined, Icons.home_rounded, 'الرئيسية',
-                        foreground: navForeground, inactive: navInactive),
-                    _navItem(
-                        1, Icons.search_rounded, Icons.search_rounded, 'استكشف',
-                        foreground: navForeground, inactive: navInactive),
-                    _navItem(2, Icons.dynamic_feed_outlined,
-                        Icons.dynamic_feed_rounded, 'المنشورات',
-                        foreground: navForeground, inactive: navInactive),
-                    Expanded(child: Center(child: _createButton())),
-                    _navItem(4, Icons.mail_outline_rounded, Icons.mail_rounded,
-                        'الرسائل',
-                        foreground: navForeground, inactive: navInactive),
-                    StreamBuilder<int>(
-                      stream: _unreadNotificationCount,
-                      builder: (context, snapshot) => _navItem(
-                        5,
-                        Icons.favorite_border_rounded,
-                        Icons.favorite_rounded,
-                        'التنبيهات',
-                        foreground: navForeground,
-                        inactive: navInactive,
-                        badgeCount:
-                            snapshot.hasError ? -1 : (snapshot.data ?? 0),
-                      ),
-                    ),
-                    _navItem(6, Icons.person_outline_rounded,
-                        Icons.person_rounded, 'حسابي',
-                        foreground: navForeground, inactive: navInactive),
-                  ],
-                ),
+      body: IndexedStack(
+        index: _index,
+        children: List.generate(
+          _tabNavigators.length,
+          (tab) => Navigator(
+            key: _tabNavigators[tab],
+            onGenerateRoute: (_) => MaterialPageRoute<void>(
+              builder: (_) => ValueListenableBuilder<int>(
+                valueListenable: _selectedTab,
+                builder: (context, selectedTab, _) =>
+                    _tabPage(tab, selectedTab),
               ),
             ),
           ),
         ),
       ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.only(left: 10, right: 10, bottom: 4),
+          child: SizedBox(
+            height: 58,
+            child: Row(
+              children: [
+                _navItem(
+                    0, Icons.home_outlined, Icons.home_rounded, 'الرئيسية',
+                    foreground: navForeground, inactive: navInactive),
+                _navItem(
+                    1, Icons.search_rounded, Icons.search_rounded, 'استكشف',
+                    foreground: navForeground, inactive: navInactive),
+                _navItem(2, Icons.dynamic_feed_outlined,
+                    Icons.dynamic_feed_rounded, 'المنشورات',
+                    foreground: navForeground, inactive: navInactive),
+                Expanded(child: Center(child: _createButton())),
+                _navItem(4, Icons.mail_outline_rounded, Icons.mail_rounded,
+                    'الرسائل',
+                    foreground: navForeground, inactive: navInactive),
+                StreamBuilder<int>(
+                  stream: _unreadNotificationCount,
+                  builder: (context, snapshot) => _navItem(
+                    5,
+                    Icons.favorite_border_rounded,
+                    Icons.favorite_rounded,
+                    'التنبيهات',
+                    foreground: navForeground,
+                    inactive: navInactive,
+                    badgeCount: snapshot.hasError ? -1 : (snapshot.data ?? 0),
+                  ),
+                ),
+                _navItem(6, Icons.person_outline_rounded, Icons.person_rounded,
+                    'حسابي',
+                    foreground: navForeground, inactive: navInactive),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
+  }
+
+  Widget _tabPage(int tab, int selectedTab) => switch (tab) {
+        0 => VideoFeedScreen(
+            active: selectedTab == 0,
+            onSearch: () => _selectTab(1),
+          ),
+        1 => const ExploreScreen(),
+        2 => const PostsFeedScreen(),
+        3 => const SizedBox.shrink(),
+        4 => const InboxScreen(),
+        5 => const NotificationsScreen(),
+        6 => const ProfileScreen(),
+        _ => const SizedBox.shrink(),
+      };
+
+  void _selectTab(int tab) {
+    setState(() => _index = tab);
+    _selectedTab.value = tab;
   }
 
   Widget _navItem(
@@ -163,7 +231,7 @@ class _TabsState extends State<_Tabs> {
     final selected = _index == i;
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _index = i),
+        onTap: () => _selectTab(i),
         behavior: HitTestBehavior.opaque,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 220),
@@ -227,7 +295,8 @@ class _TabsState extends State<_Tabs> {
 
   Widget _createButton() {
     return GestureDetector(
-      onTap: () => showCreateSheet(context),
+      onTap: () => showCreateSheet(
+          _tabNavigators[_index].currentContext ?? context),
       child: Container(
         width: 54,
         height: 36,

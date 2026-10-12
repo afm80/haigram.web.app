@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/post_service.dart';
+import '../services/presence_service.dart';
 import '../services/social_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
@@ -13,6 +14,7 @@ import 'common_widgets.dart';
 import 'post_widgets.dart';
 import 'social_screens.dart' show ChatScreen;
 import 'video_feed_screen.dart';
+import 'video_thumbnail.dart';
 
 /// تبويب "حسابي": ملفي الشخصي.
 class ProfileScreen extends StatelessWidget {
@@ -258,17 +260,79 @@ class _Header extends StatelessWidget {
 
   Widget _avatar(AppUser u) {
     final image = u.avatarImage;
-    return CircleAvatar(
-      radius: 46,
-      backgroundColor: AppColors.accent,
-      backgroundImage: image,
-      child: image == null
-          ? Text(u.initial,
-              style: const TextStyle(
-                  fontSize: 36,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white))
-          : null,
+    return StreamBuilder<List<StoryGroup>>(
+      stream: PostService.storyGroups(),
+      builder: (context, stories) {
+        final hasStory =
+            stories.data?.any((group) => group.uid == u.uid) ?? false;
+        final avatar = CircleAvatar(
+          radius: hasStory ? 43 : 46,
+          backgroundColor: AppColors.accent,
+          backgroundImage: image,
+          child: image == null
+              ? Text(u.initial,
+                  style: const TextStyle(
+                      fontSize: 36,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white))
+              : null,
+        );
+        return StreamBuilder<bool>(
+          stream: PresenceService.isOnline(u.uid),
+          builder: (context, presence) => SizedBox(
+            width: 96,
+            height: 96,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                if (hasStory)
+                  Container(
+                    width: 96,
+                    height: 96,
+                    padding: const EdgeInsets.all(3),
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: [
+                          Color(0xFFFEDA75),
+                          Color(0xFFFA7E1E),
+                          Color(0xFFD62976),
+                          Color(0xFF962FBF),
+                          Color(0xFF4F5BD5),
+                        ],
+                        begin: Alignment.topRight,
+                        end: Alignment.bottomLeft,
+                      ),
+                    ),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: context.appColors.bg),
+                      child: Center(child: avatar),
+                    ),
+                  )
+                else
+                  avatar,
+                if (presence.data == true)
+                  Positioned(
+                    right: 2,
+                    bottom: 2,
+                    child: Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF31C75A),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                            color: context.appColors.bg, width: 2),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -828,6 +892,7 @@ class _ProfileShareSheetState extends State<_ProfileShareSheet> {
                             uid: friend.uid,
                             fallbackName: friend.username,
                             radius: 21,
+                            showOnline: true,
                           ),
                           title: Text(friend.displayName,
                               maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -1293,32 +1358,33 @@ class _VideoGrid extends StatelessWidget {
               onTap: () => Navigator.of(context).push(MaterialPageRoute(
                   builder: (_) =>
                       VideoViewerScreen(posts: list, initialIndex: i))),
-              child: Container(
-                decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                        colors: [Color(0xFF7C2D12), Color(0xFF431407)],
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter)),
-                child: Stack(
-                  children: [
-                    const Center(
-                        child: Icon(Icons.play_circle_outline_rounded,
-                            size: 34, color: Colors.white54)),
-                    PositionedDirectional(
-                      start: 6,
-                      bottom: 6,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.play_arrow_outlined, size: 18),
-                          Text('${list[i].views}',
-                              style: const TextStyle(
-                                  fontSize: 12, fontWeight: FontWeight.w600)),
-                        ],
-                      ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  VideoThumbnail(post: list[i]),
+                  const Center(
+                    child: Icon(Icons.play_circle_outline_rounded,
+                        size: 34, color: Colors.white70),
+                  ),
+                  PositionedDirectional(
+                    start: 6,
+                    bottom: 6,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.play_arrow_outlined,
+                            size: 18, color: Colors.white),
+                        Text('${list[i].views}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              shadows: [Shadow(blurRadius: 4)],
+                            )),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1388,11 +1454,15 @@ class _PostGrid extends StatelessWidget {
             },
             child: switch (post.type) {
               PostType.photo => PostImage(post: post),
-              PostType.video => Container(
-                  color: context.appColors.surfaceHigh,
-                  child: const Center(
+              PostType.video => Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    VideoThumbnail(post: post),
+                    const Center(
                       child: Icon(Icons.play_circle_outline_rounded,
-                          size: 34, color: Colors.white54)),
+                          size: 34, color: Colors.white70),
+                    ),
+                  ],
                 ),
               _ => Container(
                   color: context.appColors.surfaceHigh,

@@ -48,8 +48,14 @@ void showCreateSheet(BuildContext context) {
               style: const TextStyle(fontSize: 16, color: Colors.white),
             ),
             onTap: () {
-              Navigator.pop(ctx);
-              startCreate(context, kind);
+              final navigator = Navigator.of(ctx);
+              navigator.pop();
+              navigator.push<void>(
+                MaterialPageRoute(
+                  fullscreenDialog: true,
+                  builder: (_) => CaptureScreen(kind: kind),
+                ),
+              );
             },
           );
       return SafeArea(

@@ -108,7 +108,7 @@ class _StoriesBarState extends State<StoriesBar> {
                     height: 22,
                     decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: AppColors.accent,
+                        color: AppColors.brandRed,
                         border:
                             Border.all(color: context.appColors.bg, width: 2)),
                     child: const Icon(Icons.add, size: 15),
@@ -182,7 +182,8 @@ class _StoriesBarState extends State<StoriesBar> {
         decoration:
             BoxDecoration(shape: BoxShape.circle, color: context.appColors.bg),
         padding: const EdgeInsets.all(2),
-        child: UserAvatar(uid: uid, fallbackName: name, radius: 28),
+        child: UserAvatar(
+            uid: uid, fallbackName: name, radius: 28, showOnline: true),
       ),
     );
   }

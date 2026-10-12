@@ -2,9 +2,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../services/post_service.dart';
-import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
 
@@ -37,12 +37,32 @@ class _PostCardState extends State<PostCard> {
     });
   }
 
-  Future<void> _copyLink() async {
-    await Clipboard.setData(
-        ClipboardData(text: UserService.linkFor(widget.post.username)));
+  Future<void> _copyPostLink() async {
+    await Clipboard.setData(ClipboardData(text: PostService.postLink(widget.post)));
     if (mounted)
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('تم نسخ الرابط')));
+          .showSnackBar(const SnackBar(content: Text('تم نسخ رابط المنشور')));
+  }
+
+  Future<void> _sharePost() async {
+    final post = widget.post;
+    final text = [
+      if (post.caption.isNotEmpty) post.caption,
+      'شاهد هذا المنشور على Haigram',
+      PostService.postLink(post),
+    ].join('\n');
+    try {
+      final result = await Share.share(text, subject: 'منشور على Haigram');
+      if (result.status == ShareResultStatus.unavailable) {
+        await _copyPostLink();
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذرت مشاركة المنشور: $error')),
+        );
+      }
+    }
   }
 
   Future<void> _confirmDelete() async {
@@ -205,12 +225,12 @@ class _PostCardState extends State<PostCard> {
             icon: const Icon(Icons.more_horiz_rounded),
             color: context.appColors.surfaceHigh,
             onSelected: (v) {
-              if (v == 'link') _copyLink();
+              if (v == 'link') _copyPostLink();
               if (v == 'delete') _confirmDelete();
             },
             itemBuilder: (_) => [
               const PopupMenuItem(
-                  value: 'link', child: Text('نسخ رابط الحساب')),
+                  value: 'link', child: Text('نسخ رابط المنشور')),
               if (mine)
                 const PopupMenuItem(
                     value: 'delete', child: Text('حذف المنشور')),
@@ -227,6 +247,7 @@ class _PostCardState extends State<PostCard> {
       child: Row(
         children: [
           IconButton(
+            tooltip: 'إعجاب',
             onPressed: () => PostService.toggleLike(p.id, _liked),
             icon: AnimatedScale(
               scale: _liked ? 1.12 : 1,
@@ -244,6 +265,7 @@ class _PostCardState extends State<PostCard> {
             ),
           ),
           IconButton(
+            tooltip: 'التعليقات',
             onPressed: () => showCommentsSheet(context, p),
             icon: Icon(
               Icons.mode_comment_outlined,
@@ -252,7 +274,8 @@ class _PostCardState extends State<PostCard> {
             ),
           ),
           IconButton(
-            onPressed: _copyLink,
+            tooltip: 'مشاركة',
+            onPressed: _sharePost,
             icon: Transform.scale(
               scaleX: -1,
               child: Icon(Icons.send_outlined,
@@ -265,6 +288,7 @@ class _PostCardState extends State<PostCard> {
             builder: (context, s) {
               final saved = s.data ?? false;
               return IconButton(
+                tooltip: saved ? 'إزالة من المحفوظات' : 'حفظ المنشور',
                 onPressed: () => PostService.toggleSave(p.id, saved),
                 icon: Icon(
                   saved

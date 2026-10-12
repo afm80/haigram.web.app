@@ -1,3 +1,4 @@
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../services/social_service.dart';
@@ -61,6 +62,7 @@ class InboxScreen extends StatelessWidget {
                       uid: otherUid,
                       fallbackName: user?.username ?? '',
                       radius: 26,
+                      showOnline: true,
                     ),
                     title: Text(
                       user?.displayName ?? 'مستخدم',
@@ -180,6 +182,7 @@ class _FriendsScreenState extends State<_FriendsScreen> {
                   uid: friend.uid,
                   fallbackName: friend.username,
                   radius: 23,
+                  showOnline: true,
                 ),
                 title: Text(friend.displayName),
                 subtitle: Text('@${friend.username}',
@@ -216,7 +219,31 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final _text = TextEditingController();
+  final _picker = ImagePicker();
+  late final Stream<ChatBlockState> _blockState;
   bool _sending = false;
+  bool _showStickers = false;
+
+  static const _stickers = [
+    '❤️',
+    '😂',
+    '😍',
+    '🥹',
+    '👍',
+    '👏',
+    '🔥',
+    '🥰',
+    '😎',
+    '🤍',
+    '💯',
+    '🎉',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _blockState = SocialService.blockState(widget.otherUid);
+  }
 
   @override
   void dispose() {
@@ -243,166 +270,439 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _sendSticker(String sticker) async {
+    if (_sending) return;
+    setState(() => _sending = true);
+    try {
+      await SocialService.sendSticker(widget.conversationId, sticker);
+      if (mounted) setState(() => _showStickers = false);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر إرسال الملصق: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    if (_sending) return;
+    try {
+      final image = await _picker.pickImage(
+        source: source,
+        maxWidth: 1280,
+        maxHeight: 1280,
+        imageQuality: 70,
+      );
+      if (image == null) return;
+      final bytes = await image.readAsBytes();
+      if (!mounted) return;
+      setState(() => _sending = true);
+      await SocialService.sendImage(widget.conversationId, bytes);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر إرسال الصورة: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _chooseImageSource() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('اختيار من المعرض'),
+              onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('التقاط صورة'),
+              onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source != null) await _pickImage(source);
+  }
+
+  Future<void> _selectChatAction(String action) async {
+    if (action == 'profile') {
+      openProfile(context, widget.otherUid);
+      return;
+    }
+    if (action == 'block' || action == 'unblock') {
+      final blocking = action == 'block';
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(blocking ? 'حظر المستخدم؟' : 'إلغاء الحظر؟'),
+          content: Text(
+            blocking
+                ? 'لن تتمكن أنت وهذا المستخدم من إرسال الرسائل لبعضكما.'
+                : 'سيتمكن هذا المستخدم من مراسلتك مجدداً.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(blocking ? 'حظر' : 'إلغاء الحظر'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      try {
+        await SocialService.setBlocked(widget.otherUid, blocking);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text(blocking ? 'تم حظر المستخدم' : 'تم إلغاء الحظر')),
+          );
+        }
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('تعذر تحديث الحظر: $error')),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.appColors;
-    return Scaffold(
-      backgroundColor: colors.bg,
-      appBar: AppBar(
-        titleSpacing: 0,
-        title: StreamBuilder<AppUser?>(
-          stream: UserService.profileStream(widget.otherUid),
-          builder: (context, snapshot) {
-            final user = snapshot.data;
-            return Row(
-              children: [
-                UserAvatar(
-                  uid: widget.otherUid,
-                  fallbackName: user?.username ?? '',
-                  radius: 19,
-                ),
-                const SizedBox(width: 10),
-                Flexible(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        user?.displayName ?? 'محادثة',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (user != null)
-                        Text(
-                          '@${user.username}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              color: context.appColors.textDim, fontSize: 12),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: StreamBuilder<List<ChatMessage>>(
-              stream: SocialService.messages(widget.conversationId),
+    return StreamBuilder<ChatBlockState>(
+      stream: _blockState,
+      builder: (context, blockSnapshot) {
+        if (blockSnapshot.hasError) {
+          return Scaffold(
+            backgroundColor: colors.bg,
+            body: _MessageState(
+                message: 'تعذر تحميل حالة الحظر\n${blockSnapshot.error}'),
+          );
+        }
+        final blockState = blockSnapshot.data ??
+            const ChatBlockState(blockedByMe: false, blockedByThem: false);
+        return Scaffold(
+          backgroundColor: colors.bg,
+          appBar: AppBar(
+            titleSpacing: 0,
+            title: StreamBuilder<AppUser?>(
+              stream: UserService.profileStream(widget.otherUid),
               builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return _MessageState(
-                      message: 'تعذر تحميل المحادثة\n${snapshot.error}');
-                }
-                if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final messages = snapshot.data!;
-                if (messages.isEmpty) {
-                  return const _MessageState(
-                    message: 'أرسل أول رسالة لبدء المحادثة',
-                    icon: Icons.waving_hand_outlined,
-                  );
-                }
-                return ListView.builder(
-                  reverse: true,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final message = messages[messages.length - 1 - index];
-                    final mine = message.senderUid == SocialService.currentUid;
-                    return Align(
-                      alignment: mine
-                          ? AlignmentDirectional.centerEnd
-                          : AlignmentDirectional.centerStart,
-                      child: Container(
-                        constraints: BoxConstraints(
-                            maxWidth: MediaQuery.sizeOf(context).width * 0.78),
-                        margin: const EdgeInsets.symmetric(vertical: 4),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: mine ? AppColors.accent : colors.surfaceHigh,
-                          borderRadius: BorderRadiusDirectional.only(
-                            topStart: const Radius.circular(18),
-                            topEnd: const Radius.circular(18),
-                            bottomStart: Radius.circular(mine ? 18 : 4),
-                            bottomEnd: Radius.circular(mine ? 4 : 18),
+                final user = snapshot.data;
+                return Row(
+                  children: [
+                    UserAvatar(
+                      uid: widget.otherUid,
+                      fallbackName: user?.username ?? '',
+                      radius: 19,
+                      showOnline: true,
+                    ),
+                    const SizedBox(width: 10),
+                    Flexible(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            user?.displayName ?? 'محادثة',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
+                          if (user != null)
                             Text(
-                              message.text,
+                              '@${user.username}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                  color: mine ? Colors.white : colors.text),
+                                  color: context.appColors.textDim,
+                                  fontSize: 12),
                             ),
-                            const SizedBox(height: 3),
-                            Text(
-                              timeAgo(message.createdAt),
-                              style: TextStyle(
-                                color: mine
-                                    ? Colors.white70
-                                    : colors.textDim,
-                                fontSize: 10,
-                              ),
-                            ),
-                          ],
-                        ),
+                        ],
                       ),
-                    );
-                  },
+                    ),
+                  ],
                 );
               },
             ),
-          ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _text,
-                      minLines: 1,
-                      maxLines: 4,
-                      maxLength: 2000,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => _send(),
-                      decoration: const InputDecoration(
-                        hintText: 'اكتب رسالة...',
-                        counterText: '',
-                        isDense: true,
-                      ),
+            actions: [
+              PopupMenuButton<String>(
+                tooltip: 'خيارات المحادثة',
+                onSelected: _selectChatAction,
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'profile',
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.person_outline),
+                      title: Text('عرض الملف الشخصي'),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    onPressed: _sending ? null : _send,
-                    style:
-                        IconButton.styleFrom(backgroundColor: AppColors.accent),
-                    icon: _sending
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.send_rounded, color: Colors.white),
+                  PopupMenuItem(
+                    value: blockState.blockedByMe ? 'unblock' : 'block',
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(blockState.blockedByMe
+                          ? Icons.person_add_alt_1
+                          : Icons.block),
+                      title: Text(blockState.blockedByMe
+                          ? 'إلغاء الحظر'
+                          : 'حظر المستخدم'),
+                    ),
                   ),
                 ],
               ),
-            ),
+            ],
           ),
-        ],
-      ),
+          body: Column(
+            children: [
+              if (blockState.blocked)
+                Container(
+                  width: double.infinity,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  color: colors.surfaceHigh,
+                  child: Text(
+                    blockState.blockedByMe
+                        ? 'حظرت هذا المستخدم. ألغِ الحظر لإرسال الرسائل.'
+                        : 'لا يمكنك مراسلة هذا المستخدم.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: colors.textDim),
+                  ),
+                ),
+              Expanded(
+                child: StreamBuilder<List<ChatMessage>>(
+                  stream: SocialService.messages(widget.conversationId),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return _MessageState(
+                          message: 'تعذر تحميل المحادثة\n${snapshot.error}');
+                    }
+                    if (!snapshot.hasData) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final messages = snapshot.data!;
+                    if (messages.isEmpty) {
+                      return const _MessageState(
+                        message: 'أرسل أول رسالة لبدء المحادثة',
+                        icon: Icons.waving_hand_outlined,
+                      );
+                    }
+                    return ListView.builder(
+                      reverse: true,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
+                      itemCount: messages.length,
+                      itemBuilder: (context, index) {
+                        final message = messages[messages.length - 1 - index];
+                        final mine =
+                            message.senderUid == SocialService.currentUid;
+                        final sticker = message.kind == 'sticker';
+                        return Align(
+                          alignment: mine
+                              ? AlignmentDirectional.centerEnd
+                              : AlignmentDirectional.centerStart,
+                          child: Container(
+                            constraints: BoxConstraints(
+                                maxWidth:
+                                    MediaQuery.sizeOf(context).width * 0.78),
+                            margin: const EdgeInsets.symmetric(vertical: 4),
+                            padding: sticker
+                                ? const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 2)
+                                : const EdgeInsets.symmetric(
+                                    horizontal: 13, vertical: 9),
+                            decoration: sticker
+                                ? null
+                                : BoxDecoration(
+                                    color: mine
+                                        ? const Color(0xFF168CFF)
+                                        : colors.surfaceHigh,
+                                    borderRadius: BorderRadiusDirectional.only(
+                                      topStart: const Radius.circular(18),
+                                      topEnd: const Radius.circular(18),
+                                      bottomStart:
+                                          Radius.circular(mine ? 18 : 4),
+                                      bottomEnd: Radius.circular(mine ? 4 : 18),
+                                    ),
+                                  ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                if (message.kind == 'image' &&
+                                    message.imageBytes != null)
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(13),
+                                    child: Image.memory(
+                                      message.imageBytes!,
+                                      width: 220,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  )
+                                else
+                                  Text(
+                                    message.text,
+                                    style: TextStyle(
+                                      color: mine ? Colors.white : colors.text,
+                                      fontSize: sticker ? 38 : 15,
+                                    ),
+                                  ),
+                                if (!sticker) const SizedBox(height: 3),
+                                if (mine)
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        message.readBy.contains(widget.otherUid)
+                                            ? Icons.done_all_rounded
+                                            : message.deliveredTo
+                                                    .contains(widget.otherUid)
+                                                ? Icons.done_all_rounded
+                                                : Icons.done_rounded,
+                                        size: 14,
+                                        color: message.readBy
+                                                .contains(widget.otherUid)
+                                            ? const Color(0xFF53BDEB)
+                                            : message.deliveredTo
+                                                    .contains(widget.otherUid)
+                                                ? Colors.white70
+                                                : Colors.white54,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        timeAgo(message.createdAt),
+                                        style: TextStyle(
+                                          color: mine
+                                              ? Colors.white70
+                                              : colors.textDim,
+                                          fontSize: 10,
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                else
+                                  Text(
+                                    timeAgo(message.createdAt),
+                                    style: TextStyle(
+                                      color: colors.textDim,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+              if (!blockState.blocked) ...[
+                if (_showStickers)
+                  Container(
+                    height: 112,
+                    color: colors.surface,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                    child: GridView.count(
+                      crossAxisCount: 6,
+                      mainAxisSpacing: 6,
+                      crossAxisSpacing: 8,
+                      children: [
+                        for (final sticker in _stickers)
+                          InkWell(
+                            onTap:
+                                _sending ? null : () => _sendSticker(sticker),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Center(
+                              child: Text(sticker,
+                                  style: const TextStyle(fontSize: 27)),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 7, 8, 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        IconButton(
+                          tooltip: 'إرسال صورة أو التقاط صورة',
+                          onPressed: _sending ? null : _chooseImageSource,
+                          icon: const Icon(Icons.add_circle_outline_rounded),
+                        ),
+                        IconButton(
+                          tooltip: 'الملصقات والرموز التعبيرية',
+                          onPressed: () =>
+                              setState(() => _showStickers = !_showStickers),
+                          icon: Icon(
+                            _showStickers
+                                ? Icons.keyboard_rounded
+                                : Icons.emoji_emotions_outlined,
+                          ),
+                        ),
+                        Expanded(
+                          child: TextField(
+                            controller: _text,
+                            minLines: 1,
+                            maxLines: 4,
+                            maxLength: 2000,
+                            textInputAction: TextInputAction.send,
+                            onSubmitted: (_) => _send(),
+                            onTap: () {
+                              if (_showStickers) {
+                                setState(() => _showStickers = false);
+                              }
+                            },
+                            decoration: const InputDecoration(
+                              hintText: 'اكتب رسالة...',
+                              counterText: '',
+                              isDense: true,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        IconButton.filled(
+                          onPressed: _sending ? null : _send,
+                          style: IconButton.styleFrom(
+                              backgroundColor: AppColors.accent),
+                          icon: _sending
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Colors.white))
+                              : const Icon(Icons.send_rounded,
+                                  color: Colors.white),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 }

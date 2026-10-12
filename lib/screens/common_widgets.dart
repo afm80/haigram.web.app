@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/post_service.dart';
+import '../services/presence_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
 import 'post_widgets.dart' show timeAgo;
@@ -19,13 +20,15 @@ class UserAvatar extends StatelessWidget {
   final String fallbackName;
   final double radius;
   final VoidCallback? onTap;
+  final bool showOnline;
 
   const UserAvatar(
       {super.key,
       required this.uid,
       this.fallbackName = '',
       this.radius = 20,
-      this.onTap});
+      this.onTap,
+      this.showOnline = false});
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +42,7 @@ class UserAvatar extends StatelessWidget {
           final label = u != null
               ? u.initial
               : (fallbackName.isNotEmpty ? fallbackName[0].toUpperCase() : '?');
-          return CircleAvatar(
+          final avatar = CircleAvatar(
             radius: radius,
             backgroundColor: AppColors.accent,
             backgroundImage: image,
@@ -50,6 +53,33 @@ class UserAvatar extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                         color: Colors.white))
                 : null,
+          );
+          if (!showOnline || uid.isEmpty) return avatar;
+          return StreamBuilder<bool>(
+            stream: PresenceService.isOnline(uid),
+            builder: (context, presence) => Stack(
+              clipBehavior: Clip.none,
+              children: [
+                avatar,
+                if (presence.data == true)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: radius * 0.48,
+                      height: radius * 0.48,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF31C75A),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: context.appColors.bg,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           );
         },
       ),

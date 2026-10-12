@@ -189,6 +189,9 @@ class PostService {
     return snapshot.exists ? Post.fromDoc(snapshot) : null;
   }
 
+  static String postLink(Post post) =>
+      Uri.base.replace(path: '/', queryParameters: {'p': post.id}).toString();
+
   static Stream<List<Post>> videosWithSound(Post sound) => _db
           .collection('posts')
           .where('soundPostId', isEqualTo: sound.id)
@@ -249,6 +252,35 @@ class PostService {
       }
       return b.toBytes();
     });
+  }
+
+  static Future<Uint8List> videoBytes(Post post) async {
+    if (!post.isVideoMedia) {
+      throw ArgumentError.value(post.id, 'post', 'المنشور ليس فيديو');
+    }
+    if (post.mediaId != null) return mediaBytes(post);
+    final url = post.mediaUrl;
+    if (url == null || url.isEmpty) {
+      throw StateError('ملف الفيديو غير متاح للتنزيل');
+    }
+    final bytes = await _storage
+        .refFromURL(url)
+        .getData(300 * 1024 * 1024);
+    if (bytes == null) throw StateError('تعذر تنزيل بيانات الفيديو');
+    return bytes;
+  }
+
+  static Future<void> addVideoToStory(Post post) async {
+    final bytes = await videoBytes(post);
+    final extension = post.mime.split('/').last.split(';').first;
+    await publishMedia(
+      PostType.story,
+      bytes,
+      mime: post.mime,
+      ext: extension,
+      caption: 'فيديو تمت مشاركته من @${post.username}',
+      onProgress: (_) {},
+    );
   }
 
   /// رابط قابل للتشغيل في video_player (رابط Storage أو رابط blob محلي).
