@@ -18,7 +18,8 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(child: ProfileView(uid: PostService.uidOrEmpty, isMe: true));
+    return SafeArea(
+        child: ProfileView(uid: PostService.uidOrEmpty, isMe: true));
   }
 }
 
@@ -34,7 +35,9 @@ class UserProfileScreen extends StatelessWidget {
       appBar: AppBar(
         title: FutureBuilder<AppUser?>(
           future: UserService.profileOf(uid),
-          builder: (_, s) => Text(s.data?.username ?? '', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+          builder: (_, s) => Text(s.data?.username ?? '',
+              style:
+                  const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
         ),
       ),
       body: SafeArea(child: ProfileView(uid: uid, isMe: isMe)),
@@ -63,7 +66,8 @@ class ProfileView extends StatelessWidget {
           SliverToBoxAdapter(child: _Header(uid: uid, isMe: isMe)),
           SliverPersistentHeader(
             pinned: true,
-            delegate: _TabsDelegate(TabBar(indicatorColor: Colors.white, tabs: tabs)),
+            delegate:
+                _TabsDelegate(TabBar(indicatorColor: Colors.white, tabs: tabs)),
           ),
         ],
         body: TabBarView(
@@ -88,7 +92,9 @@ class _TabsDelegate extends SliverPersistentHeaderDelegate {
   @override
   double get maxExtent => tabBar.preferredSize.height;
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) => ColoredBox(color: context.appColors.bg, child: tabBar);
+  Widget build(
+          BuildContext context, double shrinkOffset, bool overlapsContent) =>
+      ColoredBox(color: context.appColors.bg, child: tabBar);
   @override
   bool shouldRebuild(covariant _TabsDelegate old) => false;
 }
@@ -108,10 +114,15 @@ class _Header extends StatelessWidget {
           if (snap.hasError) {
             return Padding(
               padding: const EdgeInsets.all(32),
-              child: EmptyState(icon: Icons.person_off_outlined, title: 'تعذر تحميل الملف الشخصي', message: '${snap.error}'),
+              child: EmptyState(
+                  icon: Icons.person_off_outlined,
+                  title: 'تعذر تحميل الملف الشخصي',
+                  message: '${snap.error}'),
             );
           }
-          return const Padding(padding: EdgeInsets.all(48), child: AppLoading(message: 'جارٍ تحميل الملف الشخصي...'));
+          return const Padding(
+              padding: EdgeInsets.all(48),
+              child: AppLoading(message: 'جارٍ تحميل الملف الشخصي...'));
         }
         return Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -132,26 +143,37 @@ class _Header extends StatelessWidget {
               _avatar(u),
               const SizedBox(height: 12),
               // الاسم (عريض) ← اسم المستخدم ← الرابط ← النبذة
-              Text(u.displayName, textAlign: TextAlign.center, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+              Text(u.displayName,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontSize: 20, fontWeight: FontWeight.w800)),
               const SizedBox(height: 2),
-              Text('@${u.username}', style: TextStyle(fontSize: 15, color: context.appColors.textDim)),
+              Text('@${u.username}',
+                  style: TextStyle(
+                      fontSize: 15, color: context.appColors.textDim)),
               const SizedBox(height: 4),
               GestureDetector(
                 onTap: () async {
                   await Clipboard.setData(ClipboardData(text: u.link));
-                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم نسخ رابط الملف الشخصي')));
+                  if (context.mounted)
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('تم نسخ رابط الملف الشخصي')));
                 },
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.link_rounded, size: 16, color: Color(0xFFA78BFA)),
+                    const Icon(Icons.link_rounded,
+                        size: 16, color: AppColors.accent2),
                     const SizedBox(width: 4),
                     Flexible(
                       child: Text(
                         u.shortLink,
                         textDirection: TextDirection.ltr,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 13, color: Color(0xFFA78BFA), fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                            fontSize: 13,
+                            color: AppColors.accent2,
+                            fontWeight: FontWeight.w600),
                       ),
                     ),
                   ],
@@ -159,7 +181,9 @@ class _Header extends StatelessWidget {
               ),
               if (u.bio.trim().isNotEmpty) ...[
                 const SizedBox(height: 10),
-                Text(u.bio, textAlign: TextAlign.center, style: const TextStyle(fontSize: 14, height: 1.45)),
+                Text(u.bio,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 14, height: 1.45)),
               ],
               const SizedBox(height: 16),
               Row(
@@ -167,9 +191,11 @@ class _Header extends StatelessWidget {
                 children: [
                   _stat(context, 'منشور', PostService.countPosts(uid)),
                   _divider(),
-                  _stat(context, 'المتابعون', PostService.countFollowers(uid), onTap: () => _showFollowSheet(context, uid, 0)),
+                  _stat(context, 'المتابعون', PostService.countFollowers(uid),
+                      onTap: () => _showFollowSheet(context, uid, 0)),
                   _divider(),
-                  _stat(context, 'أتابع', PostService.countFollowing(uid), onTap: () => _showFollowSheet(context, uid, 1)),
+                  _stat(context, 'أتابع', PostService.countFollowing(uid),
+                      onTap: () => _showFollowSheet(context, uid, 1)),
                   _divider(),
                   _stat(context, 'الإعجابات', PostService.totalLikes(uid)),
                 ],
@@ -189,7 +215,13 @@ class _Header extends StatelessWidget {
       radius: 46,
       backgroundColor: AppColors.accent,
       backgroundImage: image,
-      child: image == null ? Text(u.initial, style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w700, color: Colors.white)) : null,
+      child: image == null
+          ? Text(u.initial,
+              style: const TextStyle(
+                  fontSize: 36,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white))
+          : null,
     );
   }
 
@@ -197,13 +229,19 @@ class _Header extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: _pillButton(context, 'تعديل الملف الشخصي', () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const EditProfileScreen()))),
+          child: _pillButton(
+              context,
+              'تعديل الملف الشخصي',
+              () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => const EditProfileScreen()))),
         ),
         const SizedBox(width: 8),
         Expanded(
           child: _pillButton(context, 'مشاركة الملف', () async {
             await Clipboard.setData(ClipboardData(text: u.link));
-            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم نسخ رابط الملف الشخصي')));
+            if (context.mounted)
+              ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('تم نسخ رابط الملف الشخصي')));
           }),
         ),
       ],
@@ -223,8 +261,11 @@ class _Header extends StatelessWidget {
                 onPressed: () => PostService.toggleFollow(uid, following),
                 style: FilledButton.styleFrom(
                   minimumSize: const Size.fromHeight(40),
-                  backgroundColor: following ? context.appColors.surfaceHigh : AppColors.accent,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  backgroundColor: following
+                      ? context.appColors.surfaceHigh
+                      : AppColors.accent,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
                 ),
                 child: Text(following ? 'أتابعه' : 'متابعة'),
               );
@@ -235,7 +276,9 @@ class _Header extends StatelessWidget {
         Expanded(
           child: _pillButton(context, 'مشاركة', () async {
             await Clipboard.setData(ClipboardData(text: u.link));
-            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم نسخ رابط الملف الشخصي')));
+            if (context.mounted)
+              ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('تم نسخ رابط الملف الشخصي')));
           }),
         ),
       ],
@@ -251,22 +294,32 @@ class _Header extends StatelessWidget {
         minimumSize: const Size.fromHeight(40),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
-      child: Text(text, style: TextStyle(color: context.appColors.text, fontWeight: FontWeight.w600)),
+      child: Text(text,
+          style: TextStyle(
+              color: context.appColors.text, fontWeight: FontWeight.w600)),
     );
   }
 
-  Widget _divider() => Container(width: 1, height: 26, margin: const EdgeInsets.symmetric(horizontal: 12), color: const Color(0x33FFFFFF));
+  Widget _divider() => Container(
+      width: 1,
+      height: 26,
+      margin: const EdgeInsets.symmetric(horizontal: 12),
+      color: const Color(0x33FFFFFF));
 
-  Widget _stat(BuildContext context, String label, Future<int> value, {VoidCallback? onTap}) {
+  Widget _stat(BuildContext context, String label, Future<int> value,
+      {VoidCallback? onTap}) {
     return InkWell(
       onTap: onTap,
       child: Column(
         children: [
           FutureBuilder<int>(
             future: value,
-            builder: (_, s) => Text('${s.data ?? 0}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            builder: (_, s) => Text('${s.data ?? 0}',
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
           ),
-          Text(label, style: TextStyle(color: context.appColors.textDim, fontSize: 12)),
+          Text(label,
+              style: TextStyle(color: context.appColors.textDim, fontSize: 12)),
         ],
       ),
     );
@@ -277,8 +330,10 @@ class _Header extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: context.appColors.surface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (_) => _FollowSheet(uid: uid, initialTab: initialTab, outerContext: context),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (_) =>
+          _FollowSheet(uid: uid, initialTab: initialTab, outerContext: context),
     );
   }
 }
@@ -288,7 +343,10 @@ class _FollowSheet extends StatelessWidget {
   final String uid;
   final int initialTab;
   final BuildContext outerContext;
-  const _FollowSheet({required this.uid, required this.initialTab, required this.outerContext});
+  const _FollowSheet(
+      {required this.uid,
+      required this.initialTab,
+      required this.outerContext});
 
   @override
   Widget build(BuildContext context) {
@@ -300,13 +358,24 @@ class _FollowSheet extends StatelessWidget {
         child: Column(
           children: [
             const SizedBox(height: 8),
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: context.appColors.textDim, borderRadius: BorderRadius.circular(2))),
+            Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: context.appColors.textDim,
+                    borderRadius: BorderRadius.circular(2))),
             const TabBar(tabs: [Tab(text: 'المتابعون'), Tab(text: 'أتابع')]),
             Expanded(
               child: TabBarView(
                 children: [
-                  _UserList(loader: () => PostService.followerIdsOnce(uid), empty: 'لا يوجد متابعون بعد', outerContext: outerContext),
-                  _UserList(loader: () => PostService.followingIdsOnce(uid), empty: 'لا يتابع أحداً بعد', outerContext: outerContext),
+                  _UserList(
+                      loader: () => PostService.followerIdsOnce(uid),
+                      empty: 'لا يوجد متابعون بعد',
+                      outerContext: outerContext),
+                  _UserList(
+                      loader: () => PostService.followingIdsOnce(uid),
+                      empty: 'لا يتابع أحداً بعد',
+                      outerContext: outerContext),
                 ],
               ),
             ),
@@ -321,7 +390,8 @@ class _UserList extends StatefulWidget {
   final Future<List<String>> Function() loader;
   final String empty;
   final BuildContext outerContext;
-  const _UserList({required this.loader, required this.empty, required this.outerContext});
+  const _UserList(
+      {required this.loader, required this.empty, required this.outerContext});
 
   @override
   State<_UserList> createState() => _UserListState();
@@ -344,7 +414,8 @@ class _UserListState extends State<_UserList> {
         Padding(
           padding: const EdgeInsets.all(12),
           child: TextField(
-            decoration: const InputDecoration(hintText: 'بحث', prefixIcon: Icon(Icons.search_rounded)),
+            decoration: const InputDecoration(
+                hintText: 'بحث', prefixIcon: Icon(Icons.search_rounded)),
             onChanged: (v) => setState(() => _q = v.trim().toLowerCase()),
           ),
         ),
@@ -352,9 +423,17 @@ class _UserListState extends State<_UserList> {
           child: FutureBuilder<List<AppUser>>(
             future: _users,
             builder: (context, snap) {
-              if (snap.hasError) return Center(child: Text('تعذر التحميل\n${snap.error}', textAlign: TextAlign.center));
-              if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-              final list = snap.data!.where((u) => u.username.contains(_q) || u.name.toLowerCase().contains(_q)).toList();
+              if (snap.hasError)
+                return Center(
+                    child: Text('تعذر التحميل\n${snap.error}',
+                        textAlign: TextAlign.center));
+              if (!snap.hasData)
+                return const Center(child: CircularProgressIndicator());
+              final list = snap.data!
+                  .where((u) =>
+                      u.username.contains(_q) ||
+                      u.name.toLowerCase().contains(_q))
+                  .toList();
               if (list.isEmpty) return Center(child: Text(widget.empty));
               return ListView.builder(
                 itemCount: list.length,
@@ -366,9 +445,14 @@ class _UserListState extends State<_UserList> {
                       Navigator.pop(context);
                       openProfile(widget.outerContext, u.uid);
                     },
-                    leading: UserAvatar(uid: u.uid, fallbackName: u.username, radius: 22),
-                    title: Text(u.username, style: const TextStyle(fontWeight: FontWeight.w700)),
-                    subtitle: u.name.isEmpty ? null : Text(u.name, style: TextStyle(color: context.appColors.textDim)),
+                    leading: UserAvatar(
+                        uid: u.uid, fallbackName: u.username, radius: 22),
+                    title: Text(u.username,
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: u.name.isEmpty
+                        ? null
+                        : Text(u.name,
+                            style: TextStyle(color: context.appColors.textDim)),
                     trailing: isMe
                         ? null
                         : StreamBuilder<bool>(
@@ -376,10 +460,13 @@ class _UserListState extends State<_UserList> {
                             builder: (context, s) {
                               final following = s.data ?? false;
                               return FilledButton(
-                                onPressed: () => PostService.toggleFollow(u.uid, following),
+                                onPressed: () =>
+                                    PostService.toggleFollow(u.uid, following),
                                 style: FilledButton.styleFrom(
                                   minimumSize: const Size(92, 34),
-                                  backgroundColor: following ? context.appColors.surfaceHigh : AppColors.accent,
+                                  backgroundColor: following
+                                      ? context.appColors.surfaceHigh
+                                      : AppColors.accent,
                                 ),
                                 child: Text(following ? 'أتابعه' : 'متابعة'),
                               );
@@ -406,7 +493,8 @@ class EditProfileScreen extends StatefulWidget {
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
   late final _name = TextEditingController(text: UserService.me?.name ?? '');
-  late final _username = TextEditingController(text: UserService.me?.username ?? '');
+  late final _username =
+      TextEditingController(text: UserService.me?.username ?? '');
   late final _bio = TextEditingController(text: UserService.me?.bio ?? '');
   late String? _photoB64 = UserService.me?.photoB64;
   bool _busy = false;
@@ -415,7 +503,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Future<void> _pickPhoto(ImageSource source) async {
     try {
       // تصغير إلى 320px وجودة 70% فيصبح حجم الصورة بضع عشرات الكيلوبايت.
-      final f = await ImagePicker().pickImage(source: source, maxWidth: 320, maxHeight: 320, imageQuality: 70);
+      final f = await ImagePicker().pickImage(
+          source: source, maxWidth: 320, maxHeight: 320, imageQuality: 70);
       if (f == null) return;
       final Uint8List bytes = await f.readAsBytes();
       if (bytes.length > 150 * 1024) {
@@ -435,7 +524,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: context.appColors.surface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -459,8 +549,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
             if (_photoB64 != null)
               ListTile(
-                leading: const Icon(Icons.delete_outline_rounded, color: AppColors.accent2),
-                title: const Text('إزالة الصورة', style: TextStyle(color: AppColors.accent2)),
+                leading: const Icon(Icons.delete_outline_rounded,
+                    color: AppColors.accent2),
+                title: const Text('إزالة الصورة',
+                    style: TextStyle(color: AppColors.accent2)),
                 onTap: () {
                   Navigator.pop(ctx);
                   setState(() => _photoB64 = null);
@@ -479,7 +571,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (_photoB64 != null && _photoB64!.isNotEmpty) {
       image = MemoryImage(base64Decode(_photoB64!));
     } else if (_photoB64 == null && me?.photoB64 == null) {
-      image = me?.photoUrl != null && me!.photoUrl!.isNotEmpty ? me.avatarImage : null;
+      image = me?.photoUrl != null && me!.photoUrl!.isNotEmpty
+          ? me.avatarImage
+          : null;
     }
     return Column(
       children: [
@@ -491,7 +585,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 radius: 50,
                 backgroundColor: AppColors.accent,
                 backgroundImage: image,
-                child: image == null ? Text(me?.initial ?? '?', style: const TextStyle(fontSize: 38, fontWeight: FontWeight.w700, color: Colors.white)) : null,
+                child: image == null
+                    ? Text(me?.initial ?? '?',
+                        style: const TextStyle(
+                            fontSize: 38,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white))
+                    : null,
               ),
               PositionedDirectional(
                 end: 0,
@@ -499,14 +599,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 child: Container(
                   width: 32,
                   height: 32,
-                  decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accent, border: Border.all(color: context.appColors.bg, width: 2)),
+                  decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.accent,
+                      border:
+                          Border.all(color: context.appColors.bg, width: 2)),
                   child: const Icon(Icons.photo_camera_rounded, size: 17),
                 ),
               ),
             ],
           ),
         ),
-        TextButton(onPressed: _photoMenu, child: const Text('تغيير الصورة الشخصية')),
+        TextButton(
+            onPressed: _photoMenu, child: const Text('تغيير الصورة الشخصية')),
       ],
     );
   }
@@ -523,7 +628,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       _error = null;
     });
     try {
-      await UserService.updateProfile(name: _name.text.trim(), username: username, bio: _bio.text.trim(), photoB64: _photoB64);
+      await UserService.updateProfile(
+          name: _name.text.trim(),
+          username: username,
+          bio: _bio.text.trim(),
+          photoB64: _photoB64);
       if (mounted) Navigator.of(context).pop();
     } on UsernameTaken {
       setState(() {
@@ -546,7 +655,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         actions: [
           TextButton(
             onPressed: _busy ? null : _save,
-            child: const Text('حفظ', style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.w800, fontSize: 16)),
+            child: const Text('حفظ',
+                style: TextStyle(
+                    color: AppColors.accent,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16)),
           ),
         ],
       ),
@@ -558,28 +671,52 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             const SizedBox(height: 12),
             Text('الاسم', style: TextStyle(color: context.appColors.textDim)),
             const SizedBox(height: 6),
-            TextField(controller: _name, maxLength: 50, decoration: const InputDecoration(hintText: 'اسمك كما يظهر لمتابعيك', counterText: '')),
+            TextField(
+                controller: _name,
+                maxLength: 50,
+                decoration: const InputDecoration(
+                    hintText: 'اسمك كما يظهر لمتابعيك', counterText: '')),
             const SizedBox(height: 16),
-            Text('اسم المستخدم', style: TextStyle(color: context.appColors.textDim)),
+            Text('اسم المستخدم',
+                style: TextStyle(color: context.appColors.textDim)),
             const SizedBox(height: 6),
             TextField(
               controller: _username,
               maxLength: 24,
               textDirection: TextDirection.ltr,
               autocorrect: false,
-              decoration: const InputDecoration(hintText: 'username', prefixText: '@', counterText: ''),
+              decoration: const InputDecoration(
+                  hintText: 'username', prefixText: '@', counterText: ''),
             ),
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text('أحرف إنجليزية صغيرة وأرقام و _ و . (3 إلى 24 حرفاً)', style: TextStyle(color: context.appColors.textDim, fontSize: 12)),
+              child: Text('أحرف إنجليزية صغيرة وأرقام و _ و . (3 إلى 24 حرفاً)',
+                  style: TextStyle(
+                      color: context.appColors.textDim, fontSize: 12)),
             ),
             const SizedBox(height: 16),
             Text('النبذة', style: TextStyle(color: context.appColors.textDim)),
             const SizedBox(height: 6),
-            TextField(controller: _bio, minLines: 3, maxLines: 5, maxLength: 150, decoration: const InputDecoration(hintText: 'عرّف بنفسك')),
-            if (_error != null) Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text(_error!, style: const TextStyle(color: AppColors.accent2))),
+            TextField(
+                controller: _bio,
+                minLines: 3,
+                maxLines: 5,
+                maxLength: 150,
+                decoration: const InputDecoration(hintText: 'عرّف بنفسك')),
+            if (_error != null)
+              Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(_error!,
+                      style: const TextStyle(color: AppColors.accent2))),
             const SizedBox(height: 12),
-            FilledButton(onPressed: _busy ? null : _save, child: _busy ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('حفظ')),
+            FilledButton(
+                onPressed: _busy ? null : _save,
+                child: _busy
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('حفظ')),
           ],
         ),
       ),
@@ -598,23 +735,41 @@ class _VideoGrid extends StatelessWidget {
     return StreamBuilder<List<Post>>(
       stream: PostService.stream(PostType.video, uid: uid),
       builder: (context, snap) {
-        if (snap.hasError) return Center(child: Text('تعذر التحميل\n${snap.error}', textAlign: TextAlign.center));
+        if (snap.hasError)
+          return Center(
+              child: Text('تعذر التحميل\n${snap.error}',
+                  textAlign: TextAlign.center));
         if (!snap.hasData) return const AppLoading();
         final list = snap.data!;
         if (list.isEmpty) {
-          return const EmptyState(icon: Icons.play_arrow_rounded, title: 'لا توجد فيديوهات بعد', message: 'ستظهر فيديوهات هذا الحساب هنا.');
+          return const EmptyState(
+              icon: Icons.play_arrow_rounded,
+              title: 'لا توجد فيديوهات بعد',
+              message: 'ستظهر فيديوهات هذا الحساب هنا.');
         }
         return GridView.builder(
           padding: const EdgeInsets.all(2),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, mainAxisSpacing: 2, crossAxisSpacing: 2, childAspectRatio: 9 / 14),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              mainAxisSpacing: 2,
+              crossAxisSpacing: 2,
+              childAspectRatio: 9 / 14),
           itemCount: list.length,
           itemBuilder: (_, i) => GestureDetector(
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => VideoViewerScreen(posts: list, initialIndex: i))),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) =>
+                    VideoViewerScreen(posts: list, initialIndex: i))),
             child: Container(
-              decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF2A1F4D), Color(0xFF3B1D36)], begin: Alignment.topCenter, end: Alignment.bottomCenter)),
+              decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                      colors: [Color(0xFF7C2D12), Color(0xFF431407)],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter)),
               child: Stack(
                 children: [
-                  const Center(child: Icon(Icons.play_circle_outline_rounded, size: 34, color: Colors.white54)),
+                  const Center(
+                      child: Icon(Icons.play_circle_outline_rounded,
+                          size: 34, color: Colors.white54)),
                   PositionedDirectional(
                     start: 6,
                     bottom: 6,
@@ -622,7 +777,9 @@ class _VideoGrid extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Icon(Icons.play_arrow_outlined, size: 18),
-                        Text('${list[i].views}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                        Text('${list[i].views}',
+                            style: const TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w600)),
                       ],
                     ),
                   ),
@@ -645,11 +802,17 @@ class _PhotoGrid extends StatelessWidget {
     return StreamBuilder<List<Post>>(
       stream: PostService.stream(PostType.photo, uid: uid),
       builder: (context, snap) {
-        if (snap.hasError) return Center(child: Text('تعذر التحميل\n${snap.error}', textAlign: TextAlign.center));
+        if (snap.hasError)
+          return Center(
+              child: Text('تعذر التحميل\n${snap.error}',
+                  textAlign: TextAlign.center));
         if (!snap.hasData) return const AppLoading();
         final list = snap.data!;
         if (list.isEmpty) {
-          return const EmptyState(icon: Icons.photo_outlined, title: 'لا توجد صور بعد', message: 'ستظهر الصور والمنشورات المرئية هنا.');
+          return const EmptyState(
+              icon: Icons.photo_outlined,
+              title: 'لا توجد صور بعد',
+              message: 'ستظهر الصور والمنشورات المرئية هنا.');
         }
         return _PostGrid(list: list);
       },
@@ -665,22 +828,29 @@ class _PostGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return GridView.builder(
       padding: const EdgeInsets.all(2),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, mainAxisSpacing: 2, crossAxisSpacing: 2),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3, mainAxisSpacing: 2, crossAxisSpacing: 2),
       itemCount: list.length,
       itemBuilder: (_, i) {
         final p = list[i];
         return GestureDetector(
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PostDetailScreen(post: p))),
+          onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => PostDetailScreen(post: p))),
           child: switch (p.type) {
             PostType.photo => PostImage(post: p, height: 140),
             PostType.video => Container(
                 color: context.appColors.surfaceHigh,
-                child: const Center(child: Icon(Icons.play_circle_outline_rounded, size: 34, color: Colors.white54)),
+                child: const Center(
+                    child: Icon(Icons.play_circle_outline_rounded,
+                        size: 34, color: Colors.white54)),
               ),
             _ => Container(
                 color: context.appColors.surfaceHigh,
                 padding: const EdgeInsets.all(8),
-                child: Text(p.caption, maxLines: 5, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+                child: Text(p.caption,
+                    maxLines: 5,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12)),
               ),
           },
         );
@@ -698,11 +868,17 @@ class _TextList extends StatelessWidget {
     return StreamBuilder<List<Post>>(
       stream: PostService.stream(PostType.text, uid: uid),
       builder: (context, snap) {
-        if (snap.hasError) return Center(child: Text('تعذر التحميل\n${snap.error}', textAlign: TextAlign.center));
+        if (snap.hasError)
+          return Center(
+              child: Text('تعذر التحميل\n${snap.error}',
+                  textAlign: TextAlign.center));
         if (!snap.hasData) return const AppLoading();
         final list = snap.data!;
         if (list.isEmpty) {
-          return const EmptyState(icon: Icons.notes_rounded, title: 'لا توجد خواطر بعد', message: 'ستظهر المنشورات النصية هنا.');
+          return const EmptyState(
+              icon: Icons.notes_rounded,
+              title: 'لا توجد خواطر بعد',
+              message: 'ستظهر المنشورات النصية هنا.');
         }
         return ListView.builder(
           itemCount: list.length,
@@ -721,11 +897,17 @@ class _SavedGrid extends StatelessWidget {
     return StreamBuilder<List<Post>>(
       stream: PostService.savedPosts(),
       builder: (context, snap) {
-        if (snap.hasError) return Center(child: Text('تعذر التحميل\n${snap.error}', textAlign: TextAlign.center));
+        if (snap.hasError)
+          return Center(
+              child: Text('تعذر التحميل\n${snap.error}',
+                  textAlign: TextAlign.center));
         if (!snap.hasData) return const AppLoading();
         final list = snap.data!;
         if (list.isEmpty) {
-          return const EmptyState(icon: Icons.bookmark_border_rounded, title: 'قائمتك المحفوظة فارغة', message: 'احفظ المنشورات التي تريد الرجوع إليها لاحقاً.');
+          return const EmptyState(
+              icon: Icons.bookmark_border_rounded,
+              title: 'قائمتك المحفوظة فارغة',
+              message: 'احفظ المنشورات التي تريد الرجوع إليها لاحقاً.');
         }
         return _PostGrid(list: list);
       },

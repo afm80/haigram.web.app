@@ -82,7 +82,7 @@ class _PostCardState extends State<PostCard> {
                       padding: const EdgeInsets.all(24),
                       alignment: Alignment.center,
                       decoration: const BoxDecoration(
-                        gradient: LinearGradient(colors: [Color(0xFF2A1F4D), Color(0xFF4A2340)], begin: Alignment.topRight, end: Alignment.bottomLeft),
+                        gradient: LinearGradient(colors: [Color(0xFF7C2D12), Color(0xFF431407)], begin: Alignment.topRight, end: Alignment.bottomLeft),
                       ),
                       child: Text.rich(_captionSpans(p.caption, const TextStyle(fontSize: 20, height: 1.5, fontWeight: FontWeight.w600)), textAlign: TextAlign.center),
                     )
@@ -227,7 +227,7 @@ TextSpan _captionSpans(String text, TextStyle? style) {
   var last = 0;
   for (final m in RegExp(r'#[\p{L}\p{N}_]+', unicode: true).allMatches(text)) {
     if (m.start > last) spans.add(TextSpan(text: text.substring(last, m.start)));
-    spans.add(TextSpan(text: m.group(0), style: const TextStyle(color: Color(0xFFA78BFA), fontWeight: FontWeight.w600)));
+    spans.add(TextSpan(text: m.group(0), style: const TextStyle(color: AppColors.accent2, fontWeight: FontWeight.w600)));
     last = m.end;
   }
   if (last < text.length) spans.add(TextSpan(text: text.substring(last)));

@@ -39,10 +39,9 @@ class _PostsFeedScreenState extends State<PostsFeedScreen> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      ShaderMask(
-                        shaderCallback: (r) => const LinearGradient(colors: [AppColors.accent, AppColors.accent2]).createShader(r),
-                        child: const Text('Haigram', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white)),
-                      ),
+                      const HaigramWordmark(
+                          style: TextStyle(
+                              fontSize: 28, fontWeight: FontWeight.w800)),
                       Icon(Icons.keyboard_arrow_down_rounded, size: 22, color: context.appColors.textDim),
                     ],
                   ),

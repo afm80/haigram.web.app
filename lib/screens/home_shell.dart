@@ -158,7 +158,7 @@ class _TabsState extends State<_Tabs> {
             end: Alignment.bottomRight,
           ),
           boxShadow: const [
-            BoxShadow(color: Color(0x55A855F7), blurRadius: 16, offset: Offset(0, 8)),
+            BoxShadow(color: Color(0x55F97316), blurRadius: 16, offset: Offset(0, 8)),
           ],
         ),
         child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),

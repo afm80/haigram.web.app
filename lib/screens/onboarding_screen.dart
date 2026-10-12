@@ -96,7 +96,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   children: [
                     const LamhaLogo(size: 40),
                     const SizedBox(width: 10),
-                    const Text('Haigram',
+                    const HaigramWordmark(
                         style: TextStyle(
                             fontSize: 21, fontWeight: FontWeight.w800)),
                     const Spacer(),

@@ -1,14 +1,39 @@
 import 'package:flutter/material.dart';
 
-/// الهوية البصرية الأصلية لتطبيق Haigram: خلفية داكنة عميقة، تدرجات بنفسجية/ورديّة، وملمس حديث.
+/// لوحة الألوان المشتركة لهوية Haigram البرتقالية.
 class AppColors {
-  static const accent = Color(0xFF8B5CF6);
-  static const accent2 = Color(0xFFFF5BA9);
-  static const accent3 = Color(0xFF7C3AED);
+  static const accent = Color(0xFFF97316);
+  static const accent2 = Color(0xFFFB923C);
+  static const accent3 = Color(0xFFC2410C);
   static const success = Color(0xFF34D399);
 
   static AppPalette forBrightness(Brightness brightness) =>
       brightness == Brightness.dark ? AppPalette.dark : AppPalette.light;
+}
+
+class HaigramWordmark extends StatelessWidget {
+  final TextStyle style;
+
+  const HaigramWordmark({
+    super.key,
+    this.style = const TextStyle(fontWeight: FontWeight.w800),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: 'H', style: style.copyWith(color: AppColors.accent2)),
+          const TextSpan(text: 'ai'),
+          TextSpan(text: 'g', style: style.copyWith(color: AppColors.accent2)),
+          const TextSpan(text: 'ram'),
+        ],
+      ),
+      textDirection: TextDirection.ltr,
+      style: style,
+    );
+  }
 }
 
 class AppPalette {
@@ -72,7 +97,7 @@ ThemeData buildTheme(Brightness brightness) {
   return base.copyWith(
     colorScheme: brightness == Brightness.dark
         ? ColorScheme.dark(
-            primary: AppColors.accent,
+            primary: AppColors.accent3,
             secondary: AppColors.accent2,
             surface: colors.surface,
             onPrimary: Colors.white,
@@ -128,7 +153,7 @@ ThemeData buildTheme(Brightness brightness) {
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        backgroundColor: AppColors.accent,
+        backgroundColor: AppColors.accent3,
         foregroundColor: Colors.white,
         minimumSize: const Size.fromHeight(52),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

@@ -141,7 +141,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         children: [
                           const LamhaLogo(size: 76, monochrome: true),
                           const SizedBox(height: 16),
-                          const Text('Haigram',
+                          const HaigramWordmark(
                               style: TextStyle(
                                   fontSize: 32, fontWeight: FontWeight.w800)),
                           const SizedBox(height: 28),
