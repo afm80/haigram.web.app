@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="description" content="لمحة - فيديوهات قصيرة ومنشورات">
+  <meta name="theme-color" content="#0B0B10">
+
+  <!-- iOS PWA -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="لمحة">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+  <link rel="icon" type="image/png" href="favicon.png"/>
+  <link rel="manifest" href="manifest.json">
+  <title>لمحة</title>
+
+  <style>
+    html, body { margin: 0; height: 100%; background: #0B0B10; overflow: hidden; }
+    #install-banner {
+      display: none; position: fixed; z-index: 99999; left: 12px; right: 12px; bottom: 76px;
+      background: #22222D; color: #fff; border-radius: 16px; padding: 14px 16px;
+      font-family: system-ui, sans-serif; font-size: 14px; line-height: 1.5;
+      box-shadow: 0 8px 30px rgba(0,0,0,.5); align-items: center; gap: 12px;
+    }
+    #install-banner button {
+      border: 0; border-radius: 10px; padding: 9px 14px; font-weight: 700; cursor: pointer;
+    }
+    #install-yes { background: #8B5CF6; color: #fff; }
+    #install-no { background: transparent; color: #9A9AAA; }
+    #install-text { flex: 1; }
+  </style>
+</head>
+<body>
+  <div id="install-banner">
+    <div id="install-text"></div>
+    <button id="install-yes">تثبيت</button>
+    <button id="install-no">لاحقاً</button>
+  </div>
+
+  <script>
+    // ---- نافذة "إضافة إلى الشاشة الرئيسية" ----
+    (function () {
+      var banner = document.getElementById('install-banner');
+      var text = document.getElementById('install-text');
+      var yes = document.getElementById('install-yes');
+      var no = document.getElementById('install-no');
+      var deferred = null;
+
+      var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+      if (standalone || localStorage.getItem('installDismissed')) return;
+
+      function show() { banner.style.display = 'flex'; }
+      function hide() { banner.style.display = 'none'; localStorage.setItem('installDismissed', '1'); }
+      no.onclick = hide;
+
+      // أندرويد / كروم: الحدث الرسمي
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+        deferred = e;
+        text.textContent = 'ثبّت لمحة على شاشتك الرئيسية لتجربة أسرع';
+        yes.style.display = '';
+        setTimeout(show, 2500);
+      });
+      yes.onclick = function () {
+        if (!deferred) return hide();
+        deferred.prompt();
+        deferred.userChoice.finally(function () { deferred = null; hide(); });
+      };
+
+      // آيفون / سفاري: لا يوجد حدث، فنعرض تعليمات يدوية
+      var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+      if (isIOS) {
+        text.innerHTML = 'للتثبيت على آيفون: اضغط زر <b>المشاركة</b> ⬆️ ثم <b>إضافة إلى الشاشة الرئيسية</b>';
+        yes.style.display = 'none';
+        no.textContent = 'حسناً';
+        setTimeout(show, 3500);
+      }
+    })();
+  </script>
+
+  <script src="trim.js"></script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
