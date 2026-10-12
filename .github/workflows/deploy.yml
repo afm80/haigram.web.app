@@ -13,7 +13,7 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: '3.22.0'
           cache: true
 
       # يولّد ملفات منصة الويب الناقصة مع الحفاظ على ملفات web/ الخاصة بنا
