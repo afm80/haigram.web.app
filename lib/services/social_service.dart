@@ -363,6 +363,42 @@ class SocialService {
     );
   }
 
+  static Future<void> deleteMessage(
+      String conversationId, String messageId) async {
+    final chat = _chats.doc(conversationId);
+    final message = chat.collection('messages').doc(messageId);
+    final snapshots = await Future.wait([chat.get(), message.get()]);
+    final chatSnapshot = snapshots[0];
+    final messageSnapshot = snapshots[1];
+    if (!chatSnapshot.exists || !messageSnapshot.exists) {
+      throw StateError('الرسالة غير موجودة');
+    }
+    if (messageSnapshot.data()?['senderUid'] != _uid) {
+      throw StateError('يمكنك حذف رسائلك فقط');
+    }
+
+    final batch = _db.batch();
+    if (chatSnapshot.data()?['lastMessageId'] == messageId) {
+      final recentMessages = await chat
+          .collection('messages')
+          .orderBy('createdAt', descending: true)
+          .limit(2)
+          .get();
+      final previousMessages = recentMessages.docs
+          .where((document) => document.id != messageId);
+      final previous =
+          previousMessages.isEmpty ? null : previousMessages.first;
+      batch.update(chat, {
+        'lastMessage': previous?.data()['text'] ?? '',
+        'lastSenderUid': previous?.data()['senderUid'] ?? '',
+        'lastMessageId': previous?.id ?? '',
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    }
+    batch.delete(message);
+    await batch.commit();
+  }
+
   static Future<void> _sendChatMessage(
     String conversationId, {
     required String text,

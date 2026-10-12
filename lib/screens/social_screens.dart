@@ -1,11 +1,13 @@
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../services/post_service.dart';
 import '../services/social_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
 import 'post_widgets.dart' show timeAgo;
+import 'story_widgets.dart' show StoryViewed, StoryViewer;
 
 class InboxScreen extends StatelessWidget {
   const InboxScreen({super.key});
@@ -27,73 +29,278 @@ class InboxScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: StreamBuilder<List<Conversation>>(
-        stream: SocialService.conversations(),
+      body: StreamBuilder<List<StoryGroup>>(
+        stream: PostService.storyGroups(),
+        builder: (context, storySnapshot) {
+          final stories = storySnapshot.data ?? const <StoryGroup>[];
+          return Column(
+            children: [
+              _FollowingRail(
+                stories: stories,
+                error: storySnapshot.error,
+              ),
+              Expanded(
+                child: StreamBuilder<List<Conversation>>(
+                  stream: SocialService.conversations(),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return _MessageState(
+                          message: 'تعذر تحميل الرسائل\n${snapshot.error}');
+                    }
+                    if (!snapshot.hasData) {
+                      return const Center(
+                          child: CircularProgressIndicator());
+                    }
+                    final conversations = snapshot.data!;
+                    if (conversations.isEmpty) {
+                      return const _MessageState(
+                        message: 'لا توجد محادثات بعد\nابدأ محادثة مع أحد أصدقائك',
+                        icon: Icons.chat_bubble_outline_rounded,
+                      );
+                    }
+                    return ListView.separated(
+                      itemCount: conversations.length,
+                      separatorBuilder: (_, __) => Divider(
+                          height: 1, indent: 76, color: colors.surfaceHigh),
+                      itemBuilder: (context, index) {
+                        final conversation = conversations[index];
+                        final otherUid = conversation
+                            .otherParticipant(SocialService.currentUid);
+                        return FutureBuilder<AppUser?>(
+                          future: UserService.profileOf(otherUid),
+                          builder: (context, userSnapshot) {
+                            final user = userSnapshot.data;
+                            final storyIndex = stories
+                                .indexWhere((group) => group.uid == otherUid);
+                            return ListTile(
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 4),
+                              leading: UserAvatar(
+                                uid: otherUid,
+                                fallbackName: user?.username ?? '',
+                                profile: user,
+                                radius: 26,
+                                showOnline: true,
+                                hasStory: storyIndex >= 0,
+                                storySeen: storyIndex >= 0 &&
+                                    StoryViewed.allSeen(stories[storyIndex]),
+                              ),
+                              title: Text(
+                                user?.displayName ?? 'مستخدم',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700),
+                              ),
+                              subtitle: Text(
+                                conversation.lastMessage.isEmpty
+                                    ? 'ابدأ المحادثة'
+                                    : conversation.lastSenderUid ==
+                                            SocialService.currentUid
+                                        ? 'أنت: ${conversation.lastMessage}'
+                                        : conversation.lastMessage,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(color: colors.textDim),
+                              ),
+                              trailing: conversation
+                                          .updatedAt.millisecondsSinceEpoch ==
+                                      0
+                                  ? null
+                                  : Text(
+                                      timeAgo(conversation.updatedAt),
+                                      style: TextStyle(
+                                          color: colors.textDim, fontSize: 11),
+                                    ),
+                              onTap: () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => ChatScreen(
+                                    conversationId: conversation.id,
+                                    otherUid: otherUid,
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _FollowingRail extends StatefulWidget {
+  final List<StoryGroup> stories;
+  final Object? error;
+
+  const _FollowingRail({required this.stories, this.error});
+
+  @override
+  State<_FollowingRail> createState() => _FollowingRailState();
+}
+
+class _FollowingRailState extends State<_FollowingRail> {
+  late final Stream<List<String>> _following = PostService.followingIds();
+  final Map<String, Future<AppUser?>> _profiles = {};
+
+  Future<AppUser?> _profile(String uid) =>
+      _profiles.putIfAbsent(uid, () => UserService.profileOf(uid));
+
+  Future<void> _openUser(AppUser user) async {
+    final storyIndex =
+        widget.stories.indexWhere((group) => group.uid == user.uid);
+    if (storyIndex >= 0) {
+      await Navigator.of(context).push<void>(
+        PageRouteBuilder(
+          opaque: true,
+          pageBuilder: (_, __, ___) => StoryViewer(
+            groups: widget.stories,
+            initial: storyIndex,
+          ),
+          transitionsBuilder: (_, animation, __, child) =>
+              FadeTransition(opacity: animation, child: child),
+        ),
+      );
+      if (mounted) setState(() {});
+      return;
+    }
+
+    try {
+      if (!await SocialService.areMutualFriends(user.uid)) {
+        if (mounted) openProfile(context, user.uid);
+        return;
+      }
+      final conversationId =
+          await SocialService.startConversation(user.uid);
+      if (!mounted) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(
+            conversationId: conversationId,
+            otherUid: user.uid,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر فتح المحادثة: $error')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 112,
+      child: StreamBuilder<List<String>>(
+        stream: _following,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return _MessageState(
-                message: 'تعذر تحميل الرسائل\n${snapshot.error}');
+            return Center(
+              child: Text(
+                'تعذر تحميل الأشخاص الذين تتابعهم: ${snapshot.error}',
+                style: TextStyle(color: context.appColors.textDim),
+              ),
+            );
           }
           if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(
+              child: SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            );
           }
-          final conversations = snapshot.data!;
-          if (conversations.isEmpty) {
-            return const _MessageState(
-                message: 'لا توجد محادثات بعد\nابدأ محادثة مع أحد أصدقائك',
-                icon: Icons.chat_bubble_outline_rounded);
+          final following = snapshot.data!
+              .where((uid) => uid != SocialService.currentUid)
+              .toList();
+          if (following.isEmpty) {
+            return Center(
+              child: Text(
+                widget.error == null
+                    ? 'تابع أصدقاءك لتظهر حساباتهم هنا'
+                    : 'تعذر تحميل القصص: ${widget.error}',
+                style: TextStyle(color: context.appColors.textDim),
+              ),
+            );
           }
+
           return ListView.separated(
-            itemCount: conversations.length,
-            separatorBuilder: (_, __) =>
-                Divider(height: 1, indent: 76, color: colors.surfaceHigh),
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 12, 4),
+            itemCount: following.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
             itemBuilder: (context, index) {
-              final conversation = conversations[index];
-              final otherUid =
-                  conversation.otherParticipant(SocialService.currentUid);
+              final uid = following[index];
+              final storyIndex =
+                  widget.stories.indexWhere((group) => group.uid == uid);
               return FutureBuilder<AppUser?>(
-                future: UserService.profileOf(otherUid),
+                future: _profile(uid),
                 builder: (context, userSnapshot) {
                   final user = userSnapshot.data;
-                  return ListTile(
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    leading: UserAvatar(
-                      uid: otherUid,
-                      fallbackName: user?.username ?? '',
-                      radius: 26,
-                      showOnline: true,
-                    ),
-                    title: Text(
-                      user?.displayName ?? 'مستخدم',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    subtitle: Text(
-                      conversation.lastMessage.isEmpty
-                          ? 'ابدأ المحادثة'
-                          : conversation.lastSenderUid ==
-                                  SocialService.currentUid
-                              ? 'أنت: ${conversation.lastMessage}'
-                              : conversation.lastMessage,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: colors.textDim),
-                    ),
-                    trailing: conversation.updatedAt.millisecondsSinceEpoch == 0
-                        ? null
-                        : Text(
-                            timeAgo(conversation.updatedAt),
-                            style:
-                                TextStyle(color: colors.textDim, fontSize: 11),
-                          ),
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => ChatScreen(
-                          conversationId: conversation.id,
-                          otherUid: otherUid,
+                  if (userSnapshot.hasError) {
+                    return SizedBox(
+                      width: 68,
+                      child: Center(
+                        child: Icon(
+                          Icons.person_off_outlined,
+                          color: context.appColors.textDim,
                         ),
+                      ),
+                    );
+                  }
+                  if (user == null) {
+                    return const SizedBox(
+                      width: 68,
+                      child: Center(
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    );
+                  }
+                  return SizedBox(
+                    width: 68,
+                    child: InkWell(
+                      onTap: () => _openUser(user),
+                      borderRadius: BorderRadius.circular(16),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          UserAvatar(
+                            uid: uid,
+                            profile: user,
+                            fallbackName: user.username,
+                            radius: 25,
+                            showOnline: true,
+                            hasStory: storyIndex >= 0,
+                            storySeen: storyIndex >= 0 &&
+                                StoryViewed.allSeen(
+                                    widget.stories[storyIndex]),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            user.username,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: context.appColors.text,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   );
@@ -237,6 +444,20 @@ class _ChatScreenState extends State<ChatScreen> {
     '🤍',
     '💯',
     '🎉',
+    '🥳',
+    '😘',
+    '😭',
+    '🙏',
+    '✨',
+    '🫶',
+  ];
+  static const _stickerColors = [
+    Color(0xFFFFE0E8),
+    Color(0xFFFFF0C2),
+    Color(0xFFE4DBFF),
+    Color(0xFFD8F5E8),
+    Color(0xFFDDF2FF),
+    Color(0xFFFFE7D6),
   ];
 
   @override
@@ -383,6 +604,32 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _showMessageActions(ChatMessage message) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: context.appColors.surface,
+      builder: (sheetContext) => SafeArea(
+        child: ListTile(
+          leading: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+          title: const Text('حذف الرسالة'),
+          onTap: () async {
+            Navigator.pop(sheetContext);
+            try {
+              await SocialService.deleteMessage(
+                  widget.conversationId, message.id);
+            } catch (error) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('تعذر حذف الرسالة: $error')),
+                );
+              }
+            }
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.appColors;
@@ -518,7 +765,12 @@ class _ChatScreenState extends State<ChatScreen> {
                           alignment: mine
                               ? AlignmentDirectional.centerEnd
                               : AlignmentDirectional.centerStart,
-                          child: Container(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onLongPress: mine
+                                ? () => _showMessageActions(message)
+                                : null,
+                            child: Container(
                             constraints: BoxConstraints(
                                 maxWidth:
                                     MediaQuery.sizeOf(context).width * 0.78),
@@ -606,6 +858,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                   ),
                               ],
                             ),
+                            ),
                           ),
                         );
                       },
@@ -616,7 +869,7 @@ class _ChatScreenState extends State<ChatScreen> {
               if (!blockState.blocked) ...[
                 if (_showStickers)
                   Container(
-                    height: 112,
+                    height: 150,
                     color: colors.surface,
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 10),
@@ -625,14 +878,24 @@ class _ChatScreenState extends State<ChatScreen> {
                       mainAxisSpacing: 6,
                       crossAxisSpacing: 8,
                       children: [
-                        for (final sticker in _stickers)
+                        for (var i = 0; i < _stickers.length; i++)
                           InkWell(
                             onTap:
-                                _sending ? null : () => _sendSticker(sticker),
+                                _sending
+                                    ? null
+                                    : () => _sendSticker(_stickers[i]),
                             borderRadius: BorderRadius.circular(12),
-                            child: Center(
-                              child: Text(sticker,
-                                  style: const TextStyle(fontSize: 27)),
+                            child: Container(
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: _stickerColors[
+                                    i % _stickerColors.length],
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                _stickers[i],
+                                style: const TextStyle(fontSize: 27),
+                              ),
                             ),
                           ),
                       ],
@@ -652,8 +915,10 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                         IconButton(
                           tooltip: 'الملصقات والرموز التعبيرية',
-                          onPressed: () =>
-                              setState(() => _showStickers = !_showStickers),
+                          onPressed: () {
+                            FocusScope.of(context).unfocus();
+                            setState(() => _showStickers = !_showStickers);
+                          },
                           icon: Icon(
                             _showStickers
                                 ? Icons.keyboard_rounded

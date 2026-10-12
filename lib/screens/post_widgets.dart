@@ -92,7 +92,7 @@ class _PostCardState extends State<PostCard> {
     final isText = p.type == PostType.text;
     final colors = context.appColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final textPostForeground = isDark ? Colors.white : const Color(0xFF352A33);
+    final textPostForeground = colors.text;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

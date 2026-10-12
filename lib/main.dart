@@ -52,7 +52,7 @@ class _HaigramBootstrapState extends State<HaigramBootstrap> {
             debugShowCheckedModeBanner: false,
             theme: buildTheme(Brightness.light),
             darkTheme: buildTheme(Brightness.dark),
-            themeMode: ThemeMode.system,
+            themeMode: ThemeMode.dark,
             home: _StartupErrorScreen(
               error: snapshot.error!,
               onRetry: _retry,
@@ -64,7 +64,7 @@ class _HaigramBootstrapState extends State<HaigramBootstrap> {
             debugShowCheckedModeBanner: false,
             theme: buildTheme(Brightness.light),
             darkTheme: buildTheme(Brightness.dark),
-            themeMode: ThemeMode.system,
+            themeMode: ThemeMode.dark,
             home: const Scaffold(
               body: AppLoading(message: 'جارٍ تجهيز التطبيق...'),
             ),
@@ -113,7 +113,7 @@ class _StartupErrorScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    'تحقق من اتصال الإنترنت ثم أعد المحاولة.',
+                    'تعذر تهيئة التطبيق. تحقق من الاتصال بالإنترنت ثم حاول مجدداً.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: colors.textDim),
                   ),
@@ -131,8 +131,12 @@ class _StartupErrorScreen extends StatelessWidget {
                       style: FilledButton.styleFrom(
                         backgroundColor: AppColors.brandRed,
                         foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(52),
                       ),
-                      child: const Text('إعادة المحاولة'),
+                      child: const Text(
+                        'إعادة تشغيل التطبيق',
+                        textAlign: TextAlign.center,
+                      ),
                     ),
                   ),
                 ],
@@ -156,11 +160,21 @@ class LamhaApp extends StatefulWidget {
 
 class _LamhaAppState extends State<LamhaApp> {
   late bool _showOnboarding = widget.showOnboarding;
+  late ThemeMode _themeMode = widget.preferences.getBool('dark_mode') == false
+      ? ThemeMode.light
+      : ThemeMode.dark;
 
   Future<void> _completeOnboarding() async {
     final saved = await widget.preferences.setBool('onboarding_complete', true);
     if (!saved) throw StateError('Failed to save onboarding preference');
     if (mounted) setState(() => _showOnboarding = false);
+  }
+
+  Future<void> _setThemeMode(ThemeMode themeMode) async {
+    final saved =
+        await widget.preferences.setBool('dark_mode', themeMode == ThemeMode.dark);
+    if (!saved) throw StateError('تعذر حفظ إعداد المظهر');
+    if (mounted) setState(() => _themeMode = themeMode);
   }
 
   @override
@@ -170,10 +184,9 @@ class _LamhaAppState extends State<LamhaApp> {
       debugShowCheckedModeBanner: false,
       theme: buildTheme(Brightness.light),
       darkTheme: buildTheme(Brightness.dark),
-      themeMode: ThemeMode.system,
+      themeMode: _themeMode,
       builder: (context, child) {
-        final isDark =
-            MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+        final isDark = _themeMode == ThemeMode.dark;
         return AnnotatedRegion<SystemUiOverlayStyle>(
           value: SystemUiOverlayStyle(
             statusBarColor: Colors.transparent,
@@ -222,7 +235,11 @@ class _LamhaAppState extends State<LamhaApp> {
             switchOutCurve: Curves.easeInCubic,
             child: snap.data == null
                 ? const AuthScreen(key: ValueKey('auth'))
-                : const HomeShell(key: ValueKey('home')),
+                : HomeShell(
+                    key: const ValueKey('home'),
+                    themeMode: _themeMode,
+                    onThemeModeChanged: _setThemeMode,
+                  ),
           );
         },
       );

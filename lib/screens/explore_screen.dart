@@ -214,7 +214,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       : Text(u.name,
                           style: TextStyle(color: context.appColors.textDim)),
                 ),
-              const Divider(color: Color(0x22FFFFFF)),
+              Divider(color: context.appColors.text.withOpacity(0.12)),
             ],
             if (videos.isNotEmpty) ...[
               const Padding(
@@ -268,9 +268,9 @@ class _TrendingVideoTile extends StatelessWidget {
                   begin: Alignment.topRight,
                   end: Alignment.bottomLeft,
                   colors: [
-                    AppColors.brandCyan.withOpacity(0.28),
-                    colors.surfaceHigh,
-                    AppColors.brandRed.withOpacity(0.22),
+                    AppColors.brandCyan.withOpacity(0.3),
+                    const Color(0xFF171A24),
+                    AppColors.brandRed.withOpacity(0.3),
                   ],
                 ),
               ),

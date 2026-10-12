@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
@@ -592,18 +593,24 @@ class _VideoPage extends StatefulWidget {
 }
 
 class _VideoPageState extends State<_VideoPage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   VideoPlayerController? _vc;
   VideoPlayerController? _soundVc;
   late final AnimationController _disc =
       AnimationController(vsync: this, duration: const Duration(seconds: 6));
   bool _ready = false;
   bool _failed = false;
+  bool _appResumed = true;
+  bool _resumeAfterLifecycle = false;
+  double _profileDragDistance = 0;
   String? _soundError;
 
   @override
   void initState() {
     super.initState();
+    _appResumed =
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    WidgetsBinding.instance.addObserver(this);
     _open();
   }
 
@@ -643,7 +650,7 @@ class _VideoPageState extends State<_VideoPage>
         return;
       }
       _soundVc = soundController;
-      if (widget.playing) await soundController.play();
+      if (widget.playing && _appResumed) await soundController.play();
       setState(() {});
     } catch (error) {
       await soundController?.dispose();
@@ -659,7 +666,7 @@ class _VideoPageState extends State<_VideoPage>
 
   void _sync() {
     if (!_ready) return;
-    if (widget.playing) {
+    if (widget.playing && _appResumed) {
       _vc!.play();
       if (_soundVc != null) _soundVc!.play();
       _disc.repeat();
@@ -671,7 +678,24 @@ class _VideoPageState extends State<_VideoPage>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final resumed = state == AppLifecycleState.resumed;
+    _appResumed = resumed;
+    if (!resumed) {
+      _resumeAfterLifecycle =
+          _vc?.value.isPlaying == true || _soundVc?.value.isPlaying == true;
+      _vc?.pause();
+      _soundVc?.pause();
+      _disc.stop();
+    } else {
+      if (_resumeAfterLifecycle && widget.playing) _sync();
+      _resumeAfterLifecycle = false;
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _vc?.dispose();
     _soundVc?.dispose();
     _disc.dispose();
@@ -734,18 +758,41 @@ class _VideoPageState extends State<_VideoPage>
     final p = widget.post;
     return GestureDetector(
       onTap: _togglePlay,
+      onHorizontalDragStart: (_) => _profileDragDistance = 0,
+      onHorizontalDragUpdate: (details) =>
+          _profileDragDistance += details.delta.dx,
+      onHorizontalDragEnd: (_) {
+        if (_profileDragDistance > 80) unawaited(_goProfile(p.uid));
+        _profileDragDistance = 0;
+      },
+      onHorizontalDragCancel: () => _profileDragDistance = 0,
       child: Stack(
         fit: StackFit.expand,
         children: [
           const ColoredBox(color: Colors.black),
           if (_ready)
-            FittedBox(
-              fit: BoxFit.contain,
-              child: SizedBox(
-                width: _vc!.value.size.width,
-                height: _vc!.value.size.height,
-                child: VideoPlayer(_vc!),
-              ),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final aspectRatio = _vc!.value.aspectRatio;
+                if (!aspectRatio.isFinite || aspectRatio <= 0) {
+                  return const SizedBox.shrink();
+                }
+                final width = math.min(
+                  constraints.maxWidth,
+                  constraints.maxHeight * aspectRatio,
+                );
+                final height = math.min(
+                  constraints.maxHeight,
+                  constraints.maxWidth / aspectRatio,
+                );
+                return Center(
+                  child: SizedBox(
+                    width: width,
+                    height: height,
+                    child: VideoPlayer(_vc!),
+                  ),
+                );
+              },
             )
           else if (_failed)
             const EmptyState(
@@ -806,6 +853,7 @@ class _VideoPageState extends State<_VideoPage>
             initialData: p,
             builder: (context, s) => _sideActions(s.data ?? p),
           ),
+          _soundDisc(),
         ],
       ),
     );
@@ -914,7 +962,7 @@ class _VideoPageState extends State<_VideoPage>
               return _action(
                 saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
                 'حفظ',
-                color: saved ? AppColors.accent : Colors.white,
+                color: saved ? const Color(0xFFFFD54F) : Colors.white,
                 onTap: () => PostService.toggleSave(p.id, saved),
                 scale: actionScale,
               );
@@ -927,51 +975,60 @@ class _VideoPageState extends State<_VideoPage>
             onTap: () => _showShareOptions(p),
             scale: actionScale,
           ),
-          SizedBox(height: 8 * actionScale),
-          Tooltip(
-            message: 'فتح صفحة الصوت',
-            child: Material(
-              color: Colors.transparent,
-              shape: const CircleBorder(),
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: _openSound,
-                child: Padding(
-                  padding: const EdgeInsets.all(3),
-                  child: Transform.scale(
-                    scale: actionScale,
-                    child: RotationTransition(
-                      turns: _disc,
-                      child: Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: const SweepGradient(colors: [
-                            AppColors.accent,
-                            AppColors.accent2,
-                            AppColors.accent
-                          ]),
-                          border: Border.all(
-                              color: Colors.white.withOpacity(0.85), width: 2),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Colors.black45,
-                              blurRadius: 8,
-                              offset: Offset(0, 2),
-                            ),
-                          ],
+          SizedBox(height: 58 * actionScale),
+        ],
+      ),
+    );
+  }
+
+  Widget _soundDisc() {
+    final actionScale =
+        (MediaQuery.sizeOf(context).height / 700).clamp(0.72, 1.0).toDouble();
+    return Positioned(
+      left: 10,
+      bottom: widget.bottomBase * actionScale + 22,
+      child: Tooltip(
+        message: 'فتح صفحة الصوت',
+        child: Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: _openSound,
+            child: Padding(
+              padding: const EdgeInsets.all(3),
+              child: Transform.scale(
+                scale: actionScale,
+                child: RotationTransition(
+                  turns: _disc,
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const SweepGradient(colors: [
+                        AppColors.accent,
+                        AppColors.accent2,
+                        AppColors.accent
+                      ]),
+                      border: Border.all(
+                          color: Colors.white.withOpacity(0.85), width: 2),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Colors.black45,
+                          blurRadius: 8,
+                          offset: Offset(0, 2),
                         ),
-                        child: const Icon(Icons.music_note_rounded,
-                            size: 22, color: Colors.white),
-                      ),
+                      ],
                     ),
+                    child: const Icon(Icons.music_note_rounded,
+                        size: 22, color: Colors.white),
                   ),
                 ),
               ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }

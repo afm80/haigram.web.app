@@ -263,9 +263,7 @@ class PostService {
     if (url == null || url.isEmpty) {
       throw StateError('ملف الفيديو غير متاح للتنزيل');
     }
-    final bytes = await _storage
-        .refFromURL(url)
-        .getData(300 * 1024 * 1024);
+    final bytes = await _storage.refFromURL(url).getData(300 * 1024 * 1024);
     if (bytes == null) throw StateError('تعذر تنزيل بيانات الفيديو');
     return bytes;
   }
@@ -542,6 +540,7 @@ class PostService {
       'username': username,
       'name': displayName,
       'text': text,
+      'likedBy': <String>[],
       'createdAt': FieldValue.serverTimestamp(),
     });
     batch.update(_db.collection('posts').doc(postId),
@@ -568,6 +567,22 @@ class PostService {
         {'comments': FieldValue.increment(-1)});
     await batch.commit();
   }
+
+  static Future<void> toggleCommentLike(String postId, String commentId) =>
+      _db.runTransaction((transaction) async {
+        final reference = _commentsRef(postId).doc(commentId);
+        final snapshot = await transaction.get(reference);
+        if (!snapshot.exists) {
+          throw StateError('التعليق غير موجود');
+        }
+        final likedBy =
+            List<String>.from(snapshot.data()?['likedBy'] as List? ?? const []);
+        transaction.update(reference, {
+          'likedBy': likedBy.contains(_user.uid)
+              ? FieldValue.arrayRemove([_user.uid])
+              : FieldValue.arrayUnion([_user.uid]),
+        });
+      });
 
   // ---- القصص (تختفي بعد 24 ساعة) ----
   static const storyLifetime = Duration(hours: 24);
@@ -621,6 +636,7 @@ class Comment {
   final String username;
   final String name;
   final String text;
+  final List<String> likedBy;
   final DateTime createdAt;
 
   Comment(
@@ -629,6 +645,7 @@ class Comment {
       required this.username,
       required this.name,
       required this.text,
+      required this.likedBy,
       required this.createdAt});
 
   factory Comment.fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> d) {
@@ -639,6 +656,7 @@ class Comment {
       username: m['username'] ?? 'مستخدم',
       name: m['name'] ?? '',
       text: m['text'] ?? '',
+      likedBy: List<String>.from(m['likedBy'] as List? ?? const []),
       createdAt: (m['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }

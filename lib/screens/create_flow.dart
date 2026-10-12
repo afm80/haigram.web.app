@@ -35,17 +35,21 @@ void startCreate(BuildContext context, CreateKind kind, {Post? sound}) {
 
 /// الشريط السفلي الصغير: منشور / قصة / ريلز (مثل إنستغرام).
 void showCreateSheet(BuildContext context) {
+  final colors = context.appColors;
   showModalBottomSheet(
     context: context,
-    backgroundColor: context.appColors.surface,
+    backgroundColor: colors.surface,
     shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
     builder: (ctx) {
       Widget tile(IconData icon, String title, CreateKind kind) => ListTile(
-            leading: Icon(icon, size: 26, color: Colors.white),
+            leading: Icon(icon, size: 26, color: colors.textDim),
             title: Text(
               title,
-              style: const TextStyle(fontSize: 16, color: Colors.white),
+              style: TextStyle(
+                  fontSize: 16,
+                  color: colors.text,
+                  fontWeight: FontWeight.w600),
             ),
             onTap: () {
               final navigator = Navigator.of(ctx);
@@ -67,17 +71,17 @@ void showCreateSheet(BuildContext context) {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                    color: context.appColors.textDim,
+                    color: colors.textDim,
                     borderRadius: BorderRadius.circular(2))),
-            const Padding(
+            Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
               child: Text('إنشاء',
                   style: TextStyle(
-                      color: Colors.white,
+                      color: colors.text,
                       fontSize: 16,
                       fontWeight: FontWeight.w700)),
             ),
-            const Divider(height: 1, color: Color(0x22FFFFFF)),
+            Divider(height: 1, color: colors.text.withOpacity(0.12)),
             tile(Icons.grid_on_rounded, 'منشور', CreateKind.post),
             tile(Icons.add_circle_outline_rounded, 'قصة', CreateKind.story),
             tile(Icons.movie_creation_outlined, 'ريلز', CreateKind.reel),
@@ -249,8 +253,9 @@ class _CaptureScreenState extends State<CaptureScreen> {
   @override
   Widget build(BuildContext context) {
     final kind = widget.kind;
+    final colors = context.appColors;
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: colors.bg,
       body: SafeArea(
         child: Column(
           children: [
@@ -264,7 +269,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
                   Expanded(
                       child: Text(_kindTitle(kind),
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
+                          style: TextStyle(
+                              color: colors.text,
                               fontSize: 17, fontWeight: FontWeight.w700))),
                   const SizedBox(width: 48),
                 ],
@@ -276,12 +282,14 @@ class _CaptureScreenState extends State<CaptureScreen> {
                     ? Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          CircularProgressIndicator(),
+                          CircularProgressIndicator(color: AppColors.accent),
                           SizedBox(height: 12),
-                          Text('الفيديو أطول من دقيقة، جارٍ قصّه تلقائياً...'),
+                          Text('الفيديو أطول من دقيقة، جارٍ قصّه تلقائياً...',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: colors.text)),
                           Text('قد يستغرق ذلك لحظات',
                               style: TextStyle(
-                                  color: context.appColors.textDim,
+                                  color: colors.textDim,
                                   fontSize: 12)),
                         ],
                       )
@@ -303,7 +311,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                   _video
                                       ? Icons.videocam_rounded
                                       : Icons.photo_camera_rounded,
-                                  size: 52),
+                                  size: 52,
+                                  color: Colors.white),
                             ),
                             const SizedBox(height: 20),
                             Text(
@@ -311,7 +320,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                   ? 'صوّر فيديو (حتى دقيقة) أو اختر من ملفاتك'
                                   : 'التقط صورة أو اختر من ملفاتك',
                               textAlign: TextAlign.center,
-                              style: const TextStyle(fontSize: 16),
+                              style: TextStyle(
+                                  fontSize: 16, color: colors.text),
                             ),
                             if (_error != null)
                               Padding(
@@ -319,7 +329,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                 child: Text(_error!,
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
-                                        color: context.appColors.text)),
+                                        color: colors.text)),
                               ),
                           ],
                         ),
@@ -360,7 +370,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                       padding: const EdgeInsets.all(5),
                       decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 4)),
+                          border: Border.all(color: colors.text, width: 4)),
                       child: Container(
                         decoration: BoxDecoration(
                             shape: BoxShape.circle,
@@ -409,7 +419,10 @@ class _CaptureScreenState extends State<CaptureScreen> {
             const SizedBox(height: 6),
             Text(label,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 11)),
+                style: TextStyle(
+                    color: context.appColors.text,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500)),
           ],
         ),
       ),

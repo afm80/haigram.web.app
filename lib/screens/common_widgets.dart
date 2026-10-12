@@ -7,6 +7,21 @@ import '../theme.dart';
 import 'post_widgets.dart' show timeAgo;
 import 'profile_screen.dart';
 
+const _commentStickers = [
+  '🥰',
+  '😂',
+  '😍',
+  '🥹',
+  '👍',
+  '👏',
+  '🔥',
+  '🥳',
+  '🤍',
+  '💯',
+  '🎉',
+  '😘',
+];
+
 /// يفتح ملف مستخدم (مثل تيك توك / إنستغرام).
 void openProfile(BuildContext context, String uid) {
   if (uid.isEmpty) return;
@@ -21,6 +36,9 @@ class UserAvatar extends StatelessWidget {
   final double radius;
   final VoidCallback? onTap;
   final bool showOnline;
+  final bool hasStory;
+  final bool storySeen;
+  final AppUser? profile;
 
   const UserAvatar(
       {super.key,
@@ -28,60 +46,88 @@ class UserAvatar extends StatelessWidget {
       this.fallbackName = '',
       this.radius = 20,
       this.onTap,
-      this.showOnline = false});
+      this.showOnline = false,
+      this.hasStory = false,
+      this.storySeen = false,
+      this.profile});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: FutureBuilder<AppUser?>(
-        future: UserService.profileOf(uid),
-        builder: (context, s) {
-          final u = s.data;
-          final image = u?.avatarImage;
-          final label = u != null
-              ? u.initial
-              : (fallbackName.isNotEmpty ? fallbackName[0].toUpperCase() : '?');
-          final avatar = CircleAvatar(
-            radius: radius,
-            backgroundColor: AppColors.accent,
-            backgroundImage: image,
-            child: image == null
-                ? Text(label,
-                    style: TextStyle(
-                        fontSize: radius * 0.85,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white))
-                : null,
-          );
-          if (!showOnline || uid.isEmpty) return avatar;
-          return StreamBuilder<bool>(
-            stream: PresenceService.isOnline(uid),
-            builder: (context, presence) => Stack(
-              clipBehavior: Clip.none,
-              children: [
-                avatar,
-                if (presence.data == true)
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      width: radius * 0.48,
-                      height: radius * 0.48,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF31C75A),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: context.appColors.bg,
-                          width: 2,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
+      child: profile == null
+          ? FutureBuilder<AppUser?>(
+              future: UserService.profileOf(uid),
+              builder: (context, snapshot) => _buildAvatar(
+                context,
+                snapshot.data,
+              ),
+            )
+          : _buildAvatar(context, profile),
+    );
+  }
+
+  Widget _buildAvatar(BuildContext context, AppUser? user) {
+    final image = user?.avatarImage;
+    final label = user != null
+        ? user.initial
+        : (fallbackName.isNotEmpty ? fallbackName[0].toUpperCase() : '?');
+    final circle = CircleAvatar(
+      radius: radius,
+      backgroundColor: AppColors.accent,
+      backgroundImage: image,
+      child: image == null
+          ? Text(
+              label,
+              style: TextStyle(
+                fontSize: radius * 0.85,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            )
+          : null,
+    );
+    final avatar = hasStory
+        ? Container(
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                colors: storySeen
+                    ? [context.appColors.textDim, context.appColors.textDim]
+                    : [AppColors.brandRed, AppColors.brandCyan],
+                begin: Alignment.topRight,
+                end: Alignment.bottomLeft,
+              ),
             ),
-          );
-        },
+            child: circle,
+          )
+        : circle;
+    if (!showOnline || uid.isEmpty) return avatar;
+    return StreamBuilder<bool>(
+      stream: PresenceService.isOnline(uid),
+      builder: (context, presence) => Stack(
+        clipBehavior: Clip.none,
+        children: [
+          avatar,
+          if (presence.data == true)
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: Container(
+                width: radius * 0.48,
+                height: radius * 0.48,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF31C75A),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: context.appColors.bg,
+                    width: 2,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -111,6 +157,23 @@ class _CommentsSheet extends StatefulWidget {
 class _CommentsSheetState extends State<_CommentsSheet> {
   final _text = TextEditingController();
   bool _sending = false;
+  bool _showStickers = false;
+
+  void _insertSticker(String sticker) {
+    final text = _text.text;
+    final selection = _text.selection;
+    final start = selection.isValid
+        ? selection.start.clamp(0, text.length).toInt()
+        : text.length;
+    final end = selection.isValid
+        ? selection.end.clamp(start, text.length).toInt()
+        : start;
+    _text.value = TextEditingValue(
+      text: text.replaceRange(start, end, sticker),
+      selection: TextSelection.collapsed(offset: start + sticker.length),
+    );
+    setState(() => _showStickers = false);
+  }
 
   Future<void> _send() async {
     final t = _text.text.trim();
@@ -126,6 +189,43 @@ class _CommentsSheetState extends State<_CommentsSheet> {
       }
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _showCommentActions(Comment comment) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: context.appColors.surface,
+      builder: (sheetContext) => SafeArea(
+        child: ListTile(
+          leading: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+          title: const Text('حذف التعليق'),
+          onTap: () async {
+            Navigator.pop(sheetContext);
+            try {
+              await PostService.deleteComment(widget.post.id, comment.id);
+            } catch (error) {
+              if (widget.outerContext.mounted) {
+                ScaffoldMessenger.of(widget.outerContext).showSnackBar(
+                  SnackBar(content: Text('تعذر حذف التعليق: $error')),
+                );
+              }
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _toggleCommentLike(Comment comment) async {
+    try {
+      await PostService.toggleCommentLike(widget.post.id, comment.id);
+    } catch (error) {
+      if (widget.outerContext.mounted) {
+        ScaffoldMessenger.of(widget.outerContext).showSnackBar(
+          SnackBar(content: Text('تعذر الإعجاب بالتعليق: $error')),
+        );
+      }
     }
   }
 
@@ -152,7 +252,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
               child: Text('التعليقات',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
             ),
-            const Divider(height: 1, color: Color(0x22FFFFFF)),
+            Divider(
+                height: 1, color: context.appColors.text.withOpacity(0.12)),
             Expanded(
               child: StreamBuilder<List<Comment>>(
                 stream: PostService.comments(widget.post.id),
@@ -220,21 +321,49 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                     ),
                                   ),
                                   const SizedBox(height: 2),
-                                  Text(c.text,
-                                      style: const TextStyle(height: 1.4)),
+                                  GestureDetector(
+                                    onLongPress: canDelete
+                                        ? () => _showCommentActions(c)
+                                        : null,
+                                    child: Text(c.text,
+                                        style: const TextStyle(height: 1.4)),
+                                  ),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        tooltip: c.likedBy.contains(me)
+                                            ? 'إلغاء الإعجاب'
+                                            : 'إعجاب بالتعليق',
+                                        visualDensity: VisualDensity.compact,
+                                        constraints: const BoxConstraints(
+                                            minWidth: 36, minHeight: 32),
+                                        padding: EdgeInsets.zero,
+                                        onPressed: () =>
+                                            _toggleCommentLike(c),
+                                        icon: Icon(
+                                          c.likedBy.contains(me)
+                                              ? Icons.favorite_rounded
+                                              : Icons.favorite_border_rounded,
+                                          size: 18,
+                                          color: c.likedBy.contains(me)
+                                              ? AppColors.videoLike
+                                              : context.appColors.textDim,
+                                        ),
+                                      ),
+                                      if (c.likedBy.isNotEmpty)
+                                        Text(
+                                          '${c.likedBy.length}',
+                                          style: TextStyle(
+                                            color: context.appColors.textDim,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
                                 ],
                               ),
                             ),
-                            if (canDelete)
-                              GestureDetector(
-                                onTap: () => PostService.deleteComment(
-                                    widget.post.id, c.id),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(6),
-                                  child: Icon(Icons.delete_outline_rounded,
-                                      size: 20, color: context.appColors.textDim),
-                                ),
-                              ),
                           ],
                         ),
                       );
@@ -243,7 +372,42 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                 },
               ),
             ),
-            const Divider(height: 1, color: Color(0x22FFFFFF)),
+            if (_showStickers)
+              SizedBox(
+                height: 104,
+                child: GridView.count(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  crossAxisCount: 6,
+                  mainAxisSpacing: 6,
+                  crossAxisSpacing: 8,
+                  children: [
+                    for (var i = 0; i < _commentStickers.length; i++)
+                      InkWell(
+                        onTap: () => _insertSticker(_commentStickers[i]),
+                        borderRadius: BorderRadius.circular(14),
+                        child: Container(
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: [
+                              const Color(0xFFFFE0E8),
+                              const Color(0xFFFFF0C2),
+                              const Color(0xFFE4DBFF),
+                              const Color(0xFFD8F5E8),
+                            ][i % 4],
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Text(
+                            _commentStickers[i],
+                            style: const TextStyle(fontSize: 25),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            Divider(
+                height: 1, color: context.appColors.text.withOpacity(0.12)),
             SafeArea(
               top: false,
               child: Padding(
@@ -255,12 +419,31 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                         fallbackName: PostService.username,
                         radius: 17),
                     const SizedBox(width: 10),
+                    IconButton(
+                      tooltip: _showStickers ? 'إخفاء الملصقات' : 'الملصقات',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () {
+                        FocusScope.of(context).unfocus();
+                        setState(() => _showStickers = !_showStickers);
+                      },
+                      icon: Icon(
+                        _showStickers
+                            ? Icons.keyboard_rounded
+                            : Icons.emoji_emotions_outlined,
+                        color: AppColors.accent,
+                      ),
+                    ),
                     Expanded(
                       child: TextField(
                         controller: _text,
                         maxLength: 500,
                         textInputAction: TextInputAction.send,
                         onSubmitted: (_) => _send(),
+                        onTap: () {
+                          if (_showStickers) {
+                            setState(() => _showStickers = false);
+                          }
+                        },
                         decoration: const InputDecoration(
                           hintText: 'أضف تعليقاً...',
                           counterText: '',

@@ -17,7 +17,14 @@ import 'video_feed_screen.dart';
 
 /// الغلاف الرئيسي: يجهّز ملف المستخدم أولاً ثم يعرض التبويبات.
 class HomeShell extends StatefulWidget {
-  const HomeShell({super.key});
+  final ThemeMode themeMode;
+  final Future<void> Function(ThemeMode) onThemeModeChanged;
+
+  const HomeShell({
+    super.key,
+    required this.themeMode,
+    required this.onThemeModeChanged,
+  });
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -42,14 +49,23 @@ class _HomeShellState extends State<HomeShell> {
         if (!snap.hasData)
           return const Scaffold(
               body: AppLoading(message: 'جارٍ إعداد حسابك...'));
-        return const _Tabs();
+        return _Tabs(
+          themeMode: widget.themeMode,
+          onThemeModeChanged: widget.onThemeModeChanged,
+        );
       },
     );
   }
 }
 
 class _Tabs extends StatefulWidget {
-  const _Tabs();
+  final ThemeMode themeMode;
+  final Future<void> Function(ThemeMode) onThemeModeChanged;
+
+  const _Tabs({
+    required this.themeMode,
+    required this.onThemeModeChanged,
+  });
 
   @override
   State<_Tabs> createState() => _TabsState();
@@ -193,7 +209,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
                   ),
                 ),
                 _navItem(6, Icons.person_outline_rounded, Icons.person_rounded,
-                    'حسابي',
+                    'الملف الشخصي',
                     foreground: navForeground, inactive: navInactive),
               ],
             ),
@@ -213,7 +229,10 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
         3 => const SizedBox.shrink(),
         4 => const InboxScreen(),
         5 => const NotificationsScreen(),
-        6 => const ProfileScreen(),
+        6 => ProfileScreen(
+            themeMode: widget.themeMode,
+            onThemeModeChanged: widget.onThemeModeChanged,
+          ),
         _ => const SizedBox.shrink(),
       };
 

@@ -16,14 +16,27 @@ import 'social_screens.dart' show ChatScreen;
 import 'video_feed_screen.dart';
 import 'video_thumbnail.dart';
 
-/// تبويب "حسابي": ملفي الشخصي.
+/// تبويب الملف الشخصي للمستخدم الحالي.
 class ProfileScreen extends StatelessWidget {
-  const ProfileScreen({super.key});
+  final ThemeMode themeMode;
+  final Future<void> Function(ThemeMode) onThemeModeChanged;
+
+  const ProfileScreen({
+    super.key,
+    required this.themeMode,
+    required this.onThemeModeChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-        child: ProfileView(uid: PostService.uidOrEmpty, isMe: true));
+      child: ProfileView(
+        uid: PostService.uidOrEmpty,
+        isMe: true,
+        themeMode: themeMode,
+        onThemeModeChanged: onThemeModeChanged,
+      ),
+    );
   }
 }
 
@@ -53,7 +66,16 @@ class UserProfileScreen extends StatelessWidget {
 class ProfileView extends StatelessWidget {
   final String uid;
   final bool isMe;
-  const ProfileView({super.key, required this.uid, required this.isMe});
+  final ThemeMode? themeMode;
+  final Future<void> Function(ThemeMode)? onThemeModeChanged;
+
+  const ProfileView({
+    super.key,
+    required this.uid,
+    required this.isMe,
+    this.themeMode,
+    this.onThemeModeChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -68,7 +90,14 @@ class ProfileView extends StatelessWidget {
       length: tabs.length,
       child: NestedScrollView(
         headerSliverBuilder: (context, _) => [
-          SliverToBoxAdapter(child: _Header(uid: uid, isMe: isMe)),
+          SliverToBoxAdapter(
+            child: _Header(
+              uid: uid,
+              isMe: isMe,
+              themeMode: themeMode,
+              onThemeModeChanged: onThemeModeChanged,
+            ),
+          ),
           SliverPersistentHeader(
             pinned: true,
             delegate: _TabsDelegate(
@@ -114,7 +143,15 @@ class _TabsDelegate extends SliverPersistentHeaderDelegate {
 class _Header extends StatelessWidget {
   final String uid;
   final bool isMe;
-  const _Header({required this.uid, required this.isMe});
+  final ThemeMode? themeMode;
+  final Future<void> Function(ThemeMode)? onThemeModeChanged;
+
+  const _Header({
+    required this.uid,
+    required this.isMe,
+    this.themeMode,
+    this.onThemeModeChanged,
+  });
 
   Future<void> _confirmSignOut(BuildContext context) async {
     final shouldSignOut = await showDialog<bool>(
@@ -142,6 +179,23 @@ class _Header extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('تعذر تسجيل الخروج: $error')),
+        );
+      }
+    }
+  }
+
+  Future<void> _toggleTheme(BuildContext context) async {
+    final currentTheme = themeMode;
+    final changeTheme = onThemeModeChanged;
+    if (currentTheme == null || changeTheme == null) return;
+    final nextTheme =
+        currentTheme == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+    try {
+      await changeTheme(nextTheme);
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر تغيير المظهر: $error')),
         );
       }
     }
@@ -186,10 +240,27 @@ class _Header extends StatelessWidget {
               if (isMe)
                 Align(
                   alignment: AlignmentDirectional.centerEnd,
-                  child: IconButton(
-                    icon: const Icon(Icons.logout_rounded),
-                    tooltip: 'تسجيل الخروج',
-                    onPressed: () => _confirmSignOut(context),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (themeMode != null && onThemeModeChanged != null)
+                        IconButton(
+                          icon: Icon(
+                            themeMode == ThemeMode.dark
+                                ? Icons.light_mode_rounded
+                                : Icons.dark_mode_rounded,
+                          ),
+                          tooltip: themeMode == ThemeMode.dark
+                              ? 'التبديل إلى الوضع الفاتح'
+                              : 'التبديل إلى الوضع الداكن',
+                          onPressed: () => _toggleTheme(context),
+                        ),
+                      IconButton(
+                        icon: const Icon(Icons.logout_rounded),
+                        tooltip: 'تسجيل الخروج',
+                        onPressed: () => _confirmSignOut(context),
+                      ),
+                    ],
                   ),
                 ),
               Row(

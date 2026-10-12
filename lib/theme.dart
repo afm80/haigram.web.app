@@ -117,16 +117,18 @@ ThemeData buildTheme(Brightness brightness) {
             onSurface: colors.text,
             onSecondary: Colors.white,
           ),
-    textTheme: base.textTheme.apply(
-      bodyColor: colors.text,
-      displayColor: colors.text,
-      fontFamily: 'Roboto',
-    ).copyWith(
-      headlineSmall: const TextStyle(fontWeight: FontWeight.w800),
-      titleLarge: const TextStyle(fontWeight: FontWeight.w700),
-      bodyLarge: TextStyle(color: colors.text),
-      bodyMedium: TextStyle(color: colors.text),
-    ),
+    textTheme: base.textTheme
+        .apply(
+          bodyColor: colors.text,
+          displayColor: colors.text,
+          fontFamily: 'Roboto',
+        )
+        .copyWith(
+          headlineSmall: const TextStyle(fontWeight: FontWeight.w800),
+          titleLarge: const TextStyle(fontWeight: FontWeight.w700),
+          bodyLarge: TextStyle(color: colors.text),
+          bodyMedium: TextStyle(color: colors.text),
+        ),
     iconTheme: IconThemeData(color: colors.text),
     primaryIconTheme: IconThemeData(color: colors.text),
     textButtonTheme: TextButtonThemeData(
@@ -155,6 +157,10 @@ ThemeData buildTheme(Brightness brightness) {
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: colors.surfaceHigh,
+      labelStyle: TextStyle(color: colors.textDim),
+      floatingLabelStyle: TextStyle(color: colors.text),
+      prefixStyle: TextStyle(color: colors.text),
+      suffixStyle: TextStyle(color: colors.text),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       hintStyle: TextStyle(color: colors.textDim),
       border: OutlineInputBorder(
@@ -184,6 +190,23 @@ ThemeData buildTheme(Brightness brightness) {
       elevation: 0,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+    ),
+    dividerTheme: DividerThemeData(
+      color: colors.text.withOpacity(0.12),
+      thickness: 1,
+      space: 1,
+    ),
+    listTileTheme: ListTileThemeData(
+      textColor: colors.text,
+      iconColor: colors.textDim,
+    ),
+    popupMenuTheme: PopupMenuThemeData(
+      color: colors.surfaceHigh,
+      textStyle: TextStyle(color: colors.text),
+    ),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: colors.surface,
+      surfaceTintColor: Colors.transparent,
     ),
     dialogTheme: DialogTheme(
       backgroundColor: colors.surface,
@@ -267,16 +290,22 @@ class EmptyState extends StatelessWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: context.appColors.surfaceHigh,
-                border: Border.all(
-                    color: context.appColors.text.withOpacity(0.06)),
+                border:
+                    Border.all(color: context.appColors.text.withOpacity(0.06)),
               ),
               child: Icon(icon, size: 34, color: context.appColors.textDim),
             ),
             const SizedBox(height: 18),
-            Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+            Text(title,
+                textAlign: TextAlign.center,
+                style:
+                    const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
             if (message != null) ...[
               const SizedBox(height: 8),
-              Text(message!, textAlign: TextAlign.center, style: TextStyle(color: context.appColors.textDim, height: 1.5)),
+              Text(message!,
+                  textAlign: TextAlign.center,
+                  style:
+                      TextStyle(color: context.appColors.textDim, height: 1.5)),
             ],
             if (action != null) ...[
               const SizedBox(height: 18),

@@ -99,7 +99,12 @@ class _FeedListState extends State<_FeedList> {
               itemCount: list.isEmpty ? 2 : list.length + 1,
               itemBuilder: (_, i) {
                 if (i == 0) {
-                  return const Column(children: [StoriesBar(), Divider(height: 1, color: Color(0x22FFFFFF))]);
+                  return Column(children: [
+                    const StoriesBar(),
+                    Divider(
+                        height: 1,
+                        color: context.appColors.text.withOpacity(0.12)),
+                  ]);
                 }
                 if (list.isEmpty) {
                   return EmptyState(
