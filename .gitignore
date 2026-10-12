@@ -8,3 +8,4 @@ pubspec.lock
 .vscode/
 *.iml
 .firebase/
+web/ffmpeg/ffmpeg-core.wasm
