@@ -88,9 +88,15 @@ service cloud.firestore {
     }
 
     match /chats/{chatId} {
-      allow read: if request.auth != null
-        && resource.data.participants is list
-        && resource.data.participants.hasAny([request.auth.uid]);
+      function isParticipant() {
+        return request.auth != null
+          && request.auth.uid in resource.data.participants;
+      }
+
+      allow get: if request.auth != null
+        && (!exists(/databases/$(database)/documents/chats/$(chatId))
+          || isParticipant());
+      allow list: if isParticipant();
       allow create: if request.auth != null
         && request.resource.data.keys().hasOnly([
           'participants', 'lastMessage', 'lastSenderUid', 'createdAt', 'updatedAt'
@@ -122,14 +128,14 @@ service cloud.firestore {
       allow delete: if false;
 
       match /messages/{messageId} {
-        function isParticipant() {
+        function isChatParticipant() {
           return request.auth != null
-            && get(/databases/$(database)/documents/chats/$(chatId)).data.participants
-              .hasAny([request.auth.uid]);
+            && request.auth.uid in
+              get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
         }
 
-        allow read: if isParticipant();
-        allow create: if isParticipant()
+        allow read: if isChatParticipant();
+        allow create: if isChatParticipant()
           && request.resource.data.keys().hasOnly(['senderUid', 'text', 'createdAt'])
           && request.resource.data.senderUid == request.auth.uid
           && request.resource.data.text is string
