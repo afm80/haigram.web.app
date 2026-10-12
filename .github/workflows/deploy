@@ -1,0 +1,44 @@
+name: Build & Deploy to Firebase Hosting
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      # يولّد ملفات منصة الويب الناقصة مع الحفاظ على ملفات web/ الخاصة بنا
+      - name: Prepare web platform files
+        run: |
+          cp -r web /tmp/web-custom
+          flutter create . --platforms=web --project-name lamha --org app.lamha >/dev/null
+          cp -r /tmp/web-custom/. web/
+
+      - run: flutter pub get
+
+      - name: Build web (PWA)
+        run: |
+          flutter build web --release \
+            --dart-define=FB_API_KEY=${{ secrets.FB_API_KEY }} \
+            --dart-define=FB_APP_ID=${{ secrets.FB_APP_ID }} \
+            --dart-define=FB_SENDER_ID=${{ secrets.FB_SENDER_ID }} \
+            --dart-define=FB_PROJECT_ID=${{ secrets.FB_PROJECT_ID }} \
+            --dart-define=FB_AUTH_DOMAIN=${{ secrets.FB_AUTH_DOMAIN }} \
+            --dart-define=FB_STORAGE_BUCKET=${{ secrets.FB_STORAGE_BUCKET }}
+
+      - name: Deploy
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: ${{ secrets.FB_PROJECT_ID }}
+          channelId: live
