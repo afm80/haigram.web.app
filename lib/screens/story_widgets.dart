@@ -98,7 +98,7 @@ class _StoriesBarState extends State<StoriesBar> {
                   child: Container(
                     width: 22,
                     height: 22,
-                    decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accent, border: Border.all(color: AppColors.bg, width: 2)),
+                    decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accent, border: Border.all(color: context.appColors.bg, width: 2)),
                     child: const Icon(Icons.add, size: 15),
                   ),
                 ),
@@ -144,7 +144,7 @@ class _StoriesBarState extends State<StoriesBar> {
         color: active && !seen ? null : (active ? const Color(0x55FFFFFF) : Colors.transparent),
       ),
       child: Container(
-        decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.bg),
+        decoration: BoxDecoration(shape: BoxShape.circle, color: context.appColors.bg),
         padding: const EdgeInsets.all(2),
         child: UserAvatar(uid: uid, fallbackName: name, radius: 28),
       ),

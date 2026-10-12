@@ -5,22 +5,31 @@
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta name="description" content="لمحة - فيديوهات قصيرة ومنشورات">
-  <meta name="theme-color" content="#0B0B12">
+  <meta name="description" content="Haigram - فيديوهات قصيرة ومنشورات">
+  <meta name="theme-color" content="#0B0B12" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#F7F6FB" media="(prefers-color-scheme: light)">
 
   <!-- iOS PWA -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="لمحة">
+  <meta name="apple-mobile-web-app-title" content="Haigram">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 
   <link rel="icon" type="image/png" href="favicon.png"/>
   <link rel="manifest" href="manifest.json">
-  <title>لمحة</title>
+  <title>Haigram</title>
 
   <style>
     html, body { margin: 0; height: 100%; background: #0B0B12; overflow: hidden; }
+    @media (prefers-color-scheme: light) {
+      html, body { background: #F7F6FB; }
+      #boot-splash { background: radial-gradient(circle at 50% 38%, #EDEBF4 0, #F7F6FB 54%, #F7F6FB 100%); }
+      .boot-copy { color: #1C1B22; }
+      .boot-loader { background: #D8D5E1; }
+      #install-banner { background: #FFFFFF; color: #1C1B22; border-color: rgba(0,0,0,.08); }
+      #install-no { color: #666574; }
+    }
     #boot-splash {
       position: fixed; inset: 0; z-index: 100000; display: grid; place-items: center;
       background: radial-gradient(circle at 50% 38%, #282044 0, #0B0B12 54%, #0B0B12 100%);
@@ -61,10 +70,10 @@
   </style>
 </head>
 <body>
-  <div id="boot-splash" role="status" aria-label="جارٍ تحميل لمحة">
+  <div id="boot-splash" role="status" aria-label="جارٍ تحميل Haigram">
     <div>
       <div class="boot-mark"></div>
-      <div class="boot-copy">لمحة</div>
+      <div class="boot-copy">Haigram</div>
       <div class="boot-loader"></div>
     </div>
   </div>
@@ -105,7 +114,7 @@
       window.addEventListener('beforeinstallprompt', function (e) {
         e.preventDefault();
         deferred = e;
-        text.textContent = 'ثبّت لمحة على شاشتك الرئيسية لتجربة أسرع';
+        text.textContent = 'ثبّت Haigram على شاشتك الرئيسية لتجربة أسرع';
         yes.style.display = '';
         setTimeout(show, 2500);
       });

@@ -32,7 +32,7 @@ void startCreate(BuildContext context, CreateKind kind) {
 void showCreateSheet(BuildContext context) {
   showModalBottomSheet(
     context: context,
-    backgroundColor: AppColors.surface,
+    backgroundColor: context.appColors.surface,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
     builder: (ctx) {
       Widget tile(IconData icon, String title, CreateKind kind) => ListTile(
@@ -48,7 +48,7 @@ void showCreateSheet(BuildContext context) {
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 8),
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.textDim, borderRadius: BorderRadius.circular(2))),
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: context.appColors.textDim, borderRadius: BorderRadius.circular(2))),
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
               child: Text('إنشاء', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
@@ -214,13 +214,13 @@ class _CaptureScreenState extends State<CaptureScreen> {
             Expanded(
               child: Center(
                 child: _trimming
-                    ? const Column(
+                    ? Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           CircularProgressIndicator(),
                           SizedBox(height: 12),
                           Text('الفيديو أطول من دقيقة، جارٍ قصّه تلقائياً...'),
-                          Text('قد يستغرق ذلك لحظات', style: TextStyle(color: AppColors.textDim, fontSize: 12)),
+                          Text('قد يستغرق ذلك لحظات', style: TextStyle(color: context.appColors.textDim, fontSize: 12)),
                         ],
                       )
                     : Padding(
@@ -307,7 +307,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
             Container(
               width: 46,
               height: 46,
-              decoration: BoxDecoration(color: AppColors.surfaceHigh, borderRadius: BorderRadius.circular(12)),
+              decoration: BoxDecoration(color: context.appColors.surfaceHigh, borderRadius: BorderRadius.circular(12)),
               child: Icon(icon),
             ),
             const SizedBox(height: 6),

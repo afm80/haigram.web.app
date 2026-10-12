@@ -136,13 +136,13 @@ class _PostCardState extends State<PostCard> {
             onTap: () => showCommentsSheet(context, p),
             child: Text(
               p.comments > 0 ? 'عرض كل ${p.comments} تعليقات' : 'أضف تعليقاً...',
-              style: const TextStyle(color: AppColors.textDim, fontSize: 14),
+              style: TextStyle(color: context.appColors.textDim, fontSize: 14),
             ),
           ),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(14, 4, 14, 18),
-          child: Text(timeAgo(p.createdAt), style: const TextStyle(color: AppColors.textDim, fontSize: 11)),
+          child: Text(timeAgo(p.createdAt), style: TextStyle(color: context.appColors.textDim, fontSize: 11)),
         ),
       ],
     );
@@ -167,7 +167,7 @@ class _PostCardState extends State<PostCard> {
           const Spacer(),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_horiz_rounded),
-            color: AppColors.surfaceHigh,
+            color: context.appColors.surfaceHigh,
             onSelected: (v) {
               if (v == 'link') _copyLink();
               if (v == 'delete') _confirmDelete();
@@ -270,13 +270,13 @@ class PostImage extends StatelessWidget {
     final loading = SizedBox(height: height ?? 240, child: const Center(child: CircularProgressIndicator()));
     final broken = SizedBox(
       height: height ?? 120,
-      child: const Center(
+      child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.broken_image_outlined, color: AppColors.textDim, size: 30),
+            Icon(Icons.broken_image_outlined, color: context.appColors.textDim, size: 30),
             SizedBox(height: 6),
-            Text('تعذر تحميل الصورة', style: TextStyle(color: AppColors.textDim, fontSize: 12)),
+            Text('تعذر تحميل الصورة', style: TextStyle(color: context.appColors.textDim, fontSize: 12)),
           ],
         ),
       ),

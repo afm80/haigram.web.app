@@ -16,14 +16,6 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.web);
   final preferences = await SharedPreferences.getInstance();
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-      systemNavigationBarColor: Color(0xFF0B0B12),
-      systemNavigationBarIconBrightness: Brightness.light,
-    ),
-  );
   runApp(LamhaApp(
     preferences: preferences,
     showOnboarding: !(preferences.getBool('onboarding_complete') ?? false),
@@ -51,9 +43,27 @@ class _LamhaAppState extends State<LamhaApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'لمحة',
+      title: 'Haigram',
       debugShowCheckedModeBanner: false,
-      theme: buildTheme(),
+      theme: buildTheme(Brightness.light),
+      darkTheme: buildTheme(Brightness.dark),
+      themeMode: ThemeMode.system,
+      builder: (context, child) {
+        final isDark =
+            MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness:
+                isDark ? Brightness.light : Brightness.dark,
+            systemNavigationBarColor:
+                isDark ? AppPalette.dark.bg : AppPalette.light.bg,
+            systemNavigationBarIconBrightness:
+                isDark ? Brightness.light : Brightness.dark,
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       locale: const Locale('ar'),
       supportedLocales: const [Locale('ar'), Locale('en')],
       localizationsDelegates: const [
@@ -67,7 +77,7 @@ class _LamhaAppState extends State<LamhaApp> {
               stream: FirebaseAuth.instance.authStateChanges(),
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
-                  return const Scaffold(body: AppLoading(message: 'جارٍ تجهيز لمحة...'));
+                  return const Scaffold(body: AppLoading(message: 'جارٍ تجهيز Haigram...'));
                 }
                 return AnimatedSwitcher(
                   duration: const Duration(milliseconds: 280),

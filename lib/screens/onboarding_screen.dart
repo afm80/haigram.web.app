@@ -33,7 +33,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       icon: Icons.add_a_photo_rounded,
       title: 'شارك لمحتك',
       description:
-          'أنشئ منشوراً أو قصة أو ريلز، واجعل لحظاتك جزءاً من مجتمع لمحة.',
+          'أنشئ منشوراً أو قصة أو ريلز، واجعل لحظاتك جزءاً من مجتمع Haigram.',
     ),
   ];
 
@@ -77,11 +77,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: DecoratedBox(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topRight,
             end: Alignment.bottomLeft,
-            colors: [Color(0xFF21183C), AppColors.bg, Color(0xFF251522)],
+            colors: Theme.of(context).brightness == Brightness.dark
+                ? [AppPalette.dark.bg2, AppPalette.dark.bg, AppPalette.dark.bg]
+                : [AppPalette.light.surfaceHigh, AppPalette.light.bg, AppPalette.light.bg],
             stops: [0, 0.55, 1],
           ),
         ),
@@ -94,7 +96,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   children: [
                     const LamhaLogo(size: 40),
                     const SizedBox(width: 10),
-                    const Text('لمحة',
+                    const Text('Haigram',
                         style: TextStyle(
                             fontSize: 21, fontWeight: FontWeight.w800)),
                     const Spacer(),
@@ -212,8 +214,8 @@ class _SlideView extends StatelessWidget {
             child: Text(
               slide.description,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                  color: AppColors.textDim, fontSize: 16, height: 1.65),
+              style: TextStyle(
+                  color: context.appColors.textDim, fontSize: 16, height: 1.65),
             ),
           ),
         ],

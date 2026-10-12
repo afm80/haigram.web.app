@@ -89,9 +89,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
               ),
               for (var i = 0; i < tags.length; i++)
                 ListTile(
-                  leading: CircleAvatar(backgroundColor: AppColors.surfaceHigh, child: Text('${i + 1}')),
+                  leading: CircleAvatar(backgroundColor: context.appColors.surfaceHigh, child: Text('${i + 1}')),
                   title: Text(tags[i].key, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text('${tags[i].value} منشور', style: const TextStyle(color: AppColors.textDim)),
+                  subtitle: Text('${tags[i].value} منشور', style: TextStyle(color: context.appColors.textDim)),
                   onTap: () {
                     _search.text = tags[i].key;
                     _run(tags[i].key);
@@ -131,7 +131,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   onTap: () => openProfile(context, u.uid),
                   leading: UserAvatar(uid: u.uid, fallbackName: u.username, radius: 22),
                   title: Text(u.username, style: const TextStyle(fontWeight: FontWeight.w700)),
-                  subtitle: u.name.isEmpty ? null : Text(u.name, style: const TextStyle(color: AppColors.textDim)),
+                  subtitle: u.name.isEmpty ? null : Text(u.name, style: TextStyle(color: context.appColors.textDim)),
                 ),
               const Divider(color: Color(0x22FFFFFF)),
             ],

@@ -29,7 +29,7 @@ class _PostsFeedScreenState extends State<PostsFeedScreen> {
             child: Row(
               children: [
                 PopupMenuButton<bool>(
-                  color: AppColors.surfaceHigh,
+                  color: context.appColors.surfaceHigh,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                   onSelected: (v) => setState(() => _following = v),
                   itemBuilder: (_) => [
@@ -41,9 +41,9 @@ class _PostsFeedScreenState extends State<PostsFeedScreen> {
                     children: [
                       ShaderMask(
                         shaderCallback: (r) => const LinearGradient(colors: [AppColors.accent, AppColors.accent2]).createShader(r),
-                        child: const Text('لمحة', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white)),
+                        child: const Text('Haigram', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white)),
                       ),
-                      const Icon(Icons.keyboard_arrow_down_rounded, size: 22, color: AppColors.textDim),
+                      Icon(Icons.keyboard_arrow_down_rounded, size: 22, color: context.appColors.textDim),
                     ],
                   ),
                 ),
@@ -104,7 +104,7 @@ class _FeedListState extends State<_FeedList> {
                   return EmptyState(
                     icon: Icons.photo_library_outlined,
                     title: widget.onlyFollowing ? 'منشورات أتابعهم ستظهر هنا' : 'لا توجد منشورات بعد',
-                    message: widget.onlyFollowing ? 'تابع حسابات لتبقى على اطلاع بآخر صورهم وقصصهم.' : 'شارك أول صورة أو خاطرة مع مجتمع لمحة.',
+                    message: widget.onlyFollowing ? 'تابع حسابات لتبقى على اطلاع بآخر صورهم وقصصهم.' : 'شارك أول صورة أو خاطرة مع مجتمع Haigram.',
                   );
                 }
                 return PostCard(post: list[i - 1]);

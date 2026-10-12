@@ -62,7 +62,7 @@ void showCommentsSheet(BuildContext context, Post post) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    backgroundColor: AppColors.surface,
+    backgroundColor: context.appColors.surface,
     shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
     builder: (_) => _CommentsSheet(post: post, outerContext: context),
@@ -115,7 +115,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                    color: AppColors.textDim,
+                    color: context.appColors.textDim,
                     borderRadius: BorderRadius.circular(2))),
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
@@ -183,8 +183,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                                     fontSize: 13))),
                                         const SizedBox(width: 8),
                                         Text(timeAgo(c.createdAt),
-                                            style: const TextStyle(
-                                                color: AppColors.textDim,
+                                            style: TextStyle(
+                                                color: context.appColors.textDim,
                                                 fontSize: 12)),
                                       ],
                                     ),
@@ -199,10 +199,10 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                               GestureDetector(
                                 onTap: () => PostService.deleteComment(
                                     widget.post.id, c.id),
-                                child: const Padding(
-                                  padding: EdgeInsets.all(6),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(6),
                                   child: Icon(Icons.delete_outline_rounded,
-                                      size: 20, color: AppColors.textDim),
+                                      size: 20, color: context.appColors.textDim),
                                 ),
                               ),
                           ],

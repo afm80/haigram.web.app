@@ -78,11 +78,16 @@ class _TabsState extends State<_Tabs> {
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Colors.black.withOpacity(_index == 0 ? 0.45 : 0.75), AppColors.bg.withOpacity(0.92)],
+            colors: [
+              Theme.of(context).brightness == Brightness.dark
+                  ? Colors.black.withOpacity(_index == 0 ? 0.45 : 0.75)
+                  : context.appColors.bg.withOpacity(0.65),
+              context.appColors.bg.withOpacity(0.92),
+            ],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
-          border: Border(top: BorderSide(color: Colors.white.withOpacity(0.08), width: 1)),
+          border: Border(top: BorderSide(color: context.appColors.text.withOpacity(0.08), width: 1)),
         ),
         child: SafeArea(
           top: false,
@@ -126,11 +131,11 @@ class _TabsState extends State<_Tabs> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(selected ? activeIcon : icon, color: selected ? Colors.white : AppColors.textDim, size: 24),
+              Icon(selected ? activeIcon : icon,               color: selected ? Theme.of(context).colorScheme.primary : context.appColors.textDim, size: 24),
               const SizedBox(height: 2),
               Text(
                 label,
-                style: TextStyle(fontSize: 10, fontWeight: selected ? FontWeight.w700 : FontWeight.w500, color: selected ? Colors.white : AppColors.textDim),
+                style: TextStyle(fontSize: 10, fontWeight: selected ? FontWeight.w700 : FontWeight.w500, color: selected ? Theme.of(context).colorScheme.primary : context.appColors.textDim),
               ),
             ],
           ),

@@ -1,59 +1,118 @@
 import 'package:flutter/material.dart';
 
-/// الهوية البصرية الأصلية لتطبيق "لمحة": خلفية داكنة عميقة، تدرجات بنفسجية/ورديّة، وملمس حديث.
+/// الهوية البصرية الأصلية لتطبيق Haigram: خلفية داكنة عميقة، تدرجات بنفسجية/ورديّة، وملمس حديث.
 class AppColors {
-  static const bg = Color(0xFF0B0B12);
-  static const bg2 = Color(0xFF12141C);
-  static const surface = Color(0xFF171A24);
-  static const surfaceHigh = Color(0xFF212632);
-  static const card = Color(0xFF1A1D2A);
   static const accent = Color(0xFF8B5CF6);
   static const accent2 = Color(0xFFFF5BA9);
   static const accent3 = Color(0xFF7C3AED);
-  static const text = Color(0xFFF3F5F9);
-  static const textDim = Color(0xFF9AA2B5);
   static const success = Color(0xFF34D399);
-  static const shadow = Color(0x66000000);
+
+  static AppPalette forBrightness(Brightness brightness) =>
+      brightness == Brightness.dark ? AppPalette.dark : AppPalette.light;
 }
 
-ThemeData buildTheme() {
+class AppPalette {
+  final Color bg;
+  final Color bg2;
+  final Color surface;
+  final Color surfaceHigh;
+  final Color card;
+  final Color text;
+  final Color textDim;
+  final Color shadow;
+
+  const AppPalette({
+    required this.bg,
+    required this.bg2,
+    required this.surface,
+    required this.surfaceHigh,
+    required this.card,
+    required this.text,
+    required this.textDim,
+    required this.shadow,
+  });
+
+  static const dark = AppPalette(
+    bg: Color(0xFF0B0B12),
+    bg2: Color(0xFF12141C),
+    surface: Color(0xFF171A24),
+    surfaceHigh: Color(0xFF212632),
+    card: Color(0xFF1A1D2A),
+    text: Color(0xFFF3F5F9),
+    textDim: Color(0xFF9AA2B5),
+    shadow: Color(0x66000000),
+  );
+
+  static const light = AppPalette(
+    bg: Color(0xFFF7F6FB),
+    bg2: Color(0xFFEDEBF4),
+    surface: Color(0xFFFFFFFF),
+    surfaceHigh: Color(0xFFEAE8F1),
+    card: Color(0xFFFFFFFF),
+    text: Color(0xFF1C1B22),
+    textDim: Color(0xFF666574),
+    shadow: Color(0x22000000),
+  );
+}
+
+extension AppColorContext on BuildContext {
+  AppPalette get appColors =>
+      AppColors.forBrightness(Theme.of(this).brightness);
+}
+
+ThemeData buildTheme(Brightness brightness) {
+  final colors = AppColors.forBrightness(brightness);
   final base = ThemeData(
     useMaterial3: true,
-    brightness: Brightness.dark,
-    scaffoldBackgroundColor: AppColors.bg,
+    brightness: brightness,
+    scaffoldBackgroundColor: colors.bg,
     fontFamily: 'Roboto',
   );
 
   return base.copyWith(
-    colorScheme: const ColorScheme.dark(
-      primary: AppColors.accent,
-      secondary: AppColors.accent2,
-      surface: AppColors.surface,
-      onPrimary: Colors.white,
-      onSurface: AppColors.text,
-    ),
+    colorScheme: brightness == Brightness.dark
+        ? ColorScheme.dark(
+            primary: AppColors.accent,
+            secondary: AppColors.accent2,
+            surface: colors.surface,
+            onPrimary: Colors.white,
+            onSurface: colors.text,
+            onSecondary: Colors.white,
+          )
+        : ColorScheme.light(
+            primary: AppColors.accent3,
+            secondary: AppColors.accent2,
+            surface: colors.surface,
+            onPrimary: Colors.white,
+            onSurface: colors.text,
+            onSecondary: Colors.white,
+          ),
     textTheme: base.textTheme.apply(
-      bodyColor: AppColors.text,
-      displayColor: AppColors.text,
+      bodyColor: colors.text,
+      displayColor: colors.text,
       fontFamily: 'Roboto',
     ).copyWith(
       headlineSmall: const TextStyle(fontWeight: FontWeight.w800),
       titleLarge: const TextStyle(fontWeight: FontWeight.w700),
-      bodyLarge: const TextStyle(color: AppColors.text),
-      bodyMedium: const TextStyle(color: AppColors.text),
+      bodyLarge: TextStyle(color: colors.text),
+      bodyMedium: TextStyle(color: colors.text),
     ),
-    appBarTheme: const AppBarTheme(
+    appBarTheme: AppBarTheme(
       backgroundColor: Colors.transparent,
       elevation: 0,
       centerTitle: true,
-      iconTheme: IconThemeData(color: AppColors.text),
-      titleTextStyle: TextStyle(color: AppColors.text, fontSize: 18, fontWeight: FontWeight.w700),
+      iconTheme: IconThemeData(color: colors.text),
+      titleTextStyle: TextStyle(
+        color: colors.text,
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+      ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: AppColors.surfaceHigh,
+      fillColor: colors.surfaceHigh,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      hintStyle: const TextStyle(color: AppColors.textDim),
+      hintStyle: TextStyle(color: colors.textDim),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide.none,
@@ -77,18 +136,18 @@ ThemeData buildTheme() {
       ),
     ),
     cardTheme: CardTheme(
-      color: AppColors.card,
+      color: colors.card,
       elevation: 0,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     ),
     dialogTheme: DialogTheme(
-      backgroundColor: AppColors.surface,
+      backgroundColor: colors.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
     ),
-    snackBarTheme: const SnackBarThemeData(
-      backgroundColor: AppColors.surfaceHigh,
-      contentTextStyle: TextStyle(color: AppColors.text),
+    snackBarTheme: SnackBarThemeData(
+      backgroundColor: colors.surfaceHigh,
+      contentTextStyle: TextStyle(color: colors.text),
       behavior: SnackBarBehavior.floating,
     ),
   );
@@ -96,7 +155,8 @@ ThemeData buildTheme() {
 
 class LamhaLogo extends StatelessWidget {
   final double size;
-  const LamhaLogo({super.key, this.size = 72});
+  final bool monochrome;
+  const LamhaLogo({super.key, this.size = 72, this.monochrome = false});
 
   @override
   Widget build(BuildContext context) {
@@ -106,17 +166,32 @@ class LamhaLogo extends StatelessWidget {
       padding: EdgeInsets.all(size * 0.1),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(size * 0.32),
-        gradient: const LinearGradient(
-          colors: [AppColors.accent, AppColors.accent2],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        boxShadow: const [
-          BoxShadow(color: AppColors.shadow, blurRadius: 18, offset: Offset(0, 10)),
-        ],
+        color: monochrome ? Colors.white : null,
+        gradient: monochrome
+            ? null
+            : const LinearGradient(
+                colors: [AppColors.accent, AppColors.accent2],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+        boxShadow: monochrome
+            ? null
+            : [
+                BoxShadow(
+                  color: context.appColors.shadow,
+                  blurRadius: 18,
+                  offset: const Offset(0, 10),
+                ),
+              ],
       ),
       child: CustomPaint(
-        painter: _PlayTrianglePainter(),
+        painter: _PlayTrianglePainter(
+          color: monochrome
+              ? (Theme.of(context).brightness == Brightness.dark
+                  ? AppPalette.dark.bg
+                  : AppPalette.light.bg)
+              : Colors.white,
+        ),
         child: const SizedBox.expand(),
       ),
     );
@@ -142,7 +217,7 @@ class AppLoading extends StatelessWidget {
           ),
           if (message != null) ...[
             const SizedBox(height: 12),
-            Text(message!, style: const TextStyle(color: AppColors.textDim)),
+            Text(message!, style: TextStyle(color: context.appColors.textDim)),
           ],
         ],
       ),
@@ -177,16 +252,17 @@ class EmptyState extends StatelessWidget {
               height: 76,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppColors.surfaceHigh,
-                border: Border.all(color: Colors.white.withOpacity(0.06)),
+                color: context.appColors.surfaceHigh,
+                border: Border.all(
+                    color: context.appColors.text.withOpacity(0.06)),
               ),
-              child: Icon(icon, size: 34, color: AppColors.textDim),
+              child: Icon(icon, size: 34, color: context.appColors.textDim),
             ),
             const SizedBox(height: 18),
             Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
             if (message != null) ...[
               const SizedBox(height: 8),
-              Text(message!, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.textDim, height: 1.5)),
+              Text(message!, textAlign: TextAlign.center, style: TextStyle(color: context.appColors.textDim, height: 1.5)),
             ],
             if (action != null) ...[
               const SizedBox(height: 18),
@@ -200,9 +276,13 @@ class EmptyState extends StatelessWidget {
 }
 
 class _PlayTrianglePainter extends CustomPainter {
+  final Color color;
+
+  const _PlayTrianglePainter({this.color = Colors.white});
+
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.white;
+    final paint = Paint()..color = color;
     final path = Path();
     path.moveTo(size.width * 0.27, size.height * 0.18);
     path.lineTo(size.width * 0.82, size.height * 0.5);
@@ -212,5 +292,6 @@ class _PlayTrianglePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _PlayTrianglePainter oldDelegate) =>
+      oldDelegate.color != color;
 }

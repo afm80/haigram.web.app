@@ -88,7 +88,7 @@ class _TabsDelegate extends SliverPersistentHeaderDelegate {
   @override
   double get maxExtent => tabBar.preferredSize.height;
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) => ColoredBox(color: AppColors.bg, child: tabBar);
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) => ColoredBox(color: context.appColors.bg, child: tabBar);
   @override
   bool shouldRebuild(covariant _TabsDelegate old) => false;
 }
@@ -134,7 +134,7 @@ class _Header extends StatelessWidget {
               // الاسم (عريض) ← اسم المستخدم ← الرابط ← النبذة
               Text(u.displayName, textAlign: TextAlign.center, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
               const SizedBox(height: 2),
-              Text('@${u.username}', style: const TextStyle(fontSize: 15, color: AppColors.textDim)),
+              Text('@${u.username}', style: TextStyle(fontSize: 15, color: context.appColors.textDim)),
               const SizedBox(height: 4),
               GestureDetector(
                 onTap: () async {
@@ -165,13 +165,13 @@ class _Header extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _stat('منشور', PostService.countPosts(uid)),
+                  _stat(context, 'منشور', PostService.countPosts(uid)),
                   _divider(),
-                  _stat('المتابعون', PostService.countFollowers(uid), onTap: () => _showFollowSheet(context, uid, 0)),
+                  _stat(context, 'المتابعون', PostService.countFollowers(uid), onTap: () => _showFollowSheet(context, uid, 0)),
                   _divider(),
-                  _stat('أتابع', PostService.countFollowing(uid), onTap: () => _showFollowSheet(context, uid, 1)),
+                  _stat(context, 'أتابع', PostService.countFollowing(uid), onTap: () => _showFollowSheet(context, uid, 1)),
                   _divider(),
-                  _stat('الإعجابات', PostService.totalLikes(uid)),
+                  _stat(context, 'الإعجابات', PostService.totalLikes(uid)),
                 ],
               ),
               const SizedBox(height: 16),
@@ -197,11 +197,11 @@ class _Header extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: _pillButton('تعديل الملف الشخصي', () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const EditProfileScreen()))),
+          child: _pillButton(context, 'تعديل الملف الشخصي', () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const EditProfileScreen()))),
         ),
         const SizedBox(width: 8),
         Expanded(
-          child: _pillButton('مشاركة الملف', () async {
+          child: _pillButton(context, 'مشاركة الملف', () async {
             await Clipboard.setData(ClipboardData(text: u.link));
             if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم نسخ رابط الملف الشخصي')));
           }),
@@ -223,7 +223,7 @@ class _Header extends StatelessWidget {
                 onPressed: () => PostService.toggleFollow(uid, following),
                 style: FilledButton.styleFrom(
                   minimumSize: const Size.fromHeight(40),
-                  backgroundColor: following ? AppColors.surfaceHigh : AppColors.accent,
+                  backgroundColor: following ? context.appColors.surfaceHigh : AppColors.accent,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
                 child: Text(following ? 'أتابعه' : 'متابعة'),
@@ -233,7 +233,7 @@ class _Header extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         Expanded(
-          child: _pillButton('مشاركة', () async {
+          child: _pillButton(context, 'مشاركة', () async {
             await Clipboard.setData(ClipboardData(text: u.link));
             if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم نسخ رابط الملف الشخصي')));
           }),
@@ -242,22 +242,22 @@ class _Header extends StatelessWidget {
     );
   }
 
-  Widget _pillButton(String text, VoidCallback onTap) {
+  Widget _pillButton(BuildContext context, String text, VoidCallback onTap) {
     return OutlinedButton(
       onPressed: onTap,
       style: OutlinedButton.styleFrom(
-        backgroundColor: AppColors.surfaceHigh,
+        backgroundColor: context.appColors.surfaceHigh,
         side: BorderSide.none,
         minimumSize: const Size.fromHeight(40),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
-      child: Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+      child: Text(text, style: TextStyle(color: context.appColors.text, fontWeight: FontWeight.w600)),
     );
   }
 
   Widget _divider() => Container(width: 1, height: 26, margin: const EdgeInsets.symmetric(horizontal: 12), color: const Color(0x33FFFFFF));
 
-  Widget _stat(String label, Future<int> value, {VoidCallback? onTap}) {
+  Widget _stat(BuildContext context, String label, Future<int> value, {VoidCallback? onTap}) {
     return InkWell(
       onTap: onTap,
       child: Column(
@@ -266,7 +266,7 @@ class _Header extends StatelessWidget {
             future: value,
             builder: (_, s) => Text('${s.data ?? 0}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
           ),
-          Text(label, style: const TextStyle(color: AppColors.textDim, fontSize: 12)),
+          Text(label, style: TextStyle(color: context.appColors.textDim, fontSize: 12)),
         ],
       ),
     );
@@ -276,7 +276,7 @@ class _Header extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppColors.surface,
+      backgroundColor: context.appColors.surface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) => _FollowSheet(uid: uid, initialTab: initialTab, outerContext: context),
     );
@@ -300,7 +300,7 @@ class _FollowSheet extends StatelessWidget {
         child: Column(
           children: [
             const SizedBox(height: 8),
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.textDim, borderRadius: BorderRadius.circular(2))),
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: context.appColors.textDim, borderRadius: BorderRadius.circular(2))),
             const TabBar(tabs: [Tab(text: 'المتابعون'), Tab(text: 'أتابع')]),
             Expanded(
               child: TabBarView(
@@ -368,7 +368,7 @@ class _UserListState extends State<_UserList> {
                     },
                     leading: UserAvatar(uid: u.uid, fallbackName: u.username, radius: 22),
                     title: Text(u.username, style: const TextStyle(fontWeight: FontWeight.w700)),
-                    subtitle: u.name.isEmpty ? null : Text(u.name, style: const TextStyle(color: AppColors.textDim)),
+                    subtitle: u.name.isEmpty ? null : Text(u.name, style: TextStyle(color: context.appColors.textDim)),
                     trailing: isMe
                         ? null
                         : StreamBuilder<bool>(
@@ -379,7 +379,7 @@ class _UserListState extends State<_UserList> {
                                 onPressed: () => PostService.toggleFollow(u.uid, following),
                                 style: FilledButton.styleFrom(
                                   minimumSize: const Size(92, 34),
-                                  backgroundColor: following ? AppColors.surfaceHigh : AppColors.accent,
+                                  backgroundColor: following ? context.appColors.surfaceHigh : AppColors.accent,
                                 ),
                                 child: Text(following ? 'أتابعه' : 'متابعة'),
                               );
@@ -434,7 +434,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   void _photoMenu() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.surface,
+      backgroundColor: context.appColors.surface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => SafeArea(
         child: Column(
@@ -499,7 +499,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 child: Container(
                   width: 32,
                   height: 32,
-                  decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accent, border: Border.all(color: AppColors.bg, width: 2)),
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accent, border: Border.all(color: context.appColors.bg, width: 2)),
                   child: const Icon(Icons.photo_camera_rounded, size: 17),
                 ),
               ),
@@ -556,11 +556,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           children: [
             _photoPicker(),
             const SizedBox(height: 12),
-            const Text('الاسم', style: TextStyle(color: AppColors.textDim)),
+            Text('الاسم', style: TextStyle(color: context.appColors.textDim)),
             const SizedBox(height: 6),
             TextField(controller: _name, maxLength: 50, decoration: const InputDecoration(hintText: 'اسمك كما يظهر لمتابعيك', counterText: '')),
             const SizedBox(height: 16),
-            const Text('اسم المستخدم', style: TextStyle(color: AppColors.textDim)),
+            Text('اسم المستخدم', style: TextStyle(color: context.appColors.textDim)),
             const SizedBox(height: 6),
             TextField(
               controller: _username,
@@ -569,12 +569,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               autocorrect: false,
               decoration: const InputDecoration(hintText: 'username', prefixText: '@', counterText: ''),
             ),
-            const Padding(
-              padding: EdgeInsets.only(top: 4),
-              child: Text('أحرف إنجليزية صغيرة وأرقام و _ و . (3 إلى 24 حرفاً)', style: TextStyle(color: AppColors.textDim, fontSize: 12)),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('أحرف إنجليزية صغيرة وأرقام و _ و . (3 إلى 24 حرفاً)', style: TextStyle(color: context.appColors.textDim, fontSize: 12)),
             ),
             const SizedBox(height: 16),
-            const Text('النبذة', style: TextStyle(color: AppColors.textDim)),
+            Text('النبذة', style: TextStyle(color: context.appColors.textDim)),
             const SizedBox(height: 6),
             TextField(controller: _bio, minLines: 3, maxLines: 5, maxLength: 150, decoration: const InputDecoration(hintText: 'عرّف بنفسك')),
             if (_error != null) Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text(_error!, style: const TextStyle(color: AppColors.accent2))),
@@ -674,11 +674,11 @@ class _PostGrid extends StatelessWidget {
           child: switch (p.type) {
             PostType.photo => PostImage(post: p, height: 140),
             PostType.video => Container(
-                color: AppColors.surfaceHigh,
+                color: context.appColors.surfaceHigh,
                 child: const Center(child: Icon(Icons.play_circle_outline_rounded, size: 34, color: Colors.white54)),
               ),
             _ => Container(
-                color: AppColors.surfaceHigh,
+                color: context.appColors.surfaceHigh,
                 padding: const EdgeInsets.all(8),
                 child: Text(p.caption, maxLines: 5, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
               ),
