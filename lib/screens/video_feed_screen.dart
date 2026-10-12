@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
@@ -602,8 +601,12 @@ class _VideoPageState extends State<_VideoPage>
   bool _failed = false;
   bool _appResumed = true;
   bool _resumeAfterLifecycle = false;
+  bool _showLikeFeedback = false;
+  bool _likeInProgress = false;
+  bool _mainMutedBySound = false;
   double _profileDragDistance = 0;
   String? _soundError;
+  Timer? _likeFeedbackTimer;
 
   @override
   void initState() {
@@ -622,7 +625,7 @@ class _VideoPageState extends State<_VideoPage>
       _vc = vc;
       await vc.setLooping(true);
       await vc.initialize();
-      await vc.setVolume(widget.post.soundPostId == null ? 1 : 0);
+      await vc.setVolume(1);
       if (!mounted) return;
       setState(() => _ready = true);
       _sync();
@@ -650,11 +653,37 @@ class _VideoPageState extends State<_VideoPage>
         return;
       }
       _soundVc = soundController;
+      soundController.addListener(_syncMainVideoVolume);
       if (widget.playing && _appResumed) await soundController.play();
+      _syncMainVideoVolume();
       setState(() {});
     } catch (error) {
       await soundController?.dispose();
       if (mounted) setState(() => _soundError = '$error');
+    }
+  }
+
+  void _syncMainVideoVolume() {
+    final video = _vc;
+    if (video == null) return;
+    final muteMain = _soundVc?.value.isPlaying == true;
+    if (muteMain == _mainMutedBySound) return;
+    _mainMutedBySound = muteMain;
+    unawaited(_setMainVideoVolume(video, muteMain ? 0 : 1));
+  }
+
+  Future<void> _setMainVideoVolume(
+    VideoPlayerController video,
+    double volume,
+  ) async {
+    try {
+      await video.setVolume(volume);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر ضبط صوت الفيديو: $error')),
+        );
+      }
     }
   }
 
@@ -696,8 +725,10 @@ class _VideoPageState extends State<_VideoPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _soundVc?.removeListener(_syncMainVideoVolume);
     _vc?.dispose();
     _soundVc?.dispose();
+    _likeFeedbackTimer?.cancel();
     _disc.dispose();
     super.dispose();
   }
@@ -716,6 +747,33 @@ class _VideoPageState extends State<_VideoPage>
         _disc.stop();
       }
     });
+  }
+
+  Future<void> _likeOnDoubleTap() async {
+    if (!_ready || _likeInProgress) return;
+    _likeFeedbackTimer?.cancel();
+    setState(() {
+      _likeInProgress = true;
+      _showLikeFeedback = true;
+    });
+    _likeFeedbackTimer = Timer(const Duration(milliseconds: 700), () {
+      if (mounted) setState(() => _showLikeFeedback = false);
+    });
+
+    try {
+      final alreadyLiked = await PostService.isLiked(widget.post.id).first;
+      if (!alreadyLiked) {
+        await PostService.toggleLike(widget.post.id, false);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر تسجيل الإعجاب: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _likeInProgress = false);
+    }
   }
 
   /// يفتح ملف صاحب الفيديو ويوقف التشغيل أثناء غيابه.
@@ -758,6 +816,7 @@ class _VideoPageState extends State<_VideoPage>
     final p = widget.post;
     return GestureDetector(
       onTap: _togglePlay,
+      onDoubleTap: () => unawaited(_likeOnDoubleTap()),
       onHorizontalDragStart: (_) => _profileDragDistance = 0,
       onHorizontalDragUpdate: (details) =>
           _profileDragDistance += details.delta.dx,
@@ -772,24 +831,17 @@ class _VideoPageState extends State<_VideoPage>
           const ColoredBox(color: Colors.black),
           if (_ready)
             LayoutBuilder(
-              builder: (context, constraints) {
+              builder: (context, _) {
                 final aspectRatio = _vc!.value.aspectRatio;
                 if (!aspectRatio.isFinite || aspectRatio <= 0) {
                   return const SizedBox.shrink();
                 }
-                final width = math.min(
-                  constraints.maxWidth,
-                  constraints.maxHeight * aspectRatio,
-                );
-                final height = math.min(
-                  constraints.maxHeight,
-                  constraints.maxWidth / aspectRatio,
-                );
-                return Center(
-                  child: SizedBox(
-                    width: width,
-                    height: height,
-                    child: VideoPlayer(_vc!),
+                return ClipRect(
+                  child: Center(
+                    child: AspectRatio(
+                      aspectRatio: aspectRatio,
+                      child: VideoPlayer(_vc!),
+                    ),
                   ),
                 );
               },
@@ -806,6 +858,25 @@ class _VideoPageState extends State<_VideoPage>
             const Center(
                 child: Icon(Icons.play_arrow_rounded,
                     size: 90, color: Colors.white70)),
+          IgnorePointer(
+            child: Center(
+              child: AnimatedScale(
+                scale: _showLikeFeedback ? 1 : 0.45,
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutBack,
+                child: AnimatedOpacity(
+                  opacity: _showLikeFeedback ? 1 : 0,
+                  duration: const Duration(milliseconds: 180),
+                  child: const Icon(
+                    Icons.favorite_rounded,
+                    color: AppColors.videoLike,
+                    size: 112,
+                    shadows: _shadow,
+                  ),
+                ),
+              ),
+            ),
+          ),
           if (_soundVc != null)
             Positioned(
               left: 0,
@@ -853,7 +924,6 @@ class _VideoPageState extends State<_VideoPage>
             initialData: p,
             builder: (context, s) => _sideActions(s.data ?? p),
           ),
-          _soundDisc(),
         ],
       ),
     );
@@ -975,7 +1045,8 @@ class _VideoPageState extends State<_VideoPage>
             onTap: () => _showShareOptions(p),
             scale: actionScale,
           ),
-          SizedBox(height: 58 * actionScale),
+          _soundDisc(),
+          SizedBox(height: 8 * actionScale),
         ],
       ),
     );
@@ -984,46 +1055,42 @@ class _VideoPageState extends State<_VideoPage>
   Widget _soundDisc() {
     final actionScale =
         (MediaQuery.sizeOf(context).height / 700).clamp(0.72, 1.0).toDouble();
-    return Positioned(
-      left: 10,
-      bottom: widget.bottomBase * actionScale + 22,
-      child: Tooltip(
-        message: 'فتح صفحة الصوت',
-        child: Material(
-          color: Colors.transparent,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: _openSound,
-            child: Padding(
-              padding: const EdgeInsets.all(3),
-              child: Transform.scale(
-                scale: actionScale,
-                child: RotationTransition(
-                  turns: _disc,
-                  child: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: const SweepGradient(colors: [
-                        AppColors.accent,
-                        AppColors.accent2,
-                        AppColors.accent
-                      ]),
-                      border: Border.all(
-                          color: Colors.white.withOpacity(0.85), width: 2),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Colors.black45,
-                          blurRadius: 8,
-                          offset: Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(Icons.music_note_rounded,
-                        size: 22, color: Colors.white),
+    return Tooltip(
+      message: 'فتح صفحة الصوت',
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: _openSound,
+          child: Padding(
+            padding: const EdgeInsets.all(3),
+            child: Transform.scale(
+              scale: actionScale,
+              child: RotationTransition(
+                turns: _disc,
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const SweepGradient(colors: [
+                      AppColors.accent,
+                      AppColors.accent2,
+                      AppColors.accent
+                    ]),
+                    border: Border.all(
+                        color: Colors.white.withOpacity(0.85), width: 2),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black45,
+                        blurRadius: 8,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
                   ),
+                  child: const Icon(Icons.music_note_rounded,
+                      size: 22, color: Colors.white),
                 ),
               ),
             ),
