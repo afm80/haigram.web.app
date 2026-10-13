@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemNavigator;
 
+import '../route_state.dart';
 import '../services/post_service.dart';
 import '../services/presence_service.dart';
 import '../services/social_service.dart';
@@ -13,6 +14,7 @@ import 'explore_screen.dart';
 import 'social_screens.dart';
 import 'post_widgets.dart' show PostDetailScreen;
 import 'profile_screen.dart';
+import 'settings_screen.dart';
 import 'video_feed_screen.dart';
 
 /// الغلاف الرئيسي: يجهّز ملف المستخدم أولاً ثم يعرض التبويبات.
@@ -79,6 +81,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   final _selectedTab = ValueNotifier<int>(0);
   final _tabNavigators =
       List.generate(5, (_) => GlobalKey<NavigatorState>());
+  // يحفظ الصفحات المفتوحة في كل تبويب لاستعادتها بعد تحديث المتصفح.
+  final _routeObservers = List.generate(5, (tab) => TabRouteObserver(tab));
   // يُزاد لطلب فتح حقل البحث في تبويب الاستكشاف.
   final _searchRequest = ValueNotifier<int>(0);
   late final Stream<int> _unreadNotificationCount =
@@ -95,7 +99,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     );
     // حذف قصصي المنتهية (أقدم من 24 ساعة) لتوفير الحصة المجانية.
     PostService.cleanupMyExpiredStories().catchError((_) {});
-    WidgetsBinding.instance.addPostFrameCallback((_) => _openDeepLink());
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _restoreOrOpenDeepLink());
   }
 
   @override
@@ -122,13 +127,108 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     }
   }
 
+  /// بعد تحديث الصفحة: يعيد التبويب والصفحات المفتوحة كما كانت.
+  /// وإن لم توجد حالة محفوظة يفتح رابط المشاركة (إن وُجد).
+  Future<void> _restoreOrOpenDeepLink() async {
+    final saved = await RouteStore.loadSaved();
+    if (!mounted) return;
+    if (saved != null) {
+      await _restore(saved);
+      return;
+    }
+    await _openDeepLink();
+  }
+
+  Future<void> _restore(SavedNavState saved) async {
+    final tab = (saved.tab >= 0 && saved.tab < _tabNavigators.length)
+        ? saved.tab
+        : 0;
+    RouteStore.setTab(tab, persist: false);
+    setState(() => _index = tab);
+    _selectedTab.value = tab;
+    for (var t = 0; t < _tabNavigators.length; t++) {
+      for (final item in saved.stacks[t] ?? const <SavedRoute>[]) {
+        Route<void>? route;
+        try {
+          route = await _routeFor(item);
+        } catch (error) {
+          debugPrint('Unable to restore page ${item.name}: $error');
+        }
+        if (!mounted) return;
+        if (route != null) _tabNavigators[t].currentState?.push<void>(route);
+      }
+    }
+  }
+
+  /// يبني الصفحة من وصفها المحفوظ (أو null إذا لم تعد متاحة).
+  Future<Route<void>?> _routeFor(SavedRoute item) async {
+    final args = item.args;
+    switch (item.name) {
+      case 'user':
+        final uid = args['uid'] as String? ?? '';
+        if (uid.isEmpty) return null;
+        return appRoute<void>(
+            'user', {'uid': uid}, (_) => UserProfileScreen(uid: uid));
+      case 'post':
+        final id = args['id'] as String? ?? '';
+        final post = id.isEmpty ? null : await PostService.postById(id);
+        if (post == null) return null;
+        return appRoute<void>(
+            'post', {'id': post.id}, (_) => PostDetailScreen(post: post));
+      case 'video':
+        final id = args['id'] as String? ?? '';
+        final post = id.isEmpty ? null : await PostService.postById(id);
+        if (post == null || post.type != PostType.video) return null;
+        return appRoute<void>(
+          'video',
+          {'id': post.id},
+          (_) => VideoViewerScreen(posts: [post], initialIndex: 0),
+        );
+      case 'sound':
+        final id = args['id'] as String? ?? '';
+        final sound = id.isEmpty ? null : await PostService.postById(id);
+        if (sound == null || sound.type != PostType.video) return null;
+        return appRoute<void>(
+            'sound', {'id': sound.id}, (_) => SoundScreen(sound: sound));
+      case 'chat':
+        final cid = args['cid'] as String? ?? '';
+        final uid = args['uid'] as String? ?? '';
+        if (cid.isEmpty || uid.isEmpty) return null;
+        return appRoute<void>(
+          'chat',
+          {'cid': cid, 'uid': uid},
+          (_) => ChatScreen(conversationId: cid, otherUid: uid),
+        );
+      case 'notifications':
+        final type = args['type'] as String?;
+        final title = args['title'] as String?;
+        return appRoute<void>(
+          'notifications',
+          {'type': type, 'title': title},
+          (_) => NotificationsScreen(type: type, title: title),
+        );
+      case 'editProfile':
+        return appRoute<void>(
+            'editProfile', const {}, (_) => const EditProfileScreen());
+      case 'settings':
+        return appRoute<void>(
+          'settings',
+          const {},
+          (_) => SettingsScreen(
+              onThemeModeChanged: widget.onThemeModeChanged),
+        );
+    }
+    return null;
+  }
+
   Future<void> _openDeepLink() async {
     final u = Uri.base.queryParameters['u'];
     if (u != null && u.isNotEmpty) {
       final user = await UserService.byUsername(u);
       if (!mounted || user == null) return;
       _tabNavigators[0].currentState?.push<void>(
-        MaterialPageRoute(builder: (_) => UserProfileScreen(uid: user.uid)),
+        appRoute<void>('user', {'uid': user.uid},
+            (_) => UserProfileScreen(uid: user.uid)),
       );
       return;
     }
@@ -137,7 +237,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
       final post = await PostService.postById(postId);
       if (!mounted || post == null) return;
       _tabNavigators[0].currentState?.push<void>(
-        MaterialPageRoute(builder: (_) => PostDetailScreen(post: post)),
+        appRoute<void>('post', {'id': post.id},
+            (_) => PostDetailScreen(post: post)),
       );
       return;
     }
@@ -146,8 +247,10 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     final post = await PostService.postById(videoId);
     if (!mounted || post == null || post.type != PostType.video) return;
     _tabNavigators[0].currentState?.push<void>(
-      MaterialPageRoute(
-        builder: (_) => VideoViewerScreen(posts: [post], initialIndex: 0),
+      appRoute<void>(
+        'video',
+        {'id': post.id},
+        (_) => VideoViewerScreen(posts: [post], initialIndex: 0),
       ),
     );
   }
@@ -202,6 +305,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
           _tabNavigators.length,
           (tab) => Navigator(
             key: _tabNavigators[tab],
+            observers: [_routeObservers[tab]],
             onGenerateRoute: (_) => MaterialPageRoute<void>(
               builder: (_) => ValueListenableBuilder<int>(
                 valueListenable: _selectedTab,
@@ -271,6 +375,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   void _selectTab(int tab) {
     setState(() => _index = tab);
     _selectedTab.value = tab;
+    RouteStore.setTab(tab);
   }
 
   Widget _navItem(
