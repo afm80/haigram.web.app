@@ -10,6 +10,7 @@ import 'common_widgets.dart';
 import 'post_widgets.dart';
 import 'story_widgets.dart';
 import 'video_feed_screen.dart';
+import '../route_state.dart';
 
 /// استكشاف: يجمع الرئيسية (بدون فيديو) والبحث.
 /// حقل البحث ثم شريط القصص ثم المنشورات بالأحدث؛ وعند الضغط على البحث
@@ -315,8 +316,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
         return _TrendingVideoTile(
           post: video,
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => VideoViewerScreen(
+            appRoute(
+              'video',
+              {'id': video.id},
+              (_) => VideoViewerScreen(
                 posts: videos,
                 initialIndex: index,
               ),
