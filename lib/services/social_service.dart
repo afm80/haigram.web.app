@@ -476,11 +476,13 @@ class SocialService {
   static Future<void> markNotificationRead(String notificationId) =>
       _notifications(_uid).doc(notificationId).update({'read': true});
 
-  static Future<void> markAllNotificationsRead() async {
+  /// يعلّم الإشعارات كمقروءة؛ مع [type] يقتصر على نوع واحد (follow/like/comment).
+  static Future<void> markAllNotificationsRead({String? type}) async {
     final notifications = _notifications(_uid);
     while (true) {
-      final snapshot =
-          await notifications.where('read', isEqualTo: false).limit(450).get();
+      var query = notifications.where('read', isEqualTo: false);
+      if (type != null) query = query.where('type', isEqualTo: type);
+      final snapshot = await query.limit(450).get();
       if (snapshot.docs.isEmpty) return;
       final batch = _db.batch();
       for (final doc in snapshot.docs) {
