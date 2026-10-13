@@ -25,6 +25,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Create Android files if missing
+        run: flutter create . --platforms=android
+
       - name: Build APK
         run: flutter build apk --release
 
@@ -33,4 +36,3 @@ jobs:
         with:
           name: app-release
           path: build/app/outputs/flutter-apk/app-release.apk
-          
