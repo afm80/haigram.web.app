@@ -204,19 +204,29 @@ class _Header extends StatelessWidget {
               if (isMe)
                 Align(
                   alignment: AlignmentDirectional.centerEnd,
-                  child: IconButton(
-                    tooltip: 'الإعدادات',
-                    icon: Icon(
-                      Icons.menu_rounded,
-                      size: 26,
-                      color: context.appColors.text,
-                    ),
-                    style: IconButton.styleFrom(
-                      backgroundColor: context.appColors.surfaceHigh,
-                      foregroundColor: context.appColors.text,
-                    ),
-                    onPressed: () => _openSettings(context),
-                  ),
+                  child: Builder(builder: (context) {
+                    // لون الأيقونة والخلفية يتبدلان حسب الوضع: أبيض على داكن
+                    // وأسود على فاتح، مع إطار خفيف ليبقى واضحاً دائماً.
+                    final isDark =
+                        Theme.of(context).brightness == Brightness.dark;
+                    final iconColor = isDark ? Colors.white : Colors.black87;
+                    return IconButton(
+                      tooltip: 'الإعدادات',
+                      icon: Icon(Icons.menu_rounded, size: 26, color: iconColor),
+                      style: IconButton.styleFrom(
+                        foregroundColor: iconColor,
+                        backgroundColor: isDark
+                            ? Colors.white.withOpacity(0.12)
+                            : Colors.black.withOpacity(0.06),
+                        side: BorderSide(
+                          color: isDark
+                              ? Colors.white.withOpacity(0.25)
+                              : Colors.black.withOpacity(0.18),
+                        ),
+                      ),
+                      onPressed: () => _openSettings(context),
+                    );
+                  }),
                 ),
               Row(
                 children: [
