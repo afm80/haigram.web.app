@@ -206,10 +206,52 @@ class SocialService {
     }
     final reference = _blockRef(_uid, otherUid);
     if (blocked) {
-      await reference.set({'createdAt': FieldValue.serverTimestamp()});
+      // الحظر يلغي متابعتي له أيضاً.
+      final batch = _db.batch()
+        ..set(reference, {'createdAt': FieldValue.serverTimestamp()})
+        ..delete(_db
+            .collection('users')
+            .doc(_uid)
+            .collection('following')
+            .doc(otherUid))
+        ..delete(_db
+            .collection('users')
+            .doc(otherUid)
+            .collection('followers')
+            .doc(_uid));
+      await batch.commit();
     } else {
       await reference.delete();
     }
+  }
+
+  /// أسباب الإبلاغ المتاحة (المفتاح يُخزَّن، والنص يُعرض).
+  static const reportReasons = <String, String>{
+    'spam': 'محتوى مزعج أو احتيالي',
+    'abuse': 'تحرّش أو إساءة',
+    'inappropriate': 'محتوى غير لائق',
+    'impersonation': 'انتحال شخصية',
+    'other': 'سبب آخر',
+  };
+
+  /// يرسل بلاغاً عن مستخدم إلى مجموعة reports (يقرؤها المشرف من لوحة Firebase).
+  static Future<void> reportUser(String targetUid, String reason,
+      {String details = ''}) async {
+    if (targetUid.isEmpty ||
+        targetUid == _uid ||
+        !reportReasons.containsKey(reason)) {
+      throw ArgumentError('بلاغ غير صالح');
+    }
+    await _db.collection('reports').add({
+      'type': 'user',
+      'targetUid': targetUid,
+      'reporterUid': _uid,
+      'reason': reason,
+      'details': details.trim().length > 300
+          ? details.trim().substring(0, 300)
+          : details.trim(),
+      'createdAt': FieldValue.serverTimestamp(),
+    });
   }
 
   static Stream<List<Conversation>> conversations() => _chats

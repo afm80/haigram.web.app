@@ -17,6 +17,15 @@ class AppUser {
   /// صورة شخصية مرفوعة (JPEG مصغّر بصيغة base64) محفوظة في مستند المستخدم.
   final String? photoB64;
 
+  /// حساب خاص: المنشورات تظهر لمتابعيه فقط (إخفاء في الواجهة).
+  final bool isPrivate;
+
+  /// إخفاء تبويب الإعجابات عن الآخرين.
+  final bool hideLikes;
+
+  /// معرّفات المنشورات المثبّتة أعلى الملف (الأحدث تثبيتاً أولاً، حتى 3).
+  final List<String> pinnedPostIds;
+
   AppUser({
     required this.uid,
     required this.name,
@@ -24,7 +33,27 @@ class AppUser {
     this.bio = '',
     this.photoUrl,
     this.photoB64,
+    this.isPrivate = false,
+    this.hideLikes = false,
+    this.pinnedPostIds = const [],
   });
+
+  AppUser withSettings({
+    bool? isPrivate,
+    bool? hideLikes,
+    List<String>? pinnedPostIds,
+  }) =>
+      AppUser(
+        uid: uid,
+        name: name,
+        username: username,
+        bio: bio,
+        photoUrl: photoUrl,
+        photoB64: photoB64,
+        isPrivate: isPrivate ?? this.isPrivate,
+        hideLikes: hideLikes ?? this.hideLikes,
+        pinnedPostIds: pinnedPostIds ?? this.pinnedPostIds,
+      );
 
   /// الصورة المعروضة: المرفوعة أولاً، ثم صورة Google، وإلا null (يظهر أول حرف).
   late final ImageProvider? avatarImage = _buildAvatar();
@@ -50,6 +79,10 @@ class AppUser {
       bio: (m['bio'] ?? '') as String,
       photoUrl: m['photoUrl'] as String?,
       photoB64: m['photoB64'] as String?,
+      isPrivate: m['isPrivate'] == true,
+      hideLikes: m['hideLikes'] == true,
+      pinnedPostIds: List<String>.unmodifiable(
+          (m['pinnedPostIds'] as List? ?? const []).whereType<String>()),
     );
   }
 
@@ -67,6 +100,12 @@ class AppUser {
 
 class UsernameTaken implements Exception {
   const UsernameTaken();
+}
+
+class PinLimitReached implements Exception {
+  const PinLimitReached();
+  @override
+  String toString() => 'يمكنك تثبيت ${UserService.maxPinned} منشورات كحد أقصى';
 }
 
 class UserService {
@@ -173,9 +212,67 @@ class UserService {
     final old = me?.username;
     await _save(uid: u.uid, username: username, name: name, bio: bio, photoUrl: me?.photoUrl ?? u.photoURL, photoB64: photoB64, oldUsername: old);
     await u.updateDisplayName(name.isNotEmpty ? name : username);
-    final fresh = AppUser(uid: u.uid, name: name, username: username, bio: bio, photoUrl: me?.photoUrl ?? u.photoURL, photoB64: photoB64);
+    final fresh = AppUser(
+      uid: u.uid,
+      name: name,
+      username: username,
+      bio: bio,
+      photoUrl: me?.photoUrl ?? u.photoURL,
+      photoB64: photoB64,
+      isPrivate: me?.isPrivate ?? false,
+      hideLikes: me?.hideLikes ?? false,
+      pinnedPostIds: me?.pinnedPostIds ?? const [],
+    );
     me = fresh;
     _cache[u.uid] = Future.value(fresh);
+  }
+
+  static const maxPinned = 3;
+
+  /// يحدّث إعدادات الخصوصية (يُمرَّر ما تغيّر فقط).
+  static Future<void> updatePrivacy({bool? isPrivate, bool? hideLikes}) async {
+    final u = FirebaseAuth.instance.currentUser!;
+    final data = <String, dynamic>{
+      if (isPrivate != null) 'isPrivate': isPrivate,
+      if (hideLikes != null) 'hideLikes': hideLikes,
+    };
+    if (data.isEmpty) return;
+    await _db.collection('users').doc(u.uid).update(data);
+    _applyToMe(isPrivate: isPrivate, hideLikes: hideLikes);
+  }
+
+  /// يثبّت منشوراً أعلى ملفي أو يلغي تثبيته. يرمي [PinLimitReached] عند تجاوز الحد.
+  static Future<void> setPinned(String postId, bool pin) async {
+    final u = FirebaseAuth.instance.currentUser!;
+    final ref = _db.collection('users').doc(u.uid);
+    late List<String> result;
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      final ids = <String>[
+        ...(snap.data()?['pinnedPostIds'] as List? ?? const [])
+            .whereType<String>(),
+      ]..remove(postId);
+      if (pin) {
+        if (ids.length >= maxPinned) throw const PinLimitReached();
+        ids.insert(0, postId);
+      }
+      tx.update(ref, {'pinnedPostIds': ids});
+      result = ids;
+    });
+    _applyToMe(pinnedPostIds: result);
+  }
+
+  static void _applyToMe(
+      {bool? isPrivate, bool? hideLikes, List<String>? pinnedPostIds}) {
+    final current = me;
+    if (current == null) return;
+    final fresh = current.withSettings(
+      isPrivate: isPrivate,
+      hideLikes: hideLikes,
+      pinnedPostIds: pinnedPostIds,
+    );
+    me = fresh;
+    _cache[fresh.uid] = Future.value(fresh);
   }
 
   /// ملف مستخدم بمعرّفه (مع تخزين مؤقت). null إذا لم يُنشأ ملفه بعد.

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart' show ValueNotifier;
 
 import '../web_trim.dart';
 import 'social_service.dart';
@@ -94,6 +95,11 @@ class PostService {
   static String get uidOrEmpty => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   static User get currentUser => _user;
+
+  /// يزداد عند أي فعل يغيّر الأعداد (متابعة، إعجاب، نشر، حذف) فتعيد
+  /// العدّادات في الملف الشخصي تحميل نفسها فوراً دون إعادة فتح الصفحة.
+  static final statsTick = ValueNotifier<int>(0);
+  static void notifyStatsChanged() => statsTick.value++;
 
   /// اسم المستخدم (@) الخاص بي.
   static String get username {
@@ -313,7 +319,7 @@ class PostService {
       data['soundPostId'] = soundPostId;
       data['soundUsername'] = soundUsername;
     }
-    return _db.collection('posts').add(data);
+    return _db.collection('posts').add(data).then((_) => notifyStatsChanged());
   }
 
   static String _stamp() => DateTime.now().millisecondsSinceEpoch.toString();
@@ -389,6 +395,7 @@ class PostService {
       }
     }
     await batch.commit();
+    notifyStatsChanged();
   }
 
   static DocumentReference<Map<String, dynamic>> _saveRef(String postId) =>
@@ -435,6 +442,7 @@ class PostService {
       );
     }
     await batch.commit();
+    notifyStatsChanged();
   }
 
   static Stream<List<String>> followerIds(String uid) => _db
@@ -485,11 +493,32 @@ class PostService {
     return counts.fold<int>(0, (a, b) => a + b);
   }
 
+  /// مجموع إعجابات منشورات المستخدم. يستعمل استعلام تجميع (قراءة واحدة تقريباً
+  /// لكل 1000 منشور) وإن لم يتوفر يرجع للجمع اليدوي.
   static Future<int> totalLikes(String uid) async {
-    final snap =
-        await _db.collection('posts').where('uid', isEqualTo: uid).get();
-    return snap.docs
-        .fold<int>(0, (a, d) => a + ((d.data()['likes'] ?? 0) as int));
+    final query = _db.collection('posts').where('uid', isEqualTo: uid);
+    try {
+      final agg = await query.aggregate(sum('likes')).get();
+      return (agg.getSum('likes') ?? 0).round();
+    } catch (_) {
+      final snap = await query.get();
+      return snap.docs
+          .fold<int>(0, (a, d) => a + ((d.data()['likes'] ?? 0) as num).toInt());
+    }
+  }
+
+  /// منشورات بمعرّفاتها (حتى 10)، بنفس ترتيب [ids]؛ المحذوفة تُهمَل.
+  static Future<List<Post>> postsByIds(List<String> ids) async {
+    if (ids.isEmpty) return const [];
+    final snap = await _db
+        .collection('posts')
+        .where(FieldPath.documentId, whereIn: ids.take(10).toList())
+        .get();
+    final byId = {for (final d in snap.docs) d.id: Post.fromDoc(d)};
+    return [
+      for (final id in ids)
+        if (byId[id] != null) byId[id]!,
+    ];
   }
 
   // ---- منشور واحد، حذف ----
@@ -508,6 +537,13 @@ class PostService {
       }
     }
     await _db.collection('posts').doc(p.id).delete();
+    // إن كان مثبّتاً أعلى الملف فأزل تثبيته.
+    try {
+      await _db.collection('users').doc(_user.uid).update({
+        'pinnedPostIds': FieldValue.arrayRemove([p.id]),
+      });
+    } catch (_) {}
+    notifyStatsChanged();
   }
 
   // ---- المحفوظات ----
