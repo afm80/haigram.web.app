@@ -2,11 +2,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../services/post_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
+import 'share_sheet.dart';
 
 String timeAgo(DateTime t) {
   final d = DateTime.now().difference(t);
@@ -43,27 +43,6 @@ class _PostCardState extends State<PostCard> {
     if (mounted)
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('تم نسخ رابط المنشور')));
-  }
-
-  Future<void> _sharePost() async {
-    final post = widget.post;
-    final text = [
-      if (post.caption.isNotEmpty) post.caption,
-      'شاهد هذا المنشور على Haigram',
-      PostService.postLink(post),
-    ].join('\n');
-    try {
-      final result = await Share.share(text, subject: 'منشور على Haigram');
-      if (result.status == ShareResultStatus.unavailable) {
-        await _copyPostLink();
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذرت مشاركة المنشور: $error')),
-        );
-      }
-    }
   }
 
   Future<void> _confirmDelete() async {
@@ -291,7 +270,7 @@ class _PostCardState extends State<PostCard> {
           ),
           IconButton(
             tooltip: 'مشاركة',
-            onPressed: _sharePost,
+            onPressed: () => showPostShareSheet(context, widget.post),
             icon: Transform.scale(
               scaleX: -1,
               child: Icon(Icons.send_outlined,

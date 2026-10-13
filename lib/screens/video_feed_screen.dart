@@ -1,19 +1,14 @@
 import 'dart:async';
 
-import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:video_player/video_player.dart';
 
 import 'create_flow.dart';
 import '../services/post_service.dart';
-import '../services/social_service.dart';
-import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
 import 'profile_screen.dart';
-import 'social_screens.dart' show ChatScreen;
+import 'share_sheet.dart';
 import '../route_state.dart';
 
 const _shadow = [Shadow(blurRadius: 6, color: Colors.black54)];
@@ -1046,7 +1041,7 @@ class _VideoPageState extends State<_VideoPage>
             Icons.reply_rounded,
             'مشاركة',
             flip: true,
-            onTap: () => _showShareOptions(p),
+            onTap: () => showPostShareSheet(context, p),
             scale: actionScale,
           ),
           _soundDisc(),
@@ -1102,262 +1097,6 @@ class _VideoPageState extends State<_VideoPage>
         ),
       ),
     );
-  }
-
-  void _showShareOptions(Post post) {
-    final colors = context.appColors;
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: colors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetContext) {
-        void runAction(
-          Future<void> Function() action, {
-          String successMessage = 'تمت العملية بنجاح',
-        }) {
-          Navigator.pop(sheetContext);
-          unawaited(_runShareAction(action, successMessage));
-        }
-
-        return SafeArea(
-          child: Wrap(
-            children: [
-              const Padding(
-                padding: EdgeInsetsDirectional.fromSTEB(20, 18, 20, 10),
-                child: Text(
-                  'مشاركة الفيديو',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-                ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.person_outline_rounded),
-                title: const Text('إرسال إلى صديق'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _showVideoFriends(post);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.add_to_photos_outlined),
-                title: const Text('إضافة إلى قصتي'),
-                onTap: () => runAction(
-                  () => PostService.addVideoToStory(post),
-                  successMessage: 'تمت إضافة الفيديو إلى قصتك',
-                ),
-              ),
-              StreamBuilder<bool>(
-                stream: PostService.isSaved(post.id),
-                builder: (context, snapshot) {
-                  final saved = snapshot.data ?? false;
-                  return ListTile(
-                    leading: Icon(saved
-                        ? Icons.bookmark_remove_outlined
-                        : Icons.bookmark_add_outlined),
-                    title: Text(saved ? 'إزالة من المحفوظات' : 'حفظ الفيديو'),
-                    onTap: () => runAction(
-                      () => PostService.toggleSave(post.id, saved),
-                      successMessage: saved
-                          ? 'تمت إزالة الفيديو من المحفوظات'
-                          : 'تم حفظ الفيديو',
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.download_outlined),
-                title: const Text('تنزيل الفيديو'),
-                onTap: () => runAction(
-                  () async {
-                    final bytes = await PostService.videoBytes(post);
-                    final extension = _videoExtension(post.mime);
-                    await FileSaver.instance.saveFile(
-                      name: 'haigram_${post.id}',
-                      bytes: bytes,
-                      ext: extension,
-                      mimeType: post.mime == 'video/mp4'
-                          ? MimeType.mp4Video
-                          : MimeType.custom,
-                      customMimeType:
-                          post.mime == 'video/mp4' ? null : post.mime,
-                    );
-                  },
-                  successMessage: 'تم تنزيل الفيديو',
-                ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.share_outlined),
-                title: const Text('مشاركة عبر التطبيقات'),
-                onTap: () => runAction(() async {
-                  await Share.share(
-                    '${post.caption.isEmpty ? 'فيديو على Haigram' : post.caption}\n'
-                    '${_videoLink(post)}',
-                    subject: 'فيديو على Haigram',
-                  );
-                }, successMessage: 'تم فتح خيارات المشاركة'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.link_rounded),
-                title: const Text('نسخ الرابط'),
-                onTap: () => runAction(
-                  () async {
-                    await Clipboard.setData(
-                      ClipboardData(text: _videoLink(post)),
-                    );
-                  },
-                  successMessage: 'تم نسخ رابط الفيديو',
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _runShareAction(
-    Future<void> Function() action,
-    String successMessage,
-  ) async {
-    try {
-      await action();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(successMessage)),
-        );
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر تنفيذ العملية: $error')),
-        );
-      }
-    }
-  }
-
-  void _showVideoFriends(Post post) {
-    final colors = context.appColors;
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: colors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: SizedBox(
-          height: MediaQuery.sizeOf(sheetContext).height * 0.65,
-          child: FutureBuilder<List<AppUser>>(
-            future: _loadVideoFriends(),
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Text(
-                      'تعذر تحميل الأصدقاء\n${snapshot.error}',
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                );
-              }
-              if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              final friends = snapshot.data!;
-              if (friends.isEmpty) {
-                return const Center(
-                  child: Text('لا يوجد أصدقاء متبادلون لمشاركة الفيديو معهم.'),
-                );
-              }
-              return Column(
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text(
-                      'إرسال الفيديو إلى صديق',
-                      style:
-                          TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: friends.length,
-                      itemBuilder: (context, index) {
-                        final friend = friends[index];
-                        return ListTile(
-                          leading: UserAvatar(
-                            uid: friend.uid,
-                            fallbackName: friend.username,
-                            radius: 23,
-                          ),
-                          title: Text(friend.displayName),
-                          subtitle: Text('@${friend.username}'),
-                          trailing: const Icon(Icons.send_rounded),
-                          onTap: () => _sendVideoToFriend(
-                            sheetContext,
-                            friend,
-                            post,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<List<AppUser>> _loadVideoFriends() async {
-    final ids = await SocialService.mutualFriendIds();
-    final users = await Future.wait(ids.map(UserService.profileOf));
-    return users.whereType<AppUser>().toList();
-  }
-
-  Future<void> _sendVideoToFriend(
-      BuildContext sheetContext, AppUser friend, Post post) async {
-    final navigator = Navigator.of(sheetContext);
-    final rootNavigator = Navigator.of(sheetContext, rootNavigator: true);
-    navigator.pop();
-    try {
-      final conversationId = await SocialService.startConversation(friend.uid);
-      await SocialService.sendMessage(
-        conversationId,
-        'شاهد هذا الفيديو من @${post.username}\n${_videoLink(post)}',
-      );
-      if (!mounted) return;
-      await rootNavigator.push<void>(
-        appRoute<void>(
-          'chat',
-          {'cid': conversationId, 'uid': friend.uid},
-          (_) => ChatScreen(
-            conversationId: conversationId,
-            otherUid: friend.uid,
-          ),
-        ),
-      );
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر إرسال الفيديو: $error')),
-        );
-      }
-    }
-  }
-
-  String _videoLink(Post post) =>
-      Uri.base.replace(path: '/', queryParameters: {'v': post.id}).toString();
-
-  String _videoExtension(String mime) {
-    if (mime == 'video/quicktime') return 'mov';
-    final subtype = mime.split('/').last.split(';').first;
-    return subtype.startsWith('x-') ? subtype.substring(2) : subtype;
   }
 
   Widget _avatarWithPlus(Post p) {
