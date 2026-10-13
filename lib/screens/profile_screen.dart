@@ -203,7 +203,15 @@ class _Header extends StatelessWidget {
                   alignment: AlignmentDirectional.centerEnd,
                   child: IconButton(
                     tooltip: 'الإعدادات',
-                    icon: const Icon(Icons.menu_rounded),
+                    icon: Icon(
+                      Icons.menu_rounded,
+                      size: 26,
+                      color: context.appColors.text,
+                    ),
+                    style: IconButton.styleFrom(
+                      backgroundColor: context.appColors.surfaceHigh,
+                      foregroundColor: context.appColors.text,
+                    ),
                     onPressed: () => _openSettings(context),
                   ),
                 ),
