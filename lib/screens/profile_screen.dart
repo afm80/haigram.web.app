@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -12,6 +11,7 @@ import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
 import 'post_widgets.dart';
+import 'settings_screen.dart';
 import 'social_screens.dart' show ChatScreen;
 import 'video_feed_screen.dart';
 import 'video_thumbnail.dart';
@@ -152,35 +152,14 @@ class _Header extends StatelessWidget {
     this.onThemeModeChanged,
   });
 
-  Future<void> _confirmSignOut(BuildContext context) async {
-    final shouldSignOut = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('تسجيل الخروج؟'),
-        content: const Text('هل تريد تسجيل الخروج من حسابك؟'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('تسجيل الخروج'),
-          ),
-        ],
+  void _openSettings(BuildContext context) {
+    final onChanged = onThemeModeChanged;
+    if (onChanged == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SettingsScreen(onThemeModeChanged: onChanged),
       ),
     );
-    if (shouldSignOut != true || !context.mounted) return;
-    try {
-      await FirebaseAuth.instance.signOut();
-      UserService.me = null;
-    } catch (error) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر تسجيل الخروج: $error')),
-        );
-      }
-    }
   }
 
   void _showProfileShareSheet(BuildContext context, AppUser user) {
@@ -222,25 +201,10 @@ class _Header extends StatelessWidget {
               if (isMe)
                 Align(
                   alignment: AlignmentDirectional.centerEnd,
-                  child: InkWell(
-                    onTap: () => _confirmSignOut(context),
-                    borderRadius: BorderRadius.circular(12),
-                    child: Padding(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.logout_rounded),
-                          const SizedBox(height: 2),
-                          Text(
-                            'تسجيل الخروج',
-                            style: TextStyle(
-                                fontSize: 11, color: context.appColors.textDim),
-                          ),
-                        ],
-                      ),
-                    ),
+                  child: IconButton(
+                    tooltip: 'الإعدادات',
+                    icon: const Icon(Icons.menu_rounded),
+                    onPressed: () => _openSettings(context),
                   ),
                 ),
               Row(
