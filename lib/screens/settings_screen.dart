@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../services/user_service.dart';
 import '../theme.dart';
+import '../route_state.dart';
 
 /// صفحة الإعدادات: المظهر وتسجيل الخروج.
 /// لاحقاً: الخصوصية وحذف الحساب.
@@ -48,6 +49,7 @@ class SettingsScreen extends StatelessWidget {
     try {
       await FirebaseAuth.instance.signOut();
       UserService.me = null;
+      RouteStore.clear();
     } catch (error) {
       messenger.showSnackBar(
         SnackBar(content: Text('تعذر تسجيل الخروج: $error')),
