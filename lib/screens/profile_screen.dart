@@ -354,7 +354,9 @@ class _Header extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Column(
         children: [
-          if (isMe)
+          // زر القائمة (الإعدادات) يظهر فقط لصاحب الحساب في تبويب ملفه الشخصي،
+          // ولا يظهر عند فتح أي ملف آخر (أو ملفه نفسه من منشور/بحث).
+          if (isMe && onThemeModeChanged != null)
             Align(
               alignment: AlignmentDirectional.centerEnd,
               child: Builder(builder: (context) {
