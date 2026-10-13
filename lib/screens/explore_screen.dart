@@ -10,6 +10,7 @@ import 'common_widgets.dart';
 import 'post_widgets.dart';
 import 'story_widgets.dart';
 import 'video_feed_screen.dart';
+import 'video_thumbnail.dart';
 import '../route_state.dart';
 
 /// استكشاف: حقل البحث ثم شريط القصص ثم المنشورات بالأحدث.
@@ -445,16 +446,15 @@ class _TrendingVideoTile extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            DecoratedBox(
+            VideoThumbnail(post: post),
+            // تدرّج أسود أسفل الصورة ليبقى النص مقروءاً فوق الفيديو.
+            const DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  begin: Alignment.topRight,
-                  end: Alignment.bottomLeft,
-                  colors: [
-                    AppColors.brandCyan.withOpacity(0.3),
-                    const Color(0xFF171A24),
-                    AppColors.brandRed.withOpacity(0.3),
-                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: [0.45, 1],
+                  colors: [Colors.transparent, Color(0xCC000000)],
                 ),
               ),
             ),
