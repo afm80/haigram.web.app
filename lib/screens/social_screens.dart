@@ -9,6 +9,8 @@ import 'common_widgets.dart';
 import 'post_widgets.dart' show timeAgo;
 import 'story_widgets.dart' show StoryViewed, StoryViewer;
 
+/// صندوق البريد (على طريقة تيكتوك): صف الأصدقاء، ثم المتابعون والإعجابات
+/// والتعليقات، ثم المحادثات.
 class InboxScreen extends StatelessWidget {
   const InboxScreen({super.key});
 
@@ -18,7 +20,7 @@ class InboxScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: colors.bg,
       appBar: AppBar(
-        title: const Text('الرسائل'),
+        title: const Text('صندوق البريد'),
         actions: [
           IconButton(
             tooltip: 'رسالة جديدة',
@@ -33,106 +35,280 @@ class InboxScreen extends StatelessWidget {
         stream: PostService.storyGroups(),
         builder: (context, storySnapshot) {
           final stories = storySnapshot.data ?? const <StoryGroup>[];
-          return Column(
-            children: [
-              _FollowingRail(
-                stories: stories,
-                error: storySnapshot.error,
-              ),
-              Expanded(
-                child: StreamBuilder<List<Conversation>>(
-                  stream: SocialService.conversations(),
-                  builder: (context, snapshot) {
-                    if (snapshot.hasError) {
-                      return _MessageState(
-                          message: 'تعذر تحميل الرسائل\n${snapshot.error}');
-                    }
-                    if (!snapshot.hasData) {
-                      return const Center(
-                          child: CircularProgressIndicator());
-                    }
-                    final conversations = snapshot.data!;
-                    if (conversations.isEmpty) {
-                      return const _MessageState(
-                        message: 'لا توجد محادثات بعد\nابدأ محادثة مع أحد أصدقائك',
-                        icon: Icons.chat_bubble_outline_rounded,
-                      );
-                    }
-                    return ListView.separated(
-                      itemCount: conversations.length,
-                      separatorBuilder: (_, __) => Divider(
-                          height: 1, indent: 76, color: colors.surfaceHigh),
-                      itemBuilder: (context, index) {
-                        final conversation = conversations[index];
-                        final otherUid = conversation
-                            .otherParticipant(SocialService.currentUid);
-                        return FutureBuilder<AppUser?>(
-                          future: UserService.profileOf(otherUid),
-                          builder: (context, userSnapshot) {
-                            final user = userSnapshot.data;
-                            final storyIndex = stories
-                                .indexWhere((group) => group.uid == otherUid);
-                            return ListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 4),
-                              leading: UserAvatar(
-                                uid: otherUid,
-                                fallbackName: user?.username ?? '',
-                                profile: user,
-                                radius: 26,
-                                showOnline: true,
-                                hasStory: storyIndex >= 0,
-                                storySeen: storyIndex >= 0 &&
-                                    StoryViewed.allSeen(stories[storyIndex]),
-                              ),
-                              title: Text(
-                                user?.displayName ?? 'مستخدم',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w700),
-                              ),
-                              subtitle: Text(
-                                conversation.lastMessage.isEmpty
-                                    ? 'ابدأ المحادثة'
-                                    : conversation.lastSenderUid ==
-                                            SocialService.currentUid
-                                        ? 'أنت: ${conversation.lastMessage}'
-                                        : conversation.lastMessage,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(color: colors.textDim),
-                              ),
-                              trailing: conversation
-                                          .updatedAt.millisecondsSinceEpoch ==
-                                      0
-                                  ? null
-                                  : Text(
-                                      timeAgo(conversation.updatedAt),
-                                      style: TextStyle(
-                                          color: colors.textDim, fontSize: 11),
-                                    ),
-                              onTap: () => Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => ChatScreen(
-                                    conversationId: conversation.id,
-                                    otherUid: otherUid,
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    );
-                  },
+          return StreamBuilder<List<Conversation>>(
+            stream: SocialService.conversations(),
+            builder: (context, snapshot) => ListView(
+              padding: const EdgeInsets.only(bottom: 80),
+              children: [
+                _FollowingRail(
+                  stories: stories,
+                  error: storySnapshot.error,
                 ),
-              ),
-            ],
+                const _ActivityTiles(),
+                const Padding(
+                  padding: EdgeInsetsDirectional.fromSTEB(16, 14, 16, 6),
+                  child: Text('المحادثات',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                ),
+                ..._conversationItems(context, snapshot, stories),
+              ],
+            ),
           );
         },
       ),
     );
+  }
+
+  List<Widget> _conversationItems(
+    BuildContext context,
+    AsyncSnapshot<List<Conversation>> snapshot,
+    List<StoryGroup> stories,
+  ) {
+    final colors = context.appColors;
+    if (snapshot.hasError) {
+      return [
+        SizedBox(
+          height: 240,
+          child: _MessageState(message: 'تعذر تحميل الرسائل\n${snapshot.error}'),
+        ),
+      ];
+    }
+    if (!snapshot.hasData) {
+      return const [
+        Padding(
+          padding: EdgeInsets.all(40),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ];
+    }
+    final conversations = snapshot.data!;
+    if (conversations.isEmpty) {
+      return const [
+        SizedBox(
+          height: 240,
+          child: _MessageState(
+            message: 'لا توجد محادثات بعد\nابدأ محادثة مع أحد أصدقائك',
+            icon: Icons.chat_bubble_outline_rounded,
+          ),
+        ),
+      ];
+    }
+    return [
+      for (final conversation in conversations)
+        Column(
+          key: ValueKey(conversation.id),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _conversationTile(context, conversation, stories),
+            Divider(height: 1, indent: 76, color: colors.surfaceHigh),
+          ],
+        ),
+    ];
+  }
+
+  Widget _conversationTile(
+    BuildContext context,
+    Conversation conversation,
+    List<StoryGroup> stories,
+  ) {
+    final colors = context.appColors;
+    final otherUid = conversation.otherParticipant(SocialService.currentUid);
+    return FutureBuilder<AppUser?>(
+      future: UserService.profileOf(otherUid),
+      builder: (context, userSnapshot) {
+        final user = userSnapshot.data;
+        final storyIndex = stories.indexWhere((group) => group.uid == otherUid);
+        return ListTile(
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          leading: UserAvatar(
+            uid: otherUid,
+            fallbackName: user?.username ?? '',
+            profile: user,
+            radius: 26,
+            showOnline: true,
+            hasStory: storyIndex >= 0,
+            storySeen:
+                storyIndex >= 0 && StoryViewed.allSeen(stories[storyIndex]),
+          ),
+          title: Text(
+            user?.displayName ?? 'مستخدم',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          subtitle: Text(
+            conversation.lastMessage.isEmpty
+                ? 'ابدأ المحادثة'
+                : conversation.lastSenderUid == SocialService.currentUid
+                    ? 'أنت: ${conversation.lastMessage}'
+                    : conversation.lastMessage,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: colors.textDim),
+          ),
+          trailing: conversation.updatedAt.millisecondsSinceEpoch == 0
+              ? null
+              : Text(
+                  timeAgo(conversation.updatedAt),
+                  style: TextStyle(color: colors.textDim, fontSize: 11),
+                ),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => ChatScreen(
+                conversationId: conversation.id,
+                otherUid: otherUid,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// نوع نشاط في صندوق البريد (متابعون / إعجابات / تعليقات).
+class _ActivityCategory {
+  final String type;
+  final String title;
+  final String emptyText;
+  final IconData icon;
+  final Color color;
+
+  const _ActivityCategory({
+    required this.type,
+    required this.title,
+    required this.emptyText,
+    required this.icon,
+    required this.color,
+  });
+}
+
+const _activityCategories = [
+  _ActivityCategory(
+    type: 'follow',
+    title: 'المتابعون',
+    emptyText: 'لا يوجد متابعون جدد',
+    icon: Icons.person_add_alt_1_rounded,
+    color: AppColors.brandCyan,
+  ),
+  _ActivityCategory(
+    type: 'like',
+    title: 'الإعجابات',
+    emptyText: 'لا توجد إعجابات جديدة',
+    icon: Icons.favorite_rounded,
+    color: AppColors.brandRed,
+  ),
+  _ActivityCategory(
+    type: 'comment',
+    title: 'التعليقات',
+    emptyText: 'لا توجد تعليقات جديدة',
+    icon: Icons.chat_bubble_rounded,
+    color: AppColors.accent,
+  ),
+];
+
+class _ActivityTiles extends StatefulWidget {
+  const _ActivityTiles();
+
+  @override
+  State<_ActivityTiles> createState() => _ActivityTilesState();
+}
+
+class _ActivityTilesState extends State<_ActivityTiles> {
+  late final Stream<List<SocialNotification>> _notifications =
+      SocialService.notifications();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<SocialNotification>>(
+      stream: _notifications,
+      builder: (context, snapshot) {
+        final all = snapshot.data ?? const <SocialNotification>[];
+        return Column(
+          children: [
+            for (final category in _activityCategories)
+              _ActivityTile(
+                category: category,
+                items: all.where((n) => n.type == category.type).toList(),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ActivityTile extends StatelessWidget {
+  final _ActivityCategory category;
+  final List<SocialNotification> items;
+
+  const _ActivityTile({required this.category, required this.items});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final unread = items.where((n) => !n.read).length;
+    final latest = items.isEmpty ? null : items.first;
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      leading: CircleAvatar(
+        radius: 24,
+        backgroundColor: category.color,
+        child: Icon(category.icon, color: Colors.white, size: 24),
+      ),
+      title: Text(category.title,
+          style: const TextStyle(fontWeight: FontWeight.w700)),
+      subtitle: Text(
+        latest == null
+            ? category.emptyText
+            : '@${latest.actorUsername} ${_notificationMessage(latest)}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(color: colors.textDim),
+      ),
+      trailing: unread > 0
+          ? Container(
+              constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              decoration: const BoxDecoration(
+                color: Colors.red,
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                unread > 99 ? '99+' : '$unread',
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700),
+              ),
+            )
+          : Icon(Icons.chevron_left_rounded, color: colors.textDim),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => NotificationsScreen(
+            type: category.type,
+            title: category.title,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _notificationMessage(SocialNotification notification) {
+  switch (notification.type) {
+    case 'follow':
+      return 'بدأ بمتابعتك';
+    case 'like':
+      return 'أعجب بمنشورك';
+    case 'comment':
+      final text = notification.commentText;
+      return text == null || text.isEmpty ? 'علّق على منشورك' : 'علّق: $text';
+    default:
+      return 'لديك إشعار جديد';
   }
 }
 
@@ -973,25 +1149,15 @@ class _ChatScreenState extends State<ChatScreen> {
 }
 
 class NotificationsScreen extends StatelessWidget {
-  const NotificationsScreen({super.key});
+  /// عند تحديده تُعرض إشعارات هذا النوع فقط (follow / like / comment).
+  final String? type;
+  final String? title;
 
-  String _message(SocialNotification notification) {
-    switch (notification.type) {
-      case 'follow':
-        return 'بدأ بمتابعتك';
-      case 'like':
-        return 'أعجب بمنشورك';
-      case 'comment':
-        final text = notification.commentText;
-        return text == null || text.isEmpty ? 'علّق على منشورك' : 'علّق: $text';
-      default:
-        return 'لديك إشعار جديد';
-    }
-  }
+  const NotificationsScreen({super.key, this.type, this.title});
 
   Future<void> _markAllRead(BuildContext context) async {
     try {
-      await SocialService.markAllNotificationsRead();
+      await SocialService.markAllNotificationsRead(type: type);
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1007,7 +1173,7 @@ class NotificationsScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: colors.bg,
       appBar: AppBar(
-        title: const Text('الإشعارات'),
+        title: Text(title ?? 'الإشعارات'),
         actions: [
           TextButton(
             onPressed: () => _markAllRead(context),
@@ -1025,7 +1191,9 @@ class NotificationsScreen extends StatelessWidget {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          final notifications = snapshot.data!;
+          final notifications = type == null
+              ? snapshot.data!
+              : snapshot.data!.where((n) => n.type == type).toList();
           if (notifications.isEmpty) {
             return const _MessageState(
               message: 'لا توجد إشعارات بعد',
@@ -1067,7 +1235,7 @@ class NotificationsScreen extends StatelessWidget {
                         text: '@${notification.actorUsername} ',
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
-                      TextSpan(text: _message(notification)),
+                      TextSpan(text: _notificationMessage(notification)),
                     ],
                   ),
                   maxLines: 2,
