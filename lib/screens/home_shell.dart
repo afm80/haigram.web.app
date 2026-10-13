@@ -10,7 +10,6 @@ import '../theme.dart';
 import 'create_flow.dart';
 import 'explore_screen.dart';
 import 'social_screens.dart';
-import 'posts_feed_screen.dart';
 import 'post_widgets.dart' show PostDetailScreen;
 import 'profile_screen.dart';
 import 'video_feed_screen.dart';
@@ -77,7 +76,9 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   Timer? _presenceHeartbeat;
   final _selectedTab = ValueNotifier<int>(0);
   final _tabNavigators =
-      List.generate(7, (_) => GlobalKey<NavigatorState>());
+      List.generate(5, (_) => GlobalKey<NavigatorState>());
+  // يُزاد لطلب فتح حقل البحث في تبويب الاستكشاف.
+  final _searchRequest = ValueNotifier<int>(0);
   late final Stream<int> _unreadNotificationCount =
       SocialService.unreadNotificationCount();
 
@@ -101,6 +102,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     _presenceHeartbeat?.cancel();
     _updatePresence(false);
     _selectedTab.dispose();
+    _searchRequest.dispose();
     super.dispose();
   }
 
@@ -186,29 +188,23 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
                 _navItem(
                     0, Icons.home_outlined, Icons.home_rounded, 'الرئيسية',
                     foreground: navForeground, inactive: navInactive),
-                _navItem(
-                    1, Icons.search_rounded, Icons.search_rounded, 'استكشف',
-                    foreground: navForeground, inactive: navInactive),
-                _navItem(2, Icons.dynamic_feed_outlined,
-                    Icons.dynamic_feed_rounded, 'المنشورات',
+                _navItem(1, Icons.explore_outlined, Icons.explore_rounded,
+                    'استكشف',
                     foreground: navForeground, inactive: navInactive),
                 Expanded(child: Center(child: _createButton())),
-                _navItem(4, Icons.mail_outline_rounded, Icons.mail_rounded,
-                    'الرسائل',
-                    foreground: navForeground, inactive: navInactive),
                 StreamBuilder<int>(
                   stream: _unreadNotificationCount,
                   builder: (context, snapshot) => _navItem(
-                    5,
-                    Icons.favorite_border_rounded,
-                    Icons.favorite_rounded,
-                    'التنبيهات',
+                    3,
+                    Icons.chat_bubble_outline_rounded,
+                    Icons.chat_bubble_rounded,
+                    'صندوق البريد',
                     foreground: navForeground,
                     inactive: navInactive,
                     badgeCount: snapshot.hasError ? -1 : (snapshot.data ?? 0),
                   ),
                 ),
-                _navItem(6, Icons.person_outline_rounded, Icons.person_rounded,
+                _navItem(4, Icons.person_outline_rounded, Icons.person_rounded,
                     'الملف الشخصي',
                     foreground: navForeground, inactive: navInactive),
               ],
@@ -222,14 +218,15 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   Widget _tabPage(int tab, int selectedTab) => switch (tab) {
         0 => VideoFeedScreen(
             active: selectedTab == 0,
-            onSearch: () => _selectTab(1),
+            onSearch: () {
+              _selectTab(1);
+              _searchRequest.value++;
+            },
           ),
-        1 => const ExploreScreen(),
-        2 => const PostsFeedScreen(),
-        3 => const SizedBox.shrink(),
-        4 => const InboxScreen(),
-        5 => const NotificationsScreen(),
-        6 => ProfileScreen(
+        1 => ExploreScreen(focusRequest: _searchRequest),
+        2 => const SizedBox.shrink(),
+        3 => const InboxScreen(),
+        4 => ProfileScreen(
             themeMode: widget.themeMode,
             onThemeModeChanged: widget.onThemeModeChanged,
           ),
