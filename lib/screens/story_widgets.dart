@@ -28,7 +28,7 @@ class StoriesBar extends StatefulWidget {
 
 class _StoriesBarState extends State<StoriesBar> {
   Future<void> _open(List<StoryGroup> ordered, int index) async {
-    await Navigator.of(context).push(
+    await rootNavigatorOf(context).push(
       PageRouteBuilder(
         opaque: true,
         pageBuilder: (_, __, ___) =>

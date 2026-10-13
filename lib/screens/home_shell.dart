@@ -158,6 +158,17 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
         if (route != null) _tabNavigators[t].currentState?.push<void>(route);
       }
     }
+    // الصفحات المفتوحة فوق الشريط السفلي (محادثة، إشعارات، تعديل الملف...).
+    for (final item in saved.stacks[rootStackIndex] ?? const <SavedRoute>[]) {
+      Route<void>? route;
+      try {
+        route = await _routeFor(item);
+      } catch (error) {
+        debugPrint('Unable to restore page ${item.name}: $error');
+      }
+      if (!mounted) return;
+      if (route != null) rootNavigatorOf(context).push<void>(route);
+    }
   }
 
   /// يبني الصفحة من وصفها المحفوظ (أو null إذا لم تعد متاحة).
@@ -207,6 +218,9 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
           {'type': type, 'title': title},
           (_) => NotificationsScreen(type: type, title: title),
         );
+      case 'search':
+        return appRoute<void>(
+            'search', const {}, (_) => const ExploreSearchScreen());
       case 'editProfile':
         return appRoute<void>(
             'editProfile', const {}, (_) => const EditProfileScreen());

@@ -406,7 +406,7 @@ class _Header extends StatelessWidget {
           child: _pillButton(
               context,
               'تعديل الملف الشخصي',
-              () => Navigator.of(context).push(appRoute(
+              () => rootNavigatorOf(context).push(appRoute(
                   'editProfile',
                   const {},
                   (_) => const EditProfileScreen()))),
@@ -619,7 +619,7 @@ class _MessageActionButtonState extends State<_MessageActionButton> {
     try {
       final conversationId = await SocialService.startConversation(widget.uid);
       if (!mounted) return;
-      await Navigator.of(context).push<void>(
+      await rootNavigatorOf(context).push<void>(
         appRoute<void>(
           'chat',
           {'cid': conversationId, 'uid': widget.uid},

@@ -1326,6 +1326,7 @@ class _VideoPageState extends State<_VideoPage>
   Future<void> _sendVideoToFriend(
       BuildContext sheetContext, AppUser friend, Post post) async {
     final navigator = Navigator.of(sheetContext);
+    final rootNavigator = Navigator.of(sheetContext, rootNavigator: true);
     navigator.pop();
     try {
       final conversationId = await SocialService.startConversation(friend.uid);
@@ -1334,7 +1335,7 @@ class _VideoPageState extends State<_VideoPage>
         'شاهد هذا الفيديو من @${post.username}\n${_videoLink(post)}',
       );
       if (!mounted) return;
-      await navigator.push<void>(
+      await rootNavigator.push<void>(
         appRoute<void>(
           'chat',
           {'cid': conversationId, 'uid': friend.uid},

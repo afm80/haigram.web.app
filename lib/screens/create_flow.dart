@@ -28,7 +28,7 @@ String _kindTitle(CreateKind k) => switch (k) {
 
 /// يفتح شاشة الإنشاء (كاميرا أو ملفات الجهاز) للنوع المطلوب.
 void startCreate(BuildContext context, CreateKind kind, {Post? sound}) {
-  Navigator.of(context).push(MaterialPageRoute(
+  Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
       fullscreenDialog: true,
       builder: (_) => CaptureScreen(kind: kind, sound: sound)));
 }
@@ -38,6 +38,7 @@ void showCreateSheet(BuildContext context) {
   final colors = context.appColors;
   showModalBottomSheet(
     context: context,
+    useRootNavigator: true,
     backgroundColor: colors.surface,
     shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20))),

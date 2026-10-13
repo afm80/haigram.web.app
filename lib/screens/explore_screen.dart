@@ -12,9 +12,8 @@ import 'story_widgets.dart';
 import 'video_feed_screen.dart';
 import '../route_state.dart';
 
-/// استكشاف: يجمع الرئيسية (بدون فيديو) والبحث.
-/// حقل البحث ثم شريط القصص ثم المنشورات بالأحدث؛ وعند الضغط على البحث
-/// تظهر الفيديوهات الأعلى رواجاً.
+/// استكشاف: حقل البحث ثم شريط القصص ثم المنشورات بالأحدث.
+/// عند الضغط على حقل البحث تُفتح صفحة البحث فوق الشريط السفلي.
 class ExploreScreen extends StatefulWidget {
   /// يُزاد من الخارج لطلب فتح البحث مباشرة (زر البحث في تبويب الفيديو).
   final ValueListenable<int>? focusRequest;
@@ -26,65 +25,37 @@ class ExploreScreen extends StatefulWidget {
 }
 
 class _ExploreScreenState extends State<ExploreScreen> {
-  final _search = TextEditingController();
-  final _searchFocus = FocusNode();
-  bool _searching = false;
-  late Future<(Map<String, int>, List<Post>)> _trendingFuture =
-      _loadTrending();
-  Future<(List<AppUser>, List<Post>)>? _results;
   late final Stream<List<Post>> _feed = _latestPosts();
+  bool _searchOpen = false;
 
   @override
   void initState() {
     super.initState();
-    _searchFocus.addListener(_onFocusChange);
     widget.focusRequest?.addListener(_onFocusRequest);
   }
 
   @override
   void dispose() {
     widget.focusRequest?.removeListener(_onFocusRequest);
-    _searchFocus.removeListener(_onFocusChange);
-    _searchFocus.dispose();
-    _search.dispose();
     super.dispose();
-  }
-
-  void _onFocusChange() {
-    if (_searchFocus.hasFocus && !_searching) {
-      setState(() => _searching = true);
-    }
   }
 
   void _onFocusRequest() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _searchFocus.requestFocus();
+      if (mounted) _openSearch();
     });
   }
 
-  void _cancelSearch() {
-    _search.clear();
-    _searchFocus.unfocus();
-    setState(() {
-      _searching = false;
-      _results = null;
-    });
-  }
-
-  Future<(Map<String, int>, List<Post>)> _loadTrending() async =>
-      (await PostService.trendingTags(), await PostService.trendingVideos());
-
-  void _run(String q) {
-    final text = q.trim();
-    setState(() => _results = text.isEmpty ? null : _searchAll(text));
-  }
-
-  Future<(List<AppUser>, List<Post>)> _searchAll(String text) async {
-    final users = text.startsWith('#')
-        ? Future.value(<AppUser>[])
-        : UserService.search(text);
-    final posts = PostService.search(text);
-    return (await users, await posts);
+  Future<void> _openSearch() async {
+    if (_searchOpen) return;
+    _searchOpen = true;
+    try {
+      await rootNavigatorOf(context).push<void>(
+        appRoute<void>('search', const {}, (_) => const ExploreSearchScreen()),
+      );
+    } finally {
+      _searchOpen = false;
+    }
   }
 
   /// الصور والنصوص في قائمة واحدة مرتبة بالأحدث (بدون فيديو).
@@ -129,55 +100,17 @@ class _ExploreScreenState extends State<ExploreScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _search,
-                    focusNode: _searchFocus,
-                    textInputAction: TextInputAction.search,
-                    onSubmitted: _run,
-                    decoration: InputDecoration(
-                      hintText: 'ابحث عن مستخدم أو هاشتاق',
-                      prefixIcon: const Icon(Icons.search_rounded),
-                      suffixIcon: _search.text.isEmpty
-                          ? null
-                          : IconButton(
-                              icon: const Icon(Icons.close_rounded),
-                              onPressed: () {
-                                _search.clear();
-                                _run('');
-                              },
-                            ),
-                    ),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                ),
-                if (_searching)
-                  Padding(
-                    padding: const EdgeInsetsDirectional.only(start: 4),
-                    child: TextButton(
-                      onPressed: _cancelSearch,
-                      child: const Text('إلغاء'),
-                    ),
-                  ),
-              ],
+            child: TextField(
+              readOnly: true,
+              showCursor: false,
+              onTap: _openSearch,
+              decoration: const InputDecoration(
+                hintText: 'ابحث عن مستخدم أو هاشتاق',
+                prefixIcon: Icon(Icons.search_rounded),
+              ),
             ),
           ),
-          Expanded(
-            // نُبقي الموجز حيّاً أثناء البحث ليعود المستخدم لنفس موضعه.
-            child: IndexedStack(
-              index: _searching ? 1 : 0,
-              sizing: StackFit.expand,
-              children: [
-                _feedView(),
-                if (_searching)
-                  (_results == null ? _trending() : _resultsList())
-                else
-                  const SizedBox.shrink(),
-              ],
-            ),
-          ),
+          Expanded(child: _feedView()),
         ],
       ),
     );
@@ -222,6 +155,97 @@ class _ExploreScreenState extends State<ExploreScreen> {
           },
         );
       },
+    );
+  }
+}
+
+/// صفحة البحث: تُفتح فوق الشريط السفلي وفيها الرائج ونتائج البحث.
+class ExploreSearchScreen extends StatefulWidget {
+  const ExploreSearchScreen({super.key});
+
+  @override
+  State<ExploreSearchScreen> createState() => _ExploreSearchScreenState();
+}
+
+class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
+  final _search = TextEditingController();
+  final _searchFocus = FocusNode();
+  late Future<(Map<String, int>, List<Post>)> _trendingFuture =
+      _loadTrending();
+  Future<(List<AppUser>, List<Post>)>? _results;
+
+  @override
+  void dispose() {
+    _searchFocus.dispose();
+    _search.dispose();
+    super.dispose();
+  }
+
+  Future<(Map<String, int>, List<Post>)> _loadTrending() async =>
+      (await PostService.trendingTags(), await PostService.trendingVideos());
+
+  void _run(String q) {
+    final text = q.trim();
+    setState(() => _results = text.isEmpty ? null : _searchAll(text));
+  }
+
+  Future<(List<AppUser>, List<Post>)> _searchAll(String text) async {
+    final users = text.startsWith('#')
+        ? Future.value(<AppUser>[])
+        : UserService.search(text);
+    final posts = PostService.search(text);
+    return (await users, await posts);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _search,
+                      focusNode: _searchFocus,
+                      autofocus: true,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: _run,
+                      decoration: InputDecoration(
+                        hintText: 'ابحث عن مستخدم أو هاشتاق',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        suffixIcon: _search.text.isEmpty
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.close_rounded),
+                                onPressed: () {
+                                  _search.clear();
+                                  _run('');
+                                },
+                              ),
+                      ),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsetsDirectional.only(start: 4),
+                    child: TextButton(
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      child: const Text('إلغاء'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: _results == null ? _trending() : _resultsList(),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

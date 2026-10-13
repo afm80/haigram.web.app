@@ -138,6 +138,7 @@ class UserAvatar extends StatelessWidget {
 void showCommentsSheet(BuildContext context, Post post) {
   showModalBottomSheet(
     context: context,
+    useRootNavigator: true,
     isScrollControlled: true,
     backgroundColor: context.appColors.surface,
     shape: const RoundedRectangleBorder(

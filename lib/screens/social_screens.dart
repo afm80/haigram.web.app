@@ -26,7 +26,7 @@ class InboxScreen extends StatelessWidget {
         actions: [
           IconButton(
             tooltip: 'رسالة جديدة',
-            onPressed: () => Navigator.of(context).push(
+            onPressed: () => rootNavigatorOf(context).push(
               MaterialPageRoute(builder: (_) => const _FriendsScreen()),
             ),
             icon: const Icon(Icons.edit_outlined),
@@ -156,7 +156,7 @@ class InboxScreen extends StatelessWidget {
                   timeAgo(conversation.updatedAt),
                   style: TextStyle(color: colors.textDim, fontSize: 11),
                 ),
-          onTap: () => Navigator.of(context).push(
+          onTap: () => rootNavigatorOf(context).push(
             appRoute(
               'chat',
               {'cid': conversation.id, 'uid': otherUid},
@@ -299,7 +299,7 @@ class _ActivityTile extends StatelessWidget {
               ),
             )
           : Icon(Icons.chevron_left_rounded, color: colors.textDim),
-      onTap: () => Navigator.of(context).push(
+      onTap: () => rootNavigatorOf(context).push(
         appRoute(
           'notifications',
           {'type': category.type, 'title': category.title},
@@ -348,7 +348,7 @@ class _FollowingRailState extends State<_FollowingRail> {
     final storyIndex =
         widget.stories.indexWhere((group) => group.uid == user.uid);
     if (storyIndex >= 0) {
-      await Navigator.of(context).push<void>(
+      await rootNavigatorOf(context).push<void>(
         PageRouteBuilder(
           opaque: true,
           pageBuilder: (_, __, ___) => StoryViewer(
@@ -371,7 +371,7 @@ class _FollowingRailState extends State<_FollowingRail> {
       final conversationId =
           await SocialService.startConversation(user.uid);
       if (!mounted) return;
-      await Navigator.of(context).push<void>(
+      await rootNavigatorOf(context).push<void>(
         appRoute<void>(
           'chat',
           {'cid': conversationId, 'uid': user.uid},
