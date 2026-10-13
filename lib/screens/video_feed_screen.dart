@@ -1017,18 +1017,15 @@ class _VideoPageState extends State<_VideoPage>
             child: _avatarWithPlus(p),
           ),
           SizedBox(height: 18 * actionScale),
-          StreamBuilder<bool>(
-            stream: PostService.isLiked(p.id),
-            builder: (context, s) {
-              final liked = s.data ?? false;
-              return _action(
-                liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                '${p.likes}',
-                color: liked ? AppColors.videoLike : Colors.white,
-                onTap: () => PostService.toggleLike(p.id, liked),
-                scale: actionScale,
-              );
-            },
+          LikeBuilder(
+            post: p,
+            builder: (context, liked, count, toggle) => _action(
+              liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+              '$count',
+              color: liked ? AppColors.videoLike : Colors.white,
+              onTap: toggle,
+              scale: actionScale,
+            ),
           ),
           _action(Icons.chat_bubble_outline_rounded, '${p.comments}',
               onTap: () => showCommentsSheet(context, p), scale: actionScale),
