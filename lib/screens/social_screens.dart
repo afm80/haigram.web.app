@@ -6,8 +6,9 @@ import '../services/social_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
-import 'post_widgets.dart' show timeAgo;
+import 'post_widgets.dart' show PostDetailScreen, timeAgo;
 import 'story_widgets.dart' show StoryViewed, StoryViewer;
+import 'video_feed_screen.dart' show VideoViewerScreen;
 import '../route_state.dart';
 
 /// صندوق البريد (على طريقة تيكتوك): صف الأصدقاء، ثم المتابعون والإعجابات
@@ -1166,6 +1167,75 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
+/// عند النقر على إشعار: يُعلَّم مقروءاً ثم ينقلك إلى مصدره حسب نوعه:
+/// متابعة ← ملف المتابِع، إعجاب ← المنشور، تعليق ← المنشور مع نافذة التعليقات.
+Future<void> _openNotification(
+  BuildContext context,
+  SocialNotification notification,
+) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final navigator = Navigator.of(context);
+
+  if (!notification.read) {
+    SocialService.markNotificationRead(notification.id).catchError((Object e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('تعذر تحديث الإشعار: $e')),
+      );
+    });
+  }
+
+  if (notification.type == 'follow') {
+    openProfile(context, notification.actorUid);
+    return;
+  }
+
+  final postId = notification.postId;
+  if (postId == null || postId.isEmpty) {
+    messenger.showSnackBar(
+      const SnackBar(content: Text('تعذر فتح هذا الإشعار')),
+    );
+    return;
+  }
+
+  Post? post;
+  try {
+    post = await PostService.postById(postId);
+  } catch (error) {
+    messenger.showSnackBar(
+      SnackBar(content: Text('تعذر فتح المنشور: $error')),
+    );
+    return;
+  }
+  if (!context.mounted) return;
+  if (post == null) {
+    messenger.showSnackBar(
+      const SnackBar(content: Text('هذا المنشور لم يعد متاحاً')),
+    );
+    return;
+  }
+
+  final opened = post;
+  if (opened.type == PostType.video) {
+    navigator.push<void>(appRoute<void>(
+      'video',
+      {'id': opened.id},
+      (_) => VideoViewerScreen(posts: [opened], initialIndex: 0),
+    ));
+  } else {
+    navigator.push<void>(appRoute<void>(
+      'post',
+      {'id': opened.id},
+      (_) => PostDetailScreen(post: opened),
+    ));
+  }
+
+  if (notification.type == 'comment') {
+    // ننتظر انتهاء انتقال الصفحة ثم نفتح نافذة التعليقات فوقها.
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    if (context.mounted) showCommentsSheet(context, opened);
+  }
+}
+
 class NotificationsScreen extends StatelessWidget {
   /// عند تحديده تُعرض إشعارات هذا النوع فقط (follow / like / comment).
   final String? type;
@@ -1225,21 +1295,7 @@ class NotificationsScreen extends StatelessWidget {
             itemBuilder: (context, index) {
               final notification = notifications[index];
               return ListTile(
-                onTap: notification.read
-                    ? null
-                    : () async {
-                        try {
-                          await SocialService.markNotificationRead(
-                              notification.id);
-                        } catch (error) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                  content: Text('تعذر تحديث الإشعار: $error')),
-                            );
-                          }
-                        }
-                      },
+                onTap: () => _openNotification(context, notification),
                 leading: UserAvatar(
                   uid: notification.actorUid,
                   fallbackName: notification.actorUsername,
