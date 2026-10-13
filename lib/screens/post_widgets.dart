@@ -165,13 +165,17 @@ class _PostCardState extends State<PostCard> {
           },
         ),
         _actions(p),
-        if (p.likes > 0)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
-            child: Text('${p.likes} إعجاب',
-                style:
-                    TextStyle(color: colors.text, fontWeight: FontWeight.w700)),
-          ),
+        LikeBuilder(
+          post: p,
+          builder: (context, liked, count, toggle) => count > 0
+              ? Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
+                  child: Text('$count إعجاب',
+                      style: TextStyle(
+                          color: colors.text, fontWeight: FontWeight.w700)),
+                )
+              : const SizedBox.shrink(),
+        ),
         if (!isText && p.caption.isNotEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
@@ -255,21 +259,24 @@ class _PostCardState extends State<PostCard> {
       padding: const EdgeInsets.fromLTRB(4, 2, 4, 0),
       child: Row(
         children: [
-          IconButton(
-            tooltip: 'إعجاب',
-            onPressed: () => PostService.toggleLike(p.id, _liked),
-            icon: AnimatedScale(
-              scale: _liked ? 1.12 : 1,
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOutBack,
-              child: Icon(
-                _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                size: 28,
-                color: _liked
-                    ? AppColors.postLike
-                    : Theme.of(context).brightness == Brightness.dark
-                        ? Colors.white
-                        : Colors.black,
+          LikeBuilder(
+            post: p,
+            builder: (context, liked, count, toggle) => IconButton(
+              tooltip: 'إعجاب',
+              onPressed: toggle,
+              icon: AnimatedScale(
+                scale: liked ? 1.12 : 1,
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutBack,
+                child: Icon(
+                  liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                  size: 28,
+                  color: liked
+                      ? AppColors.postLike
+                      : Theme.of(context).brightness == Brightness.dark
+                          ? Colors.white
+                          : Colors.black,
+                ),
               ),
             ),
           ),
