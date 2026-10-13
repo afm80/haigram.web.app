@@ -255,11 +255,15 @@ class _ActivityTile extends StatelessWidget {
     final unread = items.where((n) => !n.read).length;
     final latest = items.isEmpty ? null : items.first;
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      // صفوف متلاصقة بلا مسافات زائدة بين الأيقونات.
+      dense: true,
+      visualDensity: VisualDensity.compact,
+      minVerticalPadding: 0,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
       leading: CircleAvatar(
-        radius: 24,
+        radius: 22,
         backgroundColor: category.color,
-        child: Icon(category.icon, color: Colors.white, size: 24),
+        child: Icon(category.icon, color: Colors.white, size: 22),
       ),
       title: Text(category.title,
           style: const TextStyle(fontWeight: FontWeight.w700)),
@@ -272,20 +276,25 @@ class _ActivityTile extends StatelessWidget {
         style: TextStyle(color: colors.textDim),
       ),
       trailing: unread > 0
+          // بدون alignment: الحاوية مع alignment كانت تتمدد لتملأ عرض
+          // الصف كله فيتكسر النص وتطول البطاقة.
           ? Container(
               constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
-              padding: const EdgeInsets.symmetric(horizontal: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: const BoxDecoration(
                 color: Colors.red,
                 shape: BoxShape.circle,
               ),
-              alignment: Alignment.center,
-              child: Text(
-                unread > 99 ? '99+' : '$unread',
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700),
+              child: Center(
+                widthFactor: 1,
+                heightFactor: 1,
+                child: Text(
+                  unread > 99 ? '99+' : '$unread',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700),
+                ),
               ),
             )
           : Icon(Icons.chevron_left_rounded, color: colors.textDim),
