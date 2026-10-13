@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar">
 <head>
   <base href="$FLUTTER_BASE_HREF">
   <meta charset="UTF-8">
@@ -32,35 +32,16 @@
   <link rel="manifest" href="manifest.json">
   <title>Haigram</title>
 
-  <script>
-    (function () {
-      var viewport = document.querySelector('meta[name="viewport"]');
-      if (!viewport) return;
-      var screenWidth = window.screen && window.screen.width;
-      var isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
-        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ||
-        (navigator.maxTouchPoints > 0 &&
-          screenWidth &&
-          window.innerWidth > screenWidth * 1.2);
-      if (!isMobile) return;
-      function useScreenWidth() {
-        var width = window.screen && Math.round(window.screen.width);
-        if (!width) return;
-        viewport.setAttribute(
-          'content',
-          'width=' + width + ', initial-scale=1.0, viewport-fit=cover'
-        );
-      }
-      useScreenWidth();
-      window.addEventListener('orientationchange', useScreenWidth, {
-        passive: true
-      });
-    })();
-  </script>
+  <!-- تم حذف سكربت تغيير عرض الـviewport: كان يجعل عرض الصفحة أكبر من شاشة الجوال/الآيباد (تخطيط بعرض ~924 على شاشة 768) فتظهر الواجهة مقصوصة. نستخدم width=device-width القياسي. -->
 
   <style>
     html, body { margin: 0; height: 100%; min-height: 100svh; background: #0B0B12; overflow: hidden; }
     video[id^="videoElement-"] { object-fit: contain; pointer-events: none; }
+    /* اتجاه RTL على مستوى الصفحة يزيح عناصر الفيديو (Platform Views) إلى اليمين.
+       Flutter يتولى اتجاه النص بنفسه، لذلك نثبّت اتجاه حاويات Flutter على LTR. */
+    flt-glass-pane, flt-scene-host, flt-scene, flt-platform-view, flt-platform-view-slot { direction: ltr; }
+    /* تثبيت موضع عنصر الفيديو عند أصل الصفحة حتى لا يتأثر بالموضع الافتراضي حسب اتجاه الصفحة. */
+    flt-platform-view-slot { left: 0; top: 0; }
     @media (prefers-color-scheme: light) {
       html, body { background: #F7F6FB; }
       #boot-splash { background: radial-gradient(circle at 50% 38%, #EDEBF4 0, #F7F6FB 54%, #F7F6FB 100%); }
@@ -161,7 +142,7 @@
         <span class="boot-part boot-hai"><span class="brand-red">H</span>ai</span><span class="boot-part boot-der">der</span><span class="boot-part boot-gram"><span class="brand-cyan">g</span>ram</span>
       </div>
       <div id="boot-loader" class="boot-loader"></div>
-      <div id="boot-error" class="boot-fallback" role="alert" hidden>
+      <div id="boot-error" class="boot-fallback" role="alert" dir="rtl" hidden>
         تعذر تشغيل التطبيق. تحقق من اتصال الإنترنت ثم حاول مرة أخرى.
         <br><button id="boot-retry" type="button">إعادة المحاولة</button>
       </div>
@@ -309,6 +290,17 @@
         no.textContent = 'حسناً';
         setTimeout(show, 3500);
       }
+    })();
+  </script>
+
+  <!-- أداة فحص للجوال: تعمل فقط عند فتح الموقع بالرابط  /?debug=1  (تعرض Console على الشاشة). احذف هذا الجزء بعد الانتهاء. -->
+  <script>
+    (function () {
+      if (!/[?&]debug=1(&|$)/.test(location.search)) return;
+      var s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/eruda@3.4.1/eruda.js';
+      s.onload = function () { window.eruda && window.eruda.init(); };
+      document.head.appendChild(s);
     })();
   </script>
 
