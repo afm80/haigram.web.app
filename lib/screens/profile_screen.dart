@@ -15,6 +15,7 @@ import 'settings_screen.dart';
 import 'social_screens.dart' show ChatScreen;
 import 'video_feed_screen.dart';
 import 'video_thumbnail.dart';
+import '../route_state.dart';
 
 /// تبويب الملف الشخصي للمستخدم الحالي.
 class ProfileScreen extends StatelessWidget {
@@ -156,8 +157,10 @@ class _Header extends StatelessWidget {
     final onChanged = onThemeModeChanged;
     if (onChanged == null) return;
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => SettingsScreen(onThemeModeChanged: onChanged),
+      appRoute<void>(
+        'settings',
+        const {},
+        (_) => SettingsScreen(onThemeModeChanged: onChanged),
       ),
     );
   }
@@ -366,8 +369,10 @@ class _Header extends StatelessWidget {
           child: _pillButton(
               context,
               'تعديل الملف الشخصي',
-              () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => const EditProfileScreen()))),
+              () => Navigator.of(context).push(appRoute(
+                  'editProfile',
+                  const {},
+                  (_) => const EditProfileScreen()))),
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -578,8 +583,10 @@ class _MessageActionButtonState extends State<_MessageActionButton> {
       final conversationId = await SocialService.startConversation(widget.uid);
       if (!mounted) return;
       await Navigator.of(context).push<void>(
-        MaterialPageRoute(
-          builder: (_) => ChatScreen(
+        appRoute<void>(
+          'chat',
+          {'cid': conversationId, 'uid': widget.uid},
+          (_) => ChatScreen(
             conversationId: conversationId,
             otherUid: widget.uid,
           ),
@@ -1461,8 +1468,10 @@ class _VideoGridView extends StatelessWidget {
         ),
         itemCount: list.length,
         itemBuilder: (_, i) => GestureDetector(
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => VideoViewerScreen(posts: list, initialIndex: i))),
+          onTap: () => Navigator.of(context).push(appRoute(
+              'video',
+              {'id': list[i].id},
+              (_) => VideoViewerScreen(posts: list, initialIndex: i))),
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -1520,13 +1529,15 @@ class _PostGrid extends StatelessWidget {
               if (post.type == PostType.video) {
                 final videoIndex =
                     videos.indexWhere((video) => video.id == post.id);
-                Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => VideoViewerScreen(
+                Navigator.of(context).push(appRoute(
+                    'video',
+                    {'id': post.id},
+                    (_) => VideoViewerScreen(
                         posts: videos, initialIndex: videoIndex)));
                 return;
               }
-              Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => PostDetailScreen(post: post)));
+              Navigator.of(context).push(appRoute('post', {'id': post.id},
+                  (_) => PostDetailScreen(post: post)));
             },
             child: switch (post.type) {
               PostType.photo => PostImage(post: post),
