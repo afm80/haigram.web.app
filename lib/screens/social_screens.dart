@@ -8,6 +8,7 @@ import '../theme.dart';
 import 'common_widgets.dart';
 import 'post_widgets.dart' show timeAgo;
 import 'story_widgets.dart' show StoryViewed, StoryViewer;
+import '../route_state.dart';
 
 /// صندوق البريد (على طريقة تيكتوك): صف الأصدقاء، ثم المتابعون والإعجابات
 /// والتعليقات، ثم المحادثات.
@@ -155,8 +156,10 @@ class InboxScreen extends StatelessWidget {
                   style: TextStyle(color: colors.textDim, fontSize: 11),
                 ),
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => ChatScreen(
+            appRoute(
+              'chat',
+              {'cid': conversation.id, 'uid': otherUid},
+              (_) => ChatScreen(
                 conversationId: conversation.id,
                 otherUid: otherUid,
               ),
@@ -287,8 +290,10 @@ class _ActivityTile extends StatelessWidget {
             )
           : Icon(Icons.chevron_left_rounded, color: colors.textDim),
       onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => NotificationsScreen(
+        appRoute(
+          'notifications',
+          {'type': category.type, 'title': category.title},
+          (_) => NotificationsScreen(
             type: category.type,
             title: category.title,
           ),
@@ -357,8 +362,10 @@ class _FollowingRailState extends State<_FollowingRail> {
           await SocialService.startConversation(user.uid);
       if (!mounted) return;
       await Navigator.of(context).push<void>(
-        MaterialPageRoute(
-          builder: (_) => ChatScreen(
+        appRoute<void>(
+          'chat',
+          {'cid': conversationId, 'uid': user.uid},
+          (_) => ChatScreen(
             conversationId: conversationId,
             otherUid: user.uid,
           ),
@@ -514,8 +521,10 @@ class _FriendsScreenState extends State<_FriendsScreen> {
       final conversationId = await SocialService.startConversation(friend.uid);
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => ChatScreen(
+        appRoute(
+          'chat',
+          {'cid': conversationId, 'uid': friend.uid},
+          (_) => ChatScreen(
             conversationId: conversationId,
             otherUid: friend.uid,
           ),
