@@ -54,6 +54,7 @@ class RouteStore {
     'notifications',
     'editProfile',
     'settings',
+    'search',
   };
 
   static final Map<int, List<_Entry>> _stacks = {};
@@ -146,6 +147,13 @@ class RouteStore {
   }
 }
 
+/// رقم مكدّس الصفحات المفتوحة فوق الشريط السفلي (Navigator الجذر).
+const rootStackIndex = 5;
+
+/// يفتح صفحة فوق الشريط السفلي (تغطيه) بدل أن تبقى داخل التبويب.
+NavigatorState rootNavigatorOf(BuildContext context) =>
+    Navigator.of(context, rootNavigator: true);
+
 /// يراقب الصفحات المفتوحة داخل تبويب معيّن ويحفظها.
 class TabRouteObserver extends NavigatorObserver {
   final int tab;
@@ -169,3 +177,6 @@ class TabRouteObserver extends NavigatorObserver {
     if (newRoute != null) RouteStore._add(tab, newRoute);
   }
 }
+
+/// مراقب الـ Navigator الجذر: يحفظ الصفحات المفتوحة فوق الشريط السفلي.
+final TabRouteObserver rootRouteObserver = TabRouteObserver(rootStackIndex);

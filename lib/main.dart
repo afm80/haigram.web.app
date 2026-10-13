@@ -10,6 +10,7 @@ import 'screens/auth_screen.dart';
 import 'screens/home_shell.dart';
 import 'screens/onboarding_screen.dart';
 import 'theme.dart';
+import 'route_state.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -185,6 +186,7 @@ class _LamhaAppState extends State<LamhaApp> {
       theme: buildTheme(Brightness.light),
       darkTheme: buildTheme(Brightness.dark),
       themeMode: _themeMode,
+      navigatorObservers: [rootRouteObserver],
       builder: (context, child) {
         final isDark = _themeMode == ThemeMode.dark;
         return AnnotatedRegion<SystemUiOverlayStyle>(
