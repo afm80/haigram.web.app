@@ -387,6 +387,12 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
       };
 
   void _selectTab(int tab) {
+    // كل ضغطة على تبويب تفتح صفحته الرئيسية: نُغلق أي صفحات فرعية
+    // (ملف مستخدم آخر، منشور...) بقيت مفتوحة داخل التبويب سابقاً.
+    final navigator = _tabNavigators[tab].currentState;
+    if (navigator != null && navigator.canPop()) {
+      navigator.popUntil((route) => route.isFirst);
+    }
     setState(() => _index = tab);
     _selectedTab.value = tab;
     RouteStore.setTab(tab);
