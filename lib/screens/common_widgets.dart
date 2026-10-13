@@ -471,3 +471,73 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     );
   }
 }
+
+
+/// يبني زر الإعجاب بحالة فورية (تفاؤلية) وعدّاد حيّ:
+/// يتغير اللون والعدد لحظة الضغط دون انتظار الشبكة، ويتراجع عند الفشل.
+class LikeBuilder extends StatefulWidget {
+  final Post post;
+  final Widget Function(
+      BuildContext context, bool liked, int count, VoidCallback toggle) builder;
+  const LikeBuilder({super.key, required this.post, required this.builder});
+
+  @override
+  State<LikeBuilder> createState() => _LikeBuilderState();
+}
+
+class _LikeBuilderState extends State<LikeBuilder> {
+  late final Stream<bool> _likedStream = PostService.isLiked(widget.post.id);
+  late final Stream<int> _countStream = PostService.likeCount(widget.post.id);
+  bool? _override; // الحالة المتوقعة حتى يؤكدها الخادم
+  bool _busy = false;
+
+  Future<void> _toggle(bool currentLiked) async {
+    if (_busy) return;
+    _busy = true;
+    setState(() => _override = !currentLiked);
+    try {
+      await PostService.toggleLike(widget.post.id, currentLiked);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _override = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر تسجيل الإعجاب: $error')),
+        );
+      }
+    } finally {
+      _busy = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<bool>(
+      stream: _likedStream,
+      builder: (context, likedSnap) {
+        final serverLiked = likedSnap.data ?? false;
+        if (_override != null && _override == serverLiked) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _override == serverLiked) {
+              setState(() => _override = null);
+            }
+          });
+        }
+        final liked = _override ?? serverLiked;
+        return StreamBuilder<int>(
+          stream: _countStream,
+          initialData: widget.post.likes,
+          builder: (context, countSnap) {
+            var count = countSnap.data ?? widget.post.likes;
+            // نعدّل العدد محلياً ما دام الخادم لم يؤكد الإعجاب بعد.
+            if (_override != null && _override != serverLiked) {
+              count += _override! ? 1 : -1;
+            }
+            if (count < 0) count = 0;
+            return widget.builder(
+                context, liked, count, () => _toggle(liked));
+          },
+        );
+      },
+    );
+  }
+}
