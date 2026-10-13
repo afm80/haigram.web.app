@@ -105,7 +105,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
               showCursor: false,
               onTap: _openSearch,
               decoration: const InputDecoration(
-                hintText: 'ابحث عن مستخدم أو هاشتاق',
+                hintText: 'ابحث بالاسم أو اسم المستخدم أو هاشتاق',
                 prefixIcon: Icon(Icons.search_rounded),
               ),
             ),
@@ -215,7 +215,7 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
                       textInputAction: TextInputAction.search,
                       onSubmitted: _run,
                       decoration: InputDecoration(
-                        hintText: 'ابحث عن مستخدم أو هاشتاق',
+                        hintText: 'ابحث بالاسم أو اسم المستخدم أو هاشتاق',
                         prefixIcon: const Icon(Icons.search_rounded),
                         suffixIcon: _search.text.isEmpty
                             ? null
