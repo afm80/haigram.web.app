@@ -161,7 +161,14 @@ class UserService {
       }
       tx.set(
         _db.collection('users').doc(uid),
-        {'name': name, 'username': username, 'bio': bio, 'photoUrl': photoUrl, 'photoB64': photoB64},
+        {
+          'name': name,
+          'nameLower': name.trim().toLowerCase(),
+          'username': username,
+          'bio': bio,
+          'photoUrl': photoUrl,
+          'photoB64': photoB64,
+        },
         SetOptions(merge: true),
       );
     });
@@ -174,6 +181,13 @@ class UserService {
     final snap = await ref.get();
     final existing = snap.exists ? AppUser.fromDoc(snap) : null;
     if (existing != null && existing.username.isNotEmpty) {
+      // حسابات قديمة: نضيف حقل البحث بالاسم مرة واحدة.
+      if (snap.data()?['nameLower'] == null) {
+        ref
+            .set({'nameLower': existing.name.trim().toLowerCase()},
+                SetOptions(merge: true))
+            .catchError((_) {});
+      }
       me = existing;
       _cache[u.uid] = Future.value(existing);
       return existing;
@@ -295,16 +309,39 @@ class UserService {
     return uid == null ? null : profileOf(uid);
   }
 
-  /// بحث عن مستخدمين ببداية اسم المستخدم.
+  static Future<List<AppUser>> _prefix(String field, String text) async {
+    if (text.isEmpty) return [];
+    try {
+      final snap = await _db
+          .collection('users')
+          .where(field, isGreaterThanOrEqualTo: text)
+          .where(field, isLessThan: '$text\uf8ff')
+          .limit(20)
+          .get();
+      return snap.docs.map(AppUser.fromDoc).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// بحث عن مستخدمين ببداية اسم المستخدم أو بداية الاسم.
   static Future<List<AppUser>> search(String q) async {
     final text = normalize(q);
+    final nameText = q.trim().replaceAll('@', '');
     if (text.isEmpty) return [];
-    final snap = await _db
-        .collection('users')
-        .where('username', isGreaterThanOrEqualTo: text)
-        .where('username', isLessThan: '$text\uf8ff')
-        .limit(20)
-        .get();
-    return snap.docs.map(AppUser.fromDoc).toList();
+    final results = await Future.wait([
+      _prefix('username', text),
+      _prefix('nameLower', nameText.toLowerCase()),
+      // الحسابات القديمة التي لا تملك nameLower: مطابقة بنفس حالة الأحرف.
+      _prefix('name', nameText),
+    ]);
+    final seen = <String>{};
+    final out = <AppUser>[];
+    for (final list in results) {
+      for (final u in list) {
+        if (u.username.isNotEmpty && seen.add(u.uid)) out.add(u);
+      }
+    }
+    return out.take(30).toList();
   }
 }
