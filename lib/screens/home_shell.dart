@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemNavigator;
 
 import '../services/post_service.dart';
 import '../services/presence_service.dart';
@@ -73,6 +74,7 @@ class _Tabs extends StatefulWidget {
 class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   int _index = 0;
   bool _appVisible = true;
+  DateTime? _lastBackPress;
   Timer? _presenceHeartbeat;
   final _selectedTab = ValueNotifier<int>(0);
   final _tabNavigators =
@@ -150,6 +152,34 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     );
   }
 
+  /// زر الرجوع (أندرويد/المتصفح): يغلق الصفحة المفتوحة فوق التبويب أولاً،
+  /// ثم يعود للرئيسية، ثم يطلب ضغطة ثانية للخروج.
+  void _handleBack() {
+    if (!mounted) return;
+    final navigator = _tabNavigators[_index].currentState;
+    if (navigator != null && navigator.canPop()) {
+      navigator.maybePop();
+      return;
+    }
+    if (_index != 0) {
+      _selectTab(0);
+      return;
+    }
+    final now = DateTime.now();
+    final last = _lastBackPress;
+    if (last == null || now.difference(last) > const Duration(seconds: 2)) {
+      _lastBackPress = now;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(const SnackBar(
+        content: Text('اضغط مرة أخرى للخروج'),
+        duration: Duration(seconds: 2),
+      ));
+      return;
+    }
+    SystemNavigator.pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -159,7 +189,12 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     final navInactive =
         videoTabSelected || isDark ? Colors.white70 : Colors.black54;
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (!didPop) _handleBack();
+      },
+      child: Scaffold(
       extendBody: true,
       body: IndexedStack(
         index: _index,
@@ -212,7 +247,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
           ),
         ),
       ),
-    );
+    ));
   }
 
   Widget _tabPage(int tab, int selectedTab) => switch (tab) {
