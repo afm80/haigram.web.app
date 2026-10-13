@@ -80,11 +80,11 @@ class ProfileView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tabs = <Tab>[
+      // منشورات، مقاطع ريلز، المحفوظات (لصاحب الحساب فقط)، الإعجابات.
       const Tab(icon: Icon(Icons.grid_on_rounded)),
       const Tab(icon: Icon(Icons.video_library_outlined)),
-      const Tab(icon: Icon(Icons.photo_library_outlined)),
-      const Tab(icon: Icon(Icons.notes_rounded)),
       if (isMe) const Tab(icon: Icon(Icons.bookmark_border_rounded)),
+      const Tab(icon: Icon(Icons.favorite_border_rounded)),
     ];
     return DefaultTabController(
       length: tabs.length,
@@ -112,11 +112,10 @@ class ProfileView extends StatelessWidget {
         ],
         body: TabBarView(
           children: [
-            _ProfileGrid(uid: uid),
+            _PostsTab(uid: uid),
             _VideoGrid(uid: uid),
-            _PhotoGrid(uid: uid),
-            _TextList(uid: uid),
             if (isMe) const _SavedGrid(),
+            _LikedGrid(uid: uid),
           ],
         ),
       ),
@@ -184,23 +183,6 @@ class _Header extends StatelessWidget {
     }
   }
 
-  Future<void> _toggleTheme(BuildContext context) async {
-    final currentTheme = themeMode;
-    final changeTheme = onThemeModeChanged;
-    if (currentTheme == null || changeTheme == null) return;
-    final nextTheme =
-        currentTheme == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
-    try {
-      await changeTheme(nextTheme);
-    } catch (error) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر تغيير المظهر: $error')),
-        );
-      }
-    }
-  }
-
   void _showProfileShareSheet(BuildContext context, AppUser user) {
     showModalBottomSheet<void>(
       context: context,
@@ -240,27 +222,25 @@ class _Header extends StatelessWidget {
               if (isMe)
                 Align(
                   alignment: AlignmentDirectional.centerEnd,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (themeMode != null && onThemeModeChanged != null)
-                        IconButton(
-                          icon: Icon(
-                            themeMode == ThemeMode.dark
-                                ? Icons.light_mode_rounded
-                                : Icons.dark_mode_rounded,
+                  child: InkWell(
+                    onTap: () => _confirmSignOut(context),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.logout_rounded),
+                          const SizedBox(height: 2),
+                          Text(
+                            'تسجيل الخروج',
+                            style: TextStyle(
+                                fontSize: 11, color: context.appColors.textDim),
                           ),
-                          tooltip: themeMode == ThemeMode.dark
-                              ? 'التبديل إلى الوضع الفاتح'
-                              : 'التبديل إلى الوضع الداكن',
-                          onPressed: () => _toggleTheme(context),
-                        ),
-                      IconButton(
-                        icon: const Icon(Icons.logout_rounded),
-                        tooltip: 'تسجيل الخروج',
-                        onPressed: () => _confirmSignOut(context),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               Row(
@@ -272,12 +252,12 @@ class _Header extends StatelessWidget {
                       children: [
                         Expanded(
                           child: _stat(
-                              context, 'منشور', PostService.countPosts(uid)),
+                              context, 'منشورات', PostService.countPosts(uid)),
                         ),
                         Expanded(
                           child: _stat(
                             context,
-                            'المتابعون',
+                            'متابعي',
                             PostService.countFollowers(uid),
                             onTap: () => _showFollowSheet(context, uid, 0),
                           ),
@@ -285,7 +265,7 @@ class _Header extends StatelessWidget {
                         Expanded(
                           child: _stat(
                             context,
-                            isMe ? 'أتابع' : 'يتابع',
+                            'أتابعه',
                             PostService.countFollowing(uid),
                             onTap: () => _showFollowSheet(context, uid, 1),
                           ),
@@ -994,7 +974,7 @@ class _ProfileShareSheetState extends State<_ProfileShareSheet> {
   }
 }
 
-/// قائمة المتابعين / أتابع: بحث داخلي، والضغط على أي مستخدم يفتح ملفه الشخصي.
+/// قائمة متابعي / أتابعه: بحث داخلي، والضغط على أي مستخدم يفتح ملفه الشخصي.
 class _FollowSheet extends StatelessWidget {
   final String uid;
   final int initialTab;
@@ -1020,7 +1000,7 @@ class _FollowSheet extends StatelessWidget {
                 decoration: BoxDecoration(
                     color: context.appColors.textDim,
                     borderRadius: BorderRadius.circular(2))),
-            const TabBar(tabs: [Tab(text: 'المتابعون'), Tab(text: 'أتابع')]),
+            const TabBar(tabs: [Tab(text: 'متابعي'), Tab(text: 'أتابعه')]),
             Expanded(
               child: TabBarView(
                 children: [
@@ -1097,21 +1077,44 @@ class _UserListState extends State<_UserList> {
                   final u = list[i];
                   final isMe = u.uid == PostService.uidOrEmpty;
                   return ListTile(
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 16),
                     onTap: () {
                       Navigator.pop(context);
                       openProfile(widget.outerContext, u.uid);
                     },
                     leading: UserAvatar(
-                        uid: u.uid, fallbackName: u.username, radius: 22),
-                    title: Text(u.username,
-                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                      uid: u.uid,
+                      profile: u,
+                      fallbackName: u.username,
+                      radius: 22,
+                    ),
+                    title: Text(
+                      u.username,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
                     subtitle: u.name.isEmpty
                         ? null
-                        : Text(u.name,
-                            style: TextStyle(color: context.appColors.textDim)),
+                        : Text(
+                            u.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: context.appColors.textDim),
+                          ),
+                    // عرض وارتفاع ثابتان: الزر يطلب عرضاً لا نهائياً بطبيعته
+                    // فيلتهم مساحة الاسم والصورة داخل ListTile.
                     trailing: isMe
                         ? null
-                        : FollowActionButton(uid: u.uid, compact: true),
+                        : SizedBox(
+                            width: 112,
+                            height: 38,
+                            child: Center(
+                              child: FollowActionButton(
+                                  uid: u.uid, compact: true),
+                            ),
+                          ),
                   );
                 },
               );
@@ -1364,36 +1367,54 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
 int _profileGridColumns(double width) => (width / 150).floor().clamp(3, 6);
 
-class _ProfileGrid extends StatelessWidget {
+/// تبويب المنشورات: الصور والمنشورات النصية (بدون الفيديو).
+class _PostsTab extends StatefulWidget {
   final String uid;
-  const _ProfileGrid({required this.uid});
+  const _PostsTab({required this.uid});
+
+  @override
+  State<_PostsTab> createState() => _PostsTabState();
+}
+
+class _PostsTabState extends State<_PostsTab> {
+  late final Stream<List<Post>> _photos =
+      PostService.stream(PostType.photo, uid: widget.uid);
+  late final Stream<List<Post>> _texts =
+      PostService.stream(PostType.text, uid: widget.uid);
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<Post>>(
-      stream: PostService.profilePosts(uid),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(
-            child: Text('تعذر تحميل المنشورات\n${snapshot.error}',
-                textAlign: TextAlign.center),
-          );
-        }
-        if (!snapshot.hasData) return const AppLoading();
-        final posts = snapshot.data!;
-        if (posts.isEmpty) {
-          return const EmptyState(
-            icon: Icons.grid_on_rounded,
-            title: 'لا توجد منشورات بعد',
-            message: 'ستظهر منشورات هذا الحساب هنا.',
-          );
-        }
-        return _PostGrid(list: posts);
-      },
+      stream: _photos,
+      builder: (context, photoSnap) => StreamBuilder<List<Post>>(
+        stream: _texts,
+        builder: (context, textSnap) {
+          final error = photoSnap.error ?? textSnap.error;
+          if (error != null) {
+            return Center(
+                child: Text('تعذر التحميل\n$error',
+                    textAlign: TextAlign.center));
+          }
+          if (!photoSnap.hasData || !textSnap.hasData) {
+            return const AppLoading();
+          }
+          final list = [...photoSnap.data!, ...textSnap.data!]
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          if (list.isEmpty) {
+            return const EmptyState(
+              icon: Icons.grid_on_rounded,
+              title: 'لا توجد منشورات بعد',
+              message: 'ستظهر منشورات هذا الحساب هنا.',
+            );
+          }
+          return _PostGrid(list: list);
+        },
+      ),
     );
   }
 }
 
+/// تبويب مقاطع ريلز: فيديوهات الحساب.
 class _VideoGrid extends StatelessWidget {
   final String uid;
   const _VideoGrid({required this.uid});
@@ -1403,91 +1424,103 @@ class _VideoGrid extends StatelessWidget {
     return StreamBuilder<List<Post>>(
       stream: PostService.stream(PostType.video, uid: uid),
       builder: (context, snap) {
-        if (snap.hasError)
+        if (snap.hasError) {
           return Center(
               child: Text('تعذر التحميل\n${snap.error}',
                   textAlign: TextAlign.center));
+        }
         if (!snap.hasData) return const AppLoading();
         final list = snap.data!;
         if (list.isEmpty) {
           return const EmptyState(
-              icon: Icons.play_arrow_rounded,
-              title: 'لا توجد فيديوهات بعد',
-              message: 'ستظهر فيديوهات هذا الحساب هنا.');
+              icon: Icons.video_library_outlined,
+              title: 'لا توجد مقاطع ريلز بعد',
+              message: 'ستظهر مقاطع ريلز هذا الحساب هنا.');
         }
-        return LayoutBuilder(
-          builder: (context, constraints) => GridView.builder(
-            padding: const EdgeInsets.all(2),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: _profileGridColumns(constraints.maxWidth),
-              mainAxisSpacing: 2,
-              crossAxisSpacing: 2,
-              childAspectRatio: 9 / 14,
-            ),
-            itemCount: list.length,
-            itemBuilder: (_, i) => GestureDetector(
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) =>
-                      VideoViewerScreen(posts: list, initialIndex: i))),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  VideoThumbnail(post: list[i]),
-                  const Center(
-                    child: Icon(Icons.play_circle_outline_rounded,
-                        size: 34, color: Colors.white70),
-                  ),
-                  PositionedDirectional(
-                    start: 6,
-                    bottom: 6,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.play_arrow_outlined,
-                            size: 18, color: Colors.white),
-                        Text('${list[i].views}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              shadows: [Shadow(blurRadius: 4)],
-                            )),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
+        return _VideoGridView(list: list);
       },
     );
   }
 }
 
-class _PhotoGrid extends StatelessWidget {
+/// تبويب الإعجابات: المقاطع التي أعجب بها صاحب الحساب.
+class _LikedGrid extends StatelessWidget {
   final String uid;
-  const _PhotoGrid({required this.uid});
+  const _LikedGrid({required this.uid});
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<Post>>(
-      stream: PostService.stream(PostType.photo, uid: uid),
+      stream: PostService.likedVideos(uid),
       builder: (context, snap) {
-        if (snap.hasError)
+        if (snap.hasError) {
           return Center(
               child: Text('تعذر التحميل\n${snap.error}',
                   textAlign: TextAlign.center));
+        }
         if (!snap.hasData) return const AppLoading();
         final list = snap.data!;
         if (list.isEmpty) {
           return const EmptyState(
-              icon: Icons.photo_outlined,
-              title: 'لا توجد صور بعد',
-              message: 'ستظهر الصور والمنشورات المرئية هنا.');
+              icon: Icons.favorite_border_rounded,
+              title: 'لا توجد إعجابات بعد',
+              message: 'ستظهر هنا المقاطع التي أعجب بها هذا الحساب.');
         }
-        return _PostGrid(list: list);
+        return _VideoGridView(list: list);
       },
+    );
+  }
+}
+
+class _VideoGridView extends StatelessWidget {
+  final List<Post> list;
+  const _VideoGridView({required this.list});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) => GridView.builder(
+        padding: const EdgeInsets.all(2),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: _profileGridColumns(constraints.maxWidth),
+          mainAxisSpacing: 2,
+          crossAxisSpacing: 2,
+          childAspectRatio: 9 / 14,
+        ),
+        itemCount: list.length,
+        itemBuilder: (_, i) => GestureDetector(
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => VideoViewerScreen(posts: list, initialIndex: i))),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              VideoThumbnail(post: list[i]),
+              const Center(
+                child: Icon(Icons.play_circle_outline_rounded,
+                    size: 34, color: Colors.white70),
+              ),
+              PositionedDirectional(
+                start: 6,
+                bottom: 6,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.play_arrow_outlined,
+                        size: 18, color: Colors.white),
+                    Text('${list[i].views}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          shadows: [Shadow(blurRadius: 4)],
+                        )),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1547,36 +1580,6 @@ class _PostGrid extends StatelessWidget {
           );
         },
       ),
-    );
-  }
-}
-
-class _TextList extends StatelessWidget {
-  final String uid;
-  const _TextList({required this.uid});
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<List<Post>>(
-      stream: PostService.stream(PostType.text, uid: uid),
-      builder: (context, snap) {
-        if (snap.hasError)
-          return Center(
-              child: Text('تعذر التحميل\n${snap.error}',
-                  textAlign: TextAlign.center));
-        if (!snap.hasData) return const AppLoading();
-        final list = snap.data!;
-        if (list.isEmpty) {
-          return const EmptyState(
-              icon: Icons.notes_rounded,
-              title: 'لا توجد خواطر بعد',
-              message: 'ستظهر المنشورات النصية هنا.');
-        }
-        return ListView.builder(
-          itemCount: list.length,
-          itemBuilder: (_, i) => PostCard(post: list[i]),
-        );
-      },
     );
   }
 }
