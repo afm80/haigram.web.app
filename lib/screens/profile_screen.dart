@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -10,6 +11,7 @@ import '../services/social_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
+import 'create_flow.dart' show CreateKind, startCreate;
 import 'post_widgets.dart';
 import 'settings_screen.dart';
 import 'social_screens.dart' show ChatScreen;
@@ -57,14 +59,18 @@ class UserProfileScreen extends StatelessWidget {
               style:
                   const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
         ),
+        actions: [if (!isMe) _ProfileMoreMenu(uid: uid)],
       ),
       body: SafeArea(child: ProfileView(uid: uid, isMe: isMe)),
     );
   }
 }
 
+/// حالة الوصول إلى محتوى الملف: مفتوح، خاص (للمتابعين)، أو محظور.
+enum _Access { loading, open, privateLocked, blockedByMe, blockedByThem }
+
 /// محتوى الملف الشخصي المشترك: رأس بنمط إنستغرام/تيك توك + تبويبات المحتوى.
-class ProfileView extends StatelessWidget {
+class ProfileView extends StatefulWidget {
   final String uid;
   final bool isMe;
   final ThemeMode? themeMode;
@@ -79,48 +85,208 @@ class ProfileView extends StatelessWidget {
   });
 
   @override
+  State<ProfileView> createState() => _ProfileViewState();
+}
+
+class _ProfileViewState extends State<ProfileView> {
+  late final Stream<AppUser?> _userStream =
+      UserService.profileStream(widget.uid);
+  late final Stream<ChatBlockState>? _blockStream =
+      widget.isMe ? null : SocialService.blockState(widget.uid);
+  late final Stream<bool>? _followingStream =
+      widget.isMe ? null : PostService.isFollowing(widget.uid);
+
+  @override
   Widget build(BuildContext context) {
+    return StreamBuilder<AppUser?>(
+      stream: _userStream,
+      builder: (context, userSnap) {
+        final user = userSnap.data ?? (widget.isMe ? UserService.me : null);
+        if (user == null) {
+          if (userSnap.hasError) {
+            return Padding(
+              padding: const EdgeInsets.all(32),
+              child: EmptyState(
+                  icon: Icons.person_off_outlined,
+                  title: 'تعذر تحميل الملف الشخصي',
+                  message: '${userSnap.error}'),
+            );
+          }
+          return const Padding(
+              padding: EdgeInsets.all(48),
+              child: AppLoading(message: 'جارٍ تحميل الملف الشخصي...'));
+        }
+        if (widget.isMe) return _body(context, user, _Access.open);
+        return StreamBuilder<ChatBlockState>(
+          stream: _blockStream,
+          builder: (context, blockSnap) => StreamBuilder<bool>(
+            stream: _followingStream,
+            builder: (context, followSnap) {
+              final settled = (blockSnap.hasData || blockSnap.hasError) &&
+                  (followSnap.hasData || followSnap.hasError);
+              final block = blockSnap.data;
+              final access = !settled
+                  ? _Access.loading
+                  : (block?.blockedByMe ?? false)
+                      ? _Access.blockedByMe
+                      : (block?.blockedByThem ?? false)
+                          ? _Access.blockedByThem
+                          : (user.isPrivate && followSnap.data != true)
+                              ? _Access.privateLocked
+                              : _Access.open;
+              return _body(context, user, access);
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _accessMessage(_Access access) => switch (access) {
+        _Access.loading => const AppLoading(),
+        _Access.privateLocked => const EmptyState(
+            icon: Icons.lock_outline_rounded,
+            title: 'هذا الحساب خاص',
+            message: 'تابع هذا الحساب لتشاهد منشوراته ومقاطعه.',
+          ),
+        _Access.blockedByMe => const EmptyState(
+            icon: Icons.block,
+            title: 'لقد حظرت هذا الحساب',
+            message: 'لن يتمكن من مراسلتك. يمكنك إلغاء الحظر من الزر أعلاه.',
+          ),
+        _Access.blockedByThem => const EmptyState(
+            icon: Icons.person_off_outlined,
+            title: 'هذا الحساب غير متاح',
+          ),
+        _Access.open => const SizedBox.shrink(),
+      };
+
+  Widget _body(BuildContext context, AppUser user, _Access access) {
+    final header = _Header(
+      uid: widget.uid,
+      user: user,
+      isMe: widget.isMe,
+      access: access,
+      themeMode: widget.themeMode,
+      onThemeModeChanged: widget.onThemeModeChanged,
+    );
+    if (access != _Access.open) {
+      return CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(child: header),
+          SliverFillRemaining(
+              hasScrollBody: false, child: _accessMessage(access)),
+        ],
+      );
+    }
+
+    // منشورات، مقاطع ريلز، المحفوظات (لصاحب الحساب فقط)، الإعجابات
+    // (تُخفى عن الآخرين إذا فعّل صاحب الحساب «إخفاء الإعجابات»).
+    final showLikes = widget.isMe || !user.hideLikes;
     final tabs = <Tab>[
-      // منشورات، مقاطع ريلز، المحفوظات (لصاحب الحساب فقط)، الإعجابات.
       const Tab(icon: Icon(Icons.grid_on_rounded)),
       const Tab(icon: Icon(Icons.video_library_outlined)),
-      if (isMe) const Tab(icon: Icon(Icons.bookmark_border_rounded)),
-      const Tab(icon: Icon(Icons.favorite_border_rounded)),
+      if (widget.isMe) const Tab(icon: Icon(Icons.bookmark_border_rounded)),
+      if (showLikes) const Tab(icon: Icon(Icons.favorite_border_rounded)),
     ];
+    final pinnedIds = user.pinnedPostIds.toSet();
     return DefaultTabController(
+      key: ValueKey(tabs.length),
       length: tabs.length,
-      child: NestedScrollView(
-        headerSliverBuilder: (context, _) => [
-          SliverToBoxAdapter(
-            child: _Header(
-              uid: uid,
-              isMe: isMe,
-              themeMode: themeMode,
-              onThemeModeChanged: onThemeModeChanged,
-            ),
-          ),
-          SliverPersistentHeader(
-            pinned: true,
-            delegate: _TabsDelegate(
-              TabBar(
-                labelColor: context.appColors.text,
-                unselectedLabelColor: context.appColors.textDim,
-                indicatorColor: context.appColors.text,
-                tabs: tabs,
+      child: _PinnedPosts(
+        ids: user.pinnedPostIds,
+        builder: (context, pinned) => NestedScrollView(
+          headerSliverBuilder: (context, _) => [
+            SliverToBoxAdapter(child: header),
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _TabsDelegate(
+                TabBar(
+                  labelColor: context.appColors.text,
+                  unselectedLabelColor: context.appColors.textDim,
+                  indicatorColor: context.appColors.text,
+                  tabs: tabs,
+                ),
               ),
             ),
-          ),
-        ],
-        body: TabBarView(
-          children: [
-            _PostsTab(uid: uid),
-            _VideoGrid(uid: uid),
-            if (isMe) const _SavedGrid(),
-            _LikedGrid(uid: uid),
           ],
+          body: TabBarView(
+            children: [
+              _PostsTab(
+                uid: widget.uid,
+                isMe: widget.isMe,
+                pinned:
+                    pinned.where((p) => p.type != PostType.video).toList(),
+                pinnedIds: pinnedIds,
+              ),
+              _VideoGrid(
+                uid: widget.uid,
+                isMe: widget.isMe,
+                pinned:
+                    pinned.where((p) => p.type == PostType.video).toList(),
+                pinnedIds: pinnedIds,
+              ),
+              if (widget.isMe) const _SavedGrid(),
+              if (showLikes) _LikedGrid(uid: widget.uid, isMe: widget.isMe),
+            ],
+          ),
         ),
       ),
     );
+  }
+}
+
+/// يجلب المنشورات المثبّتة بمعرّفاتها (حتى 3) ويعيد بناء الواجهة عند تغيّرها.
+/// يُبقي النتيجة السابقة أثناء إعادة التحميل حتى لا تومض الشبكة.
+class _PinnedPosts extends StatefulWidget {
+  final List<String> ids;
+  final Widget Function(BuildContext context, List<Post> pinned) builder;
+  const _PinnedPosts({required this.ids, required this.builder});
+
+  @override
+  State<_PinnedPosts> createState() => _PinnedPostsState();
+}
+
+class _PinnedPostsState extends State<_PinnedPosts> {
+  List<Post> _posts = const [];
+  int _request = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PinnedPosts old) {
+    super.didUpdateWidget(old);
+    if (!listEquals(old.ids, widget.ids)) _load();
+  }
+
+  Future<void> _load() async {
+    final ids = widget.ids;
+    final request = ++_request;
+    if (ids.isEmpty) {
+      _posts = const [];
+      return;
+    }
+    try {
+      final posts = await PostService.postsByIds(ids);
+      if (!mounted || request != _request) return;
+      setState(() => _posts = posts);
+    } catch (_) {
+      // نُبقي القائمة السابقة؛ التثبيت تحسين وليس أساسياً.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final order = {
+      for (var i = 0; i < widget.ids.length; i++) widget.ids[i]: i,
+    };
+    final visible = _posts.where((p) => order.containsKey(p.id)).toList()
+      ..sort((a, b) => order[a.id]!.compareTo(order[b.id]!));
+    return widget.builder(context, visible);
   }
 }
 
@@ -142,13 +308,17 @@ class _TabsDelegate extends SliverPersistentHeaderDelegate {
 
 class _Header extends StatelessWidget {
   final String uid;
+  final AppUser user;
   final bool isMe;
+  final _Access access;
   final ThemeMode? themeMode;
   final Future<void> Function(ThemeMode)? onThemeModeChanged;
 
   const _Header({
     required this.uid,
+    required this.user,
     required this.isMe,
+    required this.access,
     this.themeMode,
     this.onThemeModeChanged,
   });
@@ -179,145 +349,132 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<AppUser?>(
-      stream: UserService.profileStream(uid),
-      builder: (context, snap) {
-        final u = snap.data ?? (isMe ? UserService.me : null);
-        if (u == null) {
-          if (snap.hasError) {
-            return Padding(
-              padding: const EdgeInsets.all(32),
-              child: EmptyState(
-                  icon: Icons.person_off_outlined,
-                  title: 'تعذر تحميل الملف الشخصي',
-                  message: '${snap.error}'),
-            );
-          }
-          return const Padding(
-              padding: EdgeInsets.all(48),
-              child: AppLoading(message: 'جارٍ تحميل الملف الشخصي...'));
-        }
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-          child: Column(
-            children: [
-              if (isMe)
-                Align(
-                  alignment: AlignmentDirectional.centerEnd,
-                  child: Builder(builder: (context) {
-                    // الأيقونة مرسومة بثلاث خطوط (وليست خط أيقونات) لتظهر
-                    // دائماً، ولونها يتبدل: أبيض على داكن وأسود على فاتح.
-                    final isDark =
-                        Theme.of(context).brightness == Brightness.dark;
-                    final lineColor = isDark ? Colors.white : Colors.black87;
-                    Widget bar() => Container(
-                          width: 20,
-                          height: 2.5,
-                          decoration: BoxDecoration(
-                            color: lineColor,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        );
-                    return Tooltip(
-                      message: 'الإعدادات',
-                      child: Material(
+    final u = user;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Column(
+        children: [
+          if (isMe)
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: Builder(builder: (context) {
+                // الأيقونة مرسومة بثلاث خطوط (وليست خط أيقونات) لتظهر
+                // دائماً، ولونها يتبدل: أبيض على داكن وأسود على فاتح.
+                final isDark =
+                    Theme.of(context).brightness == Brightness.dark;
+                final lineColor = isDark ? Colors.white : Colors.black87;
+                Widget bar() => Container(
+                      width: 20,
+                      height: 2.5,
+                      decoration: BoxDecoration(
+                        color: lineColor,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    );
+                return Tooltip(
+                  message: 'الإعدادات',
+                  child: Material(
+                    color: isDark
+                        ? Colors.white.withOpacity(0.12)
+                        : Colors.black.withOpacity(0.06),
+                    shape: CircleBorder(
+                      side: BorderSide(
                         color: isDark
-                            ? Colors.white.withOpacity(0.12)
-                            : Colors.black.withOpacity(0.06),
-                        shape: CircleBorder(
-                          side: BorderSide(
-                            color: isDark
-                                ? Colors.white.withOpacity(0.25)
-                                : Colors.black.withOpacity(0.18),
-                          ),
-                        ),
-                        child: InkWell(
-                          customBorder: const CircleBorder(),
-                          onTap: () => _openSettings(context),
-                          child: SizedBox(
-                            width: 44,
-                            height: 44,
-                            child: Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  bar(),
-                                  const SizedBox(height: 5),
-                                  bar(),
-                                  const SizedBox(height: 5),
-                                  bar(),
-                                ],
-                              ),
-                            ),
+                            ? Colors.white.withOpacity(0.25)
+                            : Colors.black.withOpacity(0.18),
+                      ),
+                    ),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: () => _openSettings(context),
+                      child: SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              bar(),
+                              const SizedBox(height: 5),
+                              bar(),
+                              const SizedBox(height: 5),
+                              bar(),
+                            ],
                           ),
                         ),
                       ),
-                    );
-                  }),
-                ),
-              Row(
-                children: [
-                  _avatar(u),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _stat(
-                              context, 'منشورات', PostService.countPosts(uid)),
-                        ),
-                        Expanded(
-                          child: _stat(
-                            context,
-                            'متابعي',
-                            PostService.countFollowers(uid),
-                            onTap: () => _showFollowSheet(context, uid, 0),
-                          ),
-                        ),
-                        Expanded(
-                          child: _stat(
-                            context,
-                            'أتابعه',
-                            PostService.countFollowing(uid),
-                            onTap: () => _showFollowSheet(context, uid, 1),
-                          ),
-                        ),
-                      ],
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: Text(
-                  u.displayName,
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w800),
+                );
+              }),
+            ),
+          Row(
+            children: [
+              _avatar(u),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _LiveStat(
+                        label: 'منشورات',
+                        load: () => PostService.countPosts(uid),
+                      ),
+                    ),
+                    Expanded(
+                      child: _LiveStat(
+                        label: 'متابعي',
+                        load: () => PostService.countFollowers(uid),
+                        onTap: () => _showFollowSheet(context, uid, 0),
+                      ),
+                    ),
+                    Expanded(
+                      child: _LiveStat(
+                        label: 'أتابعه',
+                        load: () => PostService.countFollowing(uid),
+                        onTap: () => _showFollowSheet(context, uid, 1),
+                      ),
+                    ),
+                    Expanded(
+                      child: _LiveStat(
+                        label: 'إعجابات',
+                        load: () => PostService.totalLikes(uid),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: Text(
-                  '@${u.username}',
-                  style:
-                      TextStyle(fontSize: 14, color: context.appColors.textDim),
-                ),
-              ),
-              if (u.bio.trim().isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: Text(u.bio,
-                      style: const TextStyle(fontSize: 14, height: 1.45)),
-                ),
-              ],
-              const SizedBox(height: 16),
-              if (isMe) _myButtons(context, u) else _otherButtons(context, u),
             ],
           ),
-        );
-      },
+          const SizedBox(height: 12),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(
+              u.displayName,
+              style: const TextStyle(
+                  fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+          ),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(
+              '@${u.username}',
+              style:
+                  TextStyle(fontSize: 14, color: context.appColors.textDim),
+            ),
+          ),
+          if (u.bio.trim().isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(u.bio,
+                  style: const TextStyle(fontSize: 14, height: 1.45)),
+            ),
+          ],
+          const SizedBox(height: 16),
+          if (isMe) _myButtons(context, u) else _otherButtons(context, u),
+        ],
+      ),
     );
   }
 
@@ -424,6 +581,19 @@ class _Header extends StatelessWidget {
   }
 
   Widget _otherButtons(BuildContext context, AppUser u) {
+    if (access == _Access.blockedByThem) return const SizedBox.shrink();
+    if (access == _Access.blockedByMe) {
+      return _pillButton(context, 'إلغاء الحظر', () async {
+        final messenger = ScaffoldMessenger.of(context);
+        try {
+          await SocialService.setBlocked(uid, false);
+        } catch (error) {
+          messenger.showSnackBar(
+            SnackBar(content: Text('تعذر إلغاء الحظر: $error')),
+          );
+        }
+      });
+    }
     return Row(
       children: [
         Expanded(child: FollowActionButton(uid: uid, compact: true)),
@@ -461,48 +631,6 @@ class _Header extends StatelessWidget {
       child: Text(text,
           style: TextStyle(
               color: context.appColors.text, fontWeight: FontWeight.w600)),
-    );
-  }
-
-  Widget _stat(BuildContext context, String label, Future<int> value,
-      {VoidCallback? onTap}) {
-    return InkWell(
-      onTap: onTap,
-      child: Column(
-        children: [
-          FutureBuilder<int>(
-            future: value,
-            builder: (_, snapshot) {
-              if (snapshot.hasError) {
-                return Tooltip(
-                  message: 'تعذر تحميل الإحصائية: ${snapshot.error}',
-                  child: const Text('—',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-                );
-              }
-              if (!snapshot.hasData) {
-                return SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: context.appColors.textDim,
-                  ),
-                );
-              }
-              return Text('${snapshot.data}',
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w800));
-            },
-          ),
-          Text(label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: context.appColors.textDim, fontSize: 12)),
-        ],
-      ),
     );
   }
 
@@ -1383,10 +1511,201 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
 int _profileGridColumns(double width) => (width / 150).floor().clamp(3, 6);
 
+/// عدّاد يعيد تحميل نفسه فور أي فعل يغيّر الأعداد (متابعة، إعجاب، نشر، حذف)،
+/// ويُبقي القيمة السابقة ظاهرة أثناء التحديث.
+class _LiveStat extends StatefulWidget {
+  final String label;
+  final Future<int> Function() load;
+  final VoidCallback? onTap;
+
+  const _LiveStat({required this.label, required this.load, this.onTap});
+
+  @override
+  State<_LiveStat> createState() => _LiveStatState();
+}
+
+class _LiveStatState extends State<_LiveStat> {
+  int? _value;
+  Object? _error;
+  int _request = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    PostService.statsTick.addListener(_refresh);
+    _refresh();
+  }
+
+  @override
+  void dispose() {
+    PostService.statsTick.removeListener(_refresh);
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    final request = ++_request;
+    try {
+      final value = await widget.load();
+      if (!mounted || request != _request) return;
+      setState(() {
+        _value = value;
+        _error = null;
+      });
+    } catch (error) {
+      if (!mounted || request != _request) return;
+      setState(() => _error = error);
+    }
+  }
+
+  static String _compact(int n) {
+    String fmt(double v, String unit) {
+      final t = v >= 10 ? v.round().toString() : v.toStringAsFixed(1);
+      return '${t.endsWith('.0') ? t.substring(0, t.length - 2) : t}$unit';
+    }
+
+    if (n >= 1000000) return fmt(n / 1000000, 'M');
+    if (n >= 1000) return fmt(n / 1000, 'K');
+    return '$n';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const numberStyle = TextStyle(fontSize: 18, fontWeight: FontWeight.w800);
+    final Widget number;
+    if (_value != null) {
+      number = Text(_compact(_value!), style: numberStyle);
+    } else if (_error != null) {
+      number = Tooltip(
+        message: 'تعذر تحميل الإحصائية: $_error',
+        child: const Text('—', style: numberStyle),
+      );
+    } else {
+      number = SizedBox(
+        width: 16,
+        height: 16,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: context.appColors.textDim,
+        ),
+      );
+    }
+    return InkWell(
+      onTap: widget.onTap,
+      child: Column(
+        children: [
+          number,
+          Text(widget.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: context.appColors.textDim, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+}
+
+/// زر «أنشئ ...» داخل الحالات الفارغة في ملفك الشخصي.
+class _CreateButton extends StatelessWidget {
+  final String label;
+  final CreateKind kind;
+  const _CreateButton({required this.label, required this.kind});
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.icon(
+      onPressed: () => startCreate(context, kind),
+      icon: const Icon(Icons.add_rounded, size: 20),
+      label: Text(label),
+      style: FilledButton.styleFrom(
+        backgroundColor: AppColors.brandRed,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+}
+
+class _PinBadge extends StatelessWidget {
+  const _PinBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return PositionedDirectional(
+      top: 6,
+      end: 6,
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: const BoxDecoration(
+          color: Colors.black54,
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(Icons.push_pin, size: 13, color: Colors.white),
+      ),
+    );
+  }
+}
+
+/// ضغطة مطوّلة على منشور في ملفك: تثبيت في الأعلى أو إلغاء التثبيت.
+void _showPinSheet(BuildContext context, Post post, bool pinned) {
+  final colors = context.appColors;
+  final messenger = ScaffoldMessenger.of(context);
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: colors.surface,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (sheetContext) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 8),
+          ListTile(
+            leading: Icon(pinned ? Icons.push_pin_outlined : Icons.push_pin),
+            title: Text(pinned ? 'إلغاء التثبيت' : 'تثبيت في أعلى الملف'),
+            subtitle: pinned
+                ? null
+                : Text('حتى ${UserService.maxPinned} منشورات أو مقاطع',
+                    style: TextStyle(color: colors.textDim, fontSize: 12)),
+            onTap: () async {
+              Navigator.of(sheetContext).pop();
+              try {
+                await UserService.setPinned(post.id, !pinned);
+              } catch (error) {
+                messenger.showSnackBar(SnackBar(
+                  content: Text(error is PinLimitReached
+                      ? '$error'
+                      : 'تعذر تحديث التثبيت: $error'),
+                ));
+              }
+            },
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    ),
+  );
+}
+
+List<Post> _pinnedFirst(List<Post> pinned, List<Post> rest) {
+  final ids = {for (final p in pinned) p.id};
+  return [...pinned, ...rest.where((p) => !ids.contains(p.id))];
+}
+
 /// تبويب المنشورات: الصور والمنشورات النصية (بدون الفيديو).
 class _PostsTab extends StatefulWidget {
   final String uid;
-  const _PostsTab({required this.uid});
+  final bool isMe;
+  final List<Post> pinned;
+  final Set<String> pinnedIds;
+  const _PostsTab({
+    required this.uid,
+    required this.isMe,
+    this.pinned = const [],
+    this.pinnedIds = const <String>{},
+  });
 
   @override
   State<_PostsTab> createState() => _PostsTabState();
@@ -1414,16 +1733,24 @@ class _PostsTabState extends State<_PostsTab> {
           if (!photoSnap.hasData || !textSnap.hasData) {
             return const AppLoading();
           }
-          final list = [...photoSnap.data!, ...textSnap.data!]
+          final recent = [...photoSnap.data!, ...textSnap.data!]
             ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          final list = _pinnedFirst(widget.pinned, recent);
           if (list.isEmpty) {
-            return const EmptyState(
+            return EmptyState(
               icon: Icons.grid_on_rounded,
-              title: 'لا توجد منشورات بعد',
-              message: 'ستظهر منشورات هذا الحساب هنا.',
+              title: widget.isMe ? 'ابدأ بأول منشور' : 'لا توجد منشورات بعد',
+              message: widget.isMe
+                  ? 'شارك صورة أو فكرة وستظهر هنا في ملفك.'
+                  : 'ستظهر منشورات هذا الحساب هنا.',
+              action: widget.isMe
+                  ? const _CreateButton(
+                      label: 'أنشئ أول منشور', kind: CreateKind.post)
+                  : null,
             );
           }
-          return _PostGrid(list: list);
+          return _PostGrid(
+              list: list, pinnedIds: widget.pinnedIds, canPin: widget.isMe);
         },
       ),
     );
@@ -1433,7 +1760,15 @@ class _PostsTabState extends State<_PostsTab> {
 /// تبويب مقاطع ريلز: فيديوهات الحساب.
 class _VideoGrid extends StatelessWidget {
   final String uid;
-  const _VideoGrid({required this.uid});
+  final bool isMe;
+  final List<Post> pinned;
+  final Set<String> pinnedIds;
+  const _VideoGrid({
+    required this.uid,
+    required this.isMe,
+    this.pinned = const [],
+    this.pinnedIds = const <String>{},
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1446,14 +1781,21 @@ class _VideoGrid extends StatelessWidget {
                   textAlign: TextAlign.center));
         }
         if (!snap.hasData) return const AppLoading();
-        final list = snap.data!;
+        final list = _pinnedFirst(pinned, snap.data!);
         if (list.isEmpty) {
-          return const EmptyState(
-              icon: Icons.video_library_outlined,
-              title: 'لا توجد مقاطع ريلز بعد',
-              message: 'ستظهر مقاطع ريلز هذا الحساب هنا.');
+          return EmptyState(
+            icon: Icons.video_library_outlined,
+            title: isMe ? 'ابدأ بأول مقطع' : 'لا توجد مقاطع ريلز بعد',
+            message: isMe
+                ? 'صوّر مقطعاً قصيراً أو ارفع واحداً، وسيظهر هنا لمتابعيك.'
+                : 'ستظهر مقاطع ريلز هذا الحساب هنا.',
+            action: isMe
+                ? const _CreateButton(
+                    label: 'أنشئ أول مقطع', kind: CreateKind.reel)
+                : null,
+          );
         }
-        return _VideoGridView(list: list);
+        return _VideoGridView(list: list, pinnedIds: pinnedIds, canPin: isMe);
       },
     );
   }
@@ -1462,7 +1804,8 @@ class _VideoGrid extends StatelessWidget {
 /// تبويب الإعجابات: المقاطع التي أعجب بها صاحب الحساب.
 class _LikedGrid extends StatelessWidget {
   final String uid;
-  const _LikedGrid({required this.uid});
+  final bool isMe;
+  const _LikedGrid({required this.uid, required this.isMe});
 
   @override
   Widget build(BuildContext context) {
@@ -1477,10 +1820,12 @@ class _LikedGrid extends StatelessWidget {
         if (!snap.hasData) return const AppLoading();
         final list = snap.data!;
         if (list.isEmpty) {
-          return const EmptyState(
+          return EmptyState(
               icon: Icons.favorite_border_rounded,
               title: 'لا توجد إعجابات بعد',
-              message: 'ستظهر هنا المقاطع التي أعجب بها هذا الحساب.');
+              message: isMe
+                  ? 'ستظهر هنا المقاطع التي تعجبك.'
+                  : 'ستظهر هنا المقاطع التي أعجب بها هذا الحساب.');
         }
         return _VideoGridView(list: list);
       },
@@ -1490,7 +1835,13 @@ class _LikedGrid extends StatelessWidget {
 
 class _VideoGridView extends StatelessWidget {
   final List<Post> list;
-  const _VideoGridView({required this.list});
+  final Set<String> pinnedIds;
+  final bool canPin;
+  const _VideoGridView({
+    required this.list,
+    this.pinnedIds = const <String>{},
+    this.canPin = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1509,6 +1860,10 @@ class _VideoGridView extends StatelessWidget {
               'video',
               {'id': list[i].id},
               (_) => VideoViewerScreen(posts: list, initialIndex: i))),
+          onLongPress: canPin
+              ? () => _showPinSheet(
+                  context, list[i], pinnedIds.contains(list[i].id))
+              : null,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -1517,6 +1872,7 @@ class _VideoGridView extends StatelessWidget {
                 child: Icon(Icons.play_circle_outline_rounded,
                     size: 34, color: Colors.white70),
               ),
+              if (pinnedIds.contains(list[i].id)) const _PinBadge(),
               PositionedDirectional(
                 start: 6,
                 bottom: 6,
@@ -1545,7 +1901,13 @@ class _VideoGridView extends StatelessWidget {
 
 class _PostGrid extends StatelessWidget {
   final List<Post> list;
-  const _PostGrid({required this.list});
+  final Set<String> pinnedIds;
+  final bool canPin;
+  const _PostGrid({
+    required this.list,
+    this.pinnedIds = const <String>{},
+    this.canPin = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1576,27 +1938,37 @@ class _PostGrid extends StatelessWidget {
               Navigator.of(context).push(appRoute('post', {'id': post.id},
                   (_) => PostDetailScreen(post: post)));
             },
-            child: switch (post.type) {
-              PostType.photo => PostImage(post: post),
-              PostType.video => Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    VideoThumbnail(post: post),
-                    const Center(
-                      child: Icon(Icons.play_circle_outline_rounded,
-                          size: 34, color: Colors.white70),
+            onLongPress: canPin
+                ? () =>
+                    _showPinSheet(context, post, pinnedIds.contains(post.id))
+                : null,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                switch (post.type) {
+                  PostType.photo => PostImage(post: post),
+                  PostType.video => Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        VideoThumbnail(post: post),
+                        const Center(
+                          child: Icon(Icons.play_circle_outline_rounded,
+                              size: 34, color: Colors.white70),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              _ => Container(
-                  color: context.appColors.surfaceHigh,
-                  padding: const EdgeInsets.all(8),
-                  child: Text(post.caption,
-                      maxLines: 5,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12)),
-                ),
-            },
+                  _ => Container(
+                      color: context.appColors.surfaceHigh,
+                      padding: const EdgeInsets.all(8),
+                      child: Text(post.caption,
+                          maxLines: 5,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12)),
+                    ),
+                },
+                if (pinnedIds.contains(post.id)) const _PinBadge(),
+              ],
+            ),
           );
         },
       ),
@@ -1625,6 +1997,156 @@ class _SavedGrid extends StatelessWidget {
               message: 'احفظ المنشورات التي تريد الرجوع إليها لاحقاً.');
         }
         return _PostGrid(list: list);
+      },
+    );
+  }
+}
+
+
+/// قائمة (⋮) في ملف مستخدم آخر: حظر / إلغاء الحظر، وإبلاغ.
+class _ProfileMoreMenu extends StatefulWidget {
+  final String uid;
+  const _ProfileMoreMenu({required this.uid});
+
+  @override
+  State<_ProfileMoreMenu> createState() => _ProfileMoreMenuState();
+}
+
+class _ProfileMoreMenuState extends State<_ProfileMoreMenu> {
+  late final Stream<ChatBlockState> _block =
+      SocialService.blockState(widget.uid);
+
+  Future<void> _toggleBlock(bool blockedByMe) async {
+    final blocking = !blockedByMe;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(blocking ? 'حظر هذا الحساب؟' : 'إلغاء الحظر؟'),
+        content: Text(blocking
+            ? 'لن يتمكن من مراسلتك أو رؤية منشوراتك في ملفك، وسيتم إلغاء '
+                'متابعتك له. يمكنك إلغاء الحظر في أي وقت.'
+            : 'سيتمكن من مراسلتك مجدداً إذا كنتما تتابعان بعضكما.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(blocking ? 'حظر' : 'إلغاء الحظر'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await SocialService.setBlocked(widget.uid, blocking);
+      PostService.notifyStatsChanged();
+      messenger.showSnackBar(
+        SnackBar(content: Text(blocking ? 'تم حظر الحساب' : 'تم إلغاء الحظر')),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('تعذر تنفيذ العملية: $error')),
+      );
+    }
+  }
+
+  void _report() {
+    final colors = context.appColors;
+    final messenger = ScaffoldMessenger.of(context);
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: colors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Text('إبلاغ عن هذا الحساب',
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: colors.text)),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(
+                    'اختر السبب الأقرب. لن يعرف صاحب الحساب أنك من أبلغ.',
+                    style: TextStyle(fontSize: 12, color: colors.textDim)),
+              ),
+            ),
+            for (final reason in SocialService.reportReasons.entries)
+              ListTile(
+                title: Text(reason.value),
+                trailing: const Icon(Icons.chevron_left_rounded),
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  try {
+                    await SocialService.reportUser(widget.uid, reason.key);
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('تم إرسال البلاغ، شكراً لك')),
+                    );
+                  } catch (error) {
+                    messenger.showSnackBar(
+                      SnackBar(content: Text('تعذر إرسال البلاغ: $error')),
+                    );
+                  }
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<ChatBlockState>(
+      stream: _block,
+      builder: (context, snapshot) {
+        final blockedByMe = snapshot.data?.blockedByMe ?? false;
+        return PopupMenuButton<String>(
+          tooltip: 'المزيد',
+          icon: const Icon(Icons.more_vert_rounded),
+          onSelected: (value) {
+            if (value == 'report') {
+              _report();
+            } else {
+              _toggleBlock(blockedByMe);
+            }
+          },
+          itemBuilder: (_) => [
+            PopupMenuItem(
+              value: 'block',
+              child: Row(children: [
+                Icon(blockedByMe ? Icons.lock_open_rounded : Icons.block,
+                    size: 20),
+                const SizedBox(width: 12),
+                Text(blockedByMe ? 'إلغاء الحظر' : 'حظر'),
+              ]),
+            ),
+            const PopupMenuItem(
+              value: 'report',
+              child: Row(children: [
+                Icon(Icons.flag_outlined, size: 20),
+                SizedBox(width: 12),
+                Text('إبلاغ'),
+              ]),
+            ),
+          ],
+        );
       },
     );
   }

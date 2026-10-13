@@ -5,8 +5,8 @@ import '../services/user_service.dart';
 import '../theme.dart';
 import '../route_state.dart';
 
-/// صفحة الإعدادات: المظهر وتسجيل الخروج.
-/// لاحقاً: الخصوصية وحذف الحساب.
+/// صفحة الإعدادات: المظهر والخصوصية وتسجيل الخروج.
+/// لاحقاً: حذف الحساب.
 class SettingsScreen extends StatelessWidget {
   final Future<void> Function(ThemeMode) onThemeModeChanged;
 
@@ -96,6 +96,9 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 24),
+            const _SectionLabel('الخصوصية'),
+            const _PrivacySection(),
+            const SizedBox(height: 24),
             _SectionLabel('الحساب'),
             Container(
               decoration: BoxDecoration(
@@ -138,6 +141,93 @@ class _SectionLabel extends StatelessWidget {
           color: context.appColors.textDim,
         ),
       ),
+    );
+  }
+}
+
+
+/// إعدادات الخصوصية: حساب خاص + إخفاء تبويب الإعجابات عن الآخرين.
+class _PrivacySection extends StatefulWidget {
+  const _PrivacySection();
+
+  @override
+  State<_PrivacySection> createState() => _PrivacySectionState();
+}
+
+class _PrivacySectionState extends State<_PrivacySection> {
+  late final Stream<AppUser?> _profile = UserService.profileStream(
+    FirebaseAuth.instance.currentUser?.uid ?? '',
+  );
+
+  Future<void> _update({bool? isPrivate, bool? hideLikes}) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await UserService.updatePrivacy(
+          isPrivate: isPrivate, hideLikes: hideLikes);
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('تعذر حفظ الإعداد: $error')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return StreamBuilder<AppUser?>(
+      stream: _profile,
+      builder: (context, snapshot) {
+        final user = snapshot.data ?? UserService.me;
+        final enabled = user != null;
+        TextStyle dim() => TextStyle(color: colors.textDim, fontSize: 12);
+        return Container(
+          decoration: BoxDecoration(
+            color: colors.surface,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            children: [
+              SwitchListTile(
+                secondary: const Icon(Icons.lock_outline_rounded),
+                title: const Text('حساب خاص'),
+                subtitle: Text(
+                  'منشوراتك ومقاطعك تظهر لمتابعيك فقط',
+                  style: dim(),
+                ),
+                value: user?.isPrivate ?? false,
+                activeColor: AppColors.brandRed,
+                onChanged:
+                    enabled ? (value) => _update(isPrivate: value) : null,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              Divider(height: 1, color: colors.text.withOpacity(0.08)),
+              SwitchListTile(
+                secondary: const Icon(Icons.favorite_border_rounded),
+                title: const Text('إخفاء الإعجابات'),
+                subtitle: Text(
+                  'لا يرى الآخرون تبويب الإعجابات في ملفك',
+                  style: dim(),
+                ),
+                value: user?.hideLikes ?? false,
+                activeColor: AppColors.brandRed,
+                onChanged:
+                    enabled ? (value) => _update(hideLikes: value) : null,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              Divider(height: 1, color: colors.text.withOpacity(0.08)),
+              ListTile(
+                leading: const Icon(Icons.bookmark_border_rounded),
+                title: const Text('المحفوظات'),
+                subtitle: Text('خاصة بك دائماً ولا يراها أحد', style: dim()),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
