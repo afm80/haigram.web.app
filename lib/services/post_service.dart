@@ -365,6 +365,13 @@ class PostService {
   static Stream<bool> isLiked(String postId) =>
       _likeRef(postId).snapshots().map((s) => s.exists);
 
+  /// عدد الإعجابات الحي للمنشور.
+  static Stream<int> likeCount(String postId) => _db
+      .collection('posts')
+      .doc(postId)
+      .snapshots()
+      .map((s) => ((s.data()?['likes'] ?? 0) as num).toInt());
+
   static Future<void> toggleLike(String postId, bool liked) async {
     final batch = _db.batch();
     final post = _db.collection('posts').doc(postId);
