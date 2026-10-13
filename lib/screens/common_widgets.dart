@@ -6,6 +6,7 @@ import '../services/user_service.dart';
 import '../theme.dart';
 import 'post_widgets.dart' show timeAgo;
 import 'profile_screen.dart';
+import '../route_state.dart';
 
 const _commentStickers = [
   '🥰',
@@ -25,8 +26,8 @@ const _commentStickers = [
 /// يفتح ملف مستخدم (مثل تيك توك / إنستغرام).
 void openProfile(BuildContext context, String uid) {
   if (uid.isEmpty) return;
-  Navigator.of(context)
-      .push(MaterialPageRoute(builder: (_) => UserProfileScreen(uid: uid)));
+  Navigator.of(context).push(appRoute(
+      'user', {'uid': uid}, (_) => UserProfileScreen(uid: uid)));
 }
 
 /// صورة المستخدم: صورته إن وُجدت وإلا أول حرف من اسمه.
