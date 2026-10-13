@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../services/post_service.dart';
@@ -5,10 +7,17 @@ import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
 import 'post_widgets.dart';
+import 'story_widgets.dart';
 import 'video_feed_screen.dart';
 
+/// استكشاف: يجمع الرئيسية (بدون فيديو) والبحث.
+/// حقل البحث ثم شريط القصص ثم المنشورات بالأحدث؛ وعند الضغط على البحث
+/// تظهر الفيديوهات الأعلى رواجاً.
 class ExploreScreen extends StatefulWidget {
-  const ExploreScreen({super.key});
+  /// يُزاد من الخارج لطلب فتح البحث مباشرة (زر البحث في تبويب الفيديو).
+  final ValueListenable<int>? focusRequest;
+
+  const ExploreScreen({super.key, this.focusRequest});
 
   @override
   State<ExploreScreen> createState() => _ExploreScreenState();
@@ -16,9 +25,49 @@ class ExploreScreen extends StatefulWidget {
 
 class _ExploreScreenState extends State<ExploreScreen> {
   final _search = TextEditingController();
+  final _searchFocus = FocusNode();
+  bool _searching = false;
   late Future<(Map<String, int>, List<Post>)> _trendingFuture =
       _loadTrending();
   Future<(List<AppUser>, List<Post>)>? _results;
+  late final Stream<List<Post>> _feed = _latestPosts();
+
+  @override
+  void initState() {
+    super.initState();
+    _searchFocus.addListener(_onFocusChange);
+    widget.focusRequest?.addListener(_onFocusRequest);
+  }
+
+  @override
+  void dispose() {
+    widget.focusRequest?.removeListener(_onFocusRequest);
+    _searchFocus.removeListener(_onFocusChange);
+    _searchFocus.dispose();
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _onFocusChange() {
+    if (_searchFocus.hasFocus && !_searching) {
+      setState(() => _searching = true);
+    }
+  }
+
+  void _onFocusRequest() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _searchFocus.requestFocus();
+    });
+  }
+
+  void _cancelSearch() {
+    _search.clear();
+    _searchFocus.unfocus();
+    setState(() {
+      _searching = false;
+      _results = null;
+    });
+  }
 
   Future<(Map<String, int>, List<Post>)> _loadTrending() async =>
       (await PostService.trendingTags(), await PostService.trendingVideos());
@@ -36,36 +85,141 @@ class _ExploreScreenState extends State<ExploreScreen> {
     return (await users, await posts);
   }
 
+  /// الصور والنصوص في قائمة واحدة مرتبة بالأحدث (بدون فيديو).
+  Stream<List<Post>> _latestPosts() {
+    late final StreamController<List<Post>> controller;
+    final subs = <StreamSubscription<List<Post>>>[];
+    List<Post>? photos;
+    List<Post>? texts;
+
+    void emit() {
+      final p = photos;
+      final t = texts;
+      if (p == null || t == null) return;
+      controller.add([...p, ...t]
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt)));
+    }
+
+    controller = StreamController<List<Post>>(
+      onListen: () {
+        subs.add(PostService.stream(PostType.photo).listen((v) {
+          photos = v;
+          emit();
+        }, onError: controller.addError));
+        subs.add(PostService.stream(PostType.text).listen((v) {
+          texts = v;
+          emit();
+        }, onError: controller.addError));
+      },
+      onCancel: () async {
+        for (final sub in subs) {
+          await sub.cancel();
+        }
+      },
+    );
+    return controller.stream;
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(12),
-            child: TextField(
-              controller: _search,
-              textInputAction: TextInputAction.search,
-              onSubmitted: _run,
-              decoration: InputDecoration(
-                hintText: 'ابحث عن مستخدم أو هاشتاق',
-                prefixIcon: const Icon(Icons.search_rounded),
-                suffixIcon: _search.text.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.close_rounded),
-                        onPressed: () {
-                          _search.clear();
-                          _run('');
-                        },
-                      ),
-              ),
-              onChanged: (_) => setState(() {}),
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _search,
+                    focusNode: _searchFocus,
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: _run,
+                    decoration: InputDecoration(
+                      hintText: 'ابحث عن مستخدم أو هاشتاق',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: _search.text.isEmpty
+                          ? null
+                          : IconButton(
+                              icon: const Icon(Icons.close_rounded),
+                              onPressed: () {
+                                _search.clear();
+                                _run('');
+                              },
+                            ),
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+                if (_searching)
+                  Padding(
+                    padding: const EdgeInsetsDirectional.only(start: 4),
+                    child: TextButton(
+                      onPressed: _cancelSearch,
+                      child: const Text('إلغاء'),
+                    ),
+                  ),
+              ],
             ),
           ),
-          Expanded(child: _results == null ? _trending() : _resultsList()),
+          Expanded(
+            // نُبقي الموجز حيّاً أثناء البحث ليعود المستخدم لنفس موضعه.
+            child: IndexedStack(
+              index: _searching ? 1 : 0,
+              sizing: StackFit.expand,
+              children: [
+                _feedView(),
+                if (_searching)
+                  (_results == null ? _trending() : _resultsList())
+                else
+                  const SizedBox.shrink(),
+              ],
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _feedView() {
+    return StreamBuilder<List<Post>>(
+      stream: _feed,
+      builder: (context, snap) {
+        final posts = snap.data;
+        final hasPosts = posts != null && posts.isNotEmpty;
+        return ListView.builder(
+          padding: const EdgeInsets.only(bottom: 80),
+          itemCount: hasPosts ? posts.length + 1 : 2,
+          itemBuilder: (_, i) {
+            if (i == 0) {
+              return Column(children: [
+                const StoriesBar(),
+                Divider(
+                    height: 1, color: context.appColors.text.withOpacity(0.12)),
+              ]);
+            }
+            if (hasPosts) return PostCard(post: posts[i - 1]);
+            if (snap.hasError) {
+              return Padding(
+                padding: const EdgeInsets.all(28),
+                child: Text('تعذر تحميل المنشورات\n${snap.error}',
+                    textAlign: TextAlign.center),
+              );
+            }
+            if (posts == null) {
+              return const Padding(
+                padding: EdgeInsets.only(top: 60),
+                child: AppLoading(message: 'جارٍ تحميل المنشورات...'),
+              );
+            }
+            return const EmptyState(
+              icon: Icons.photo_library_outlined,
+              title: 'لا توجد منشورات بعد',
+              message: 'شارك أول صورة أو خاطرة مع مجتمعنا.',
+            );
+          },
+        );
+      },
     );
   }
 
@@ -126,6 +280,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                         style: TextStyle(color: context.appColors.textDim)),
                     onTap: () {
                       _search.text = tags[i].key;
+                      _searchFocus.unfocus();
                       _run(tags[i].key);
                     },
                   ),
