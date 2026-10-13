@@ -205,26 +205,53 @@ class _Header extends StatelessWidget {
                 Align(
                   alignment: AlignmentDirectional.centerEnd,
                   child: Builder(builder: (context) {
-                    // لون الأيقونة والخلفية يتبدلان حسب الوضع: أبيض على داكن
-                    // وأسود على فاتح، مع إطار خفيف ليبقى واضحاً دائماً.
+                    // الأيقونة مرسومة بثلاث خطوط (وليست خط أيقونات) لتظهر
+                    // دائماً، ولونها يتبدل: أبيض على داكن وأسود على فاتح.
                     final isDark =
                         Theme.of(context).brightness == Brightness.dark;
-                    final iconColor = isDark ? Colors.white : Colors.black87;
-                    return IconButton(
-                      tooltip: 'الإعدادات',
-                      icon: Icon(Icons.menu_rounded, size: 26, color: iconColor),
-                      style: IconButton.styleFrom(
-                        foregroundColor: iconColor,
-                        backgroundColor: isDark
+                    final lineColor = isDark ? Colors.white : Colors.black87;
+                    Widget bar() => Container(
+                          width: 20,
+                          height: 2.5,
+                          decoration: BoxDecoration(
+                            color: lineColor,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        );
+                    return Tooltip(
+                      message: 'الإعدادات',
+                      child: Material(
+                        color: isDark
                             ? Colors.white.withOpacity(0.12)
                             : Colors.black.withOpacity(0.06),
-                        side: BorderSide(
-                          color: isDark
-                              ? Colors.white.withOpacity(0.25)
-                              : Colors.black.withOpacity(0.18),
+                        shape: CircleBorder(
+                          side: BorderSide(
+                            color: isDark
+                                ? Colors.white.withOpacity(0.25)
+                                : Colors.black.withOpacity(0.18),
+                          ),
+                        ),
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: () => _openSettings(context),
+                          child: SizedBox(
+                            width: 44,
+                            height: 44,
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  bar(),
+                                  const SizedBox(height: 5),
+                                  bar(),
+                                  const SizedBox(height: 5),
+                                  bar(),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                      onPressed: () => _openSettings(context),
                     );
                   }),
                 ),
