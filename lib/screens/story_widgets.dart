@@ -7,6 +7,7 @@ import 'common_widgets.dart';
 import 'create_flow.dart';
 import 'post_widgets.dart';
 import 'profile_screen.dart';
+import '../route_state.dart';
 
 /// يتذكر القصص التي شوهدت خلال الجلسة (لتحويل الحلقة إلى رمادية).
 class StoryViewed {
@@ -287,8 +288,8 @@ class _StoryViewerState extends State<StoryViewer>
 
   Future<void> _openAuthor() async {
     _pause();
-    await Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => UserProfileScreen(uid: _group.uid)));
+    await Navigator.of(context).push(appRoute('user', {'uid': _group.uid},
+        (_) => UserProfileScreen(uid: _group.uid)));
     if (mounted) _resume();
   }
 
