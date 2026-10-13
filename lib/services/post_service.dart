@@ -367,11 +367,16 @@ class PostService {
       throw StateError('المنشور غير موجود');
     }
     final ownerUid = postSnapshot.data()?['uid'] as String?;
+    // نسخة على ملف المستخدم لعرضها في تبويب الإعجابات.
+    final likedRef =
+        _db.collection('users').doc(_user.uid).collection('liked').doc(postId);
     if (liked) {
       batch.delete(_likeRef(postId));
+      batch.delete(likedRef);
       batch.update(post, {'likes': FieldValue.increment(-1)});
     } else {
       batch.set(_likeRef(postId), {'at': FieldValue.serverTimestamp()});
+      batch.set(likedRef, {'at': FieldValue.serverTimestamp()});
       batch.update(post, {'likes': FieldValue.increment(1)});
       if (ownerUid != null) {
         SocialService.addLikeNotification(
@@ -516,6 +521,24 @@ class PostService {
         final docs = await Future.wait(
             s.docs.map((d) => _db.collection('posts').doc(d.id).get()));
         return docs.where((d) => d.exists).map(Post.fromDoc).toList();
+      });
+
+  /// الفيديوهات التي أعجب بها المستخدم [uid]، الأحدث أولاً.
+  static Stream<List<Post>> likedVideos(String uid, {int limit = 60}) => _db
+          .collection('users')
+          .doc(uid)
+          .collection('liked')
+          .orderBy('at', descending: true)
+          .limit(limit)
+          .snapshots()
+          .asyncMap((s) async {
+        final docs = await Future.wait(
+            s.docs.map((d) => _db.collection('posts').doc(d.id).get()));
+        return docs
+            .where((d) => d.exists)
+            .map(Post.fromDoc)
+            .where((post) => post.type == PostType.video)
+            .toList();
       });
 
   // ---- التعليقات ----
