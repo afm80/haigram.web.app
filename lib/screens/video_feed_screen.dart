@@ -14,6 +14,7 @@ import '../theme.dart';
 import 'common_widgets.dart';
 import 'profile_screen.dart';
 import 'social_screens.dart' show ChatScreen;
+import '../route_state.dart';
 
 const _shadow = [Shadow(blurRadius: 6, color: Colors.black54)];
 
@@ -300,8 +301,10 @@ class SoundScreen extends StatelessWidget {
                       clipBehavior: Clip.antiAlias,
                       child: InkWell(
                         onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => VideoViewerScreen(
+                          appRoute(
+                            'video',
+                            {'id': videos[index].id},
+                            (_) => VideoViewerScreen(
                               posts: videos,
                               initialIndex: index,
                             ),
@@ -780,8 +783,8 @@ class _VideoPageState extends State<_VideoPage>
   Future<void> _goProfile(String uid) async {
     _vc?.pause();
     _soundVc?.pause();
-    await Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => UserProfileScreen(uid: uid)));
+    await Navigator.of(context).push(appRoute(
+        'user', {'uid': uid}, (_) => UserProfileScreen(uid: uid)));
     if (mounted && widget.playing) _sync();
   }
 
@@ -799,7 +802,8 @@ class _VideoPageState extends State<_VideoPage>
       _vc?.pause();
       _soundVc?.pause();
       await navigator.push<void>(
-        MaterialPageRoute(builder: (_) => SoundScreen(sound: sound)),
+        appRoute<void>(
+            'sound', {'id': sound.id}, (_) => SoundScreen(sound: sound)),
       );
       if (mounted && widget.playing) _sync();
     } catch (error) {
@@ -1331,8 +1335,10 @@ class _VideoPageState extends State<_VideoPage>
       );
       if (!mounted) return;
       await navigator.push<void>(
-        MaterialPageRoute(
-          builder: (_) => ChatScreen(
+        appRoute<void>(
+          'chat',
+          {'cid': conversationId, 'uid': friend.uid},
+          (_) => ChatScreen(
             conversationId: conversationId,
             otherUid: friend.uid,
           ),
