@@ -453,25 +453,43 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   }
 
   Widget _createButton() {
+    // زر الإضافة بأسلوب تيك توك: طبقة سماوية يساراً وحمراء يميناً
+    // ومستطيل أبيض في الوسط (أسود في الوضع الفاتح) وعليه علامة +.
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final centerColor = isDark ? Colors.white : Colors.black;
+    final plusColor = isDark ? Colors.black : Colors.white;
+    Widget layer(Color color) => Container(
+          width: 42,
+          height: 34,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(10),
+          ),
+        );
     return GestureDetector(
       onTap: () => showCreateSheet(
           _tabNavigators[_index].currentContext ?? context),
-      child: Container(
-        width: 54,
-        height: 36,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          gradient: const LinearGradient(
-            colors: [AppColors.accent, AppColors.accent2],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          boxShadow: const [
-            BoxShadow(
-                color: Color(0x5542D4F4), blurRadius: 16, offset: Offset(0, 8)),
+      child: SizedBox(
+        width: 50,
+        height: 34,
+        child: Stack(
+          children: [
+            Positioned(left: 0, child: layer(const Color(0xFF25F4EE))),
+            Positioned(right: 0, child: layer(const Color(0xFFFE2C55))),
+            Positioned(
+              left: 4,
+              child: Container(
+                width: 42,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: centerColor,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.add_rounded, color: plusColor, size: 26),
+              ),
+            ),
           ],
         ),
-        child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
       ),
     );
   }
