@@ -40,7 +40,9 @@ jobs:
             --dart-define=FB_SENDER_ID=${{ secrets.FB_SENDER_ID }} \
             --dart-define=FB_PROJECT_ID=${{ secrets.FB_PROJECT_ID }} \
             --dart-define=FB_AUTH_DOMAIN=${{ secrets.FB_AUTH_DOMAIN }} \
-            --dart-define=FB_STORAGE_BUCKET=${{ secrets.FB_STORAGE_BUCKET }}
+            --dart-define=FB_STORAGE_BUCKET=${{ secrets.FB_STORAGE_BUCKET }} \
+            --dart-define=CLOUDINARY_CLOUD_NAME=${{ secrets.CLOUDINARY_CLOUD_NAME }} \
+            --dart-define=CLOUDINARY_UPLOAD_PRESET=${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
 
       - name: Deploy
         uses: FirebaseExtended/action-hosting-deploy@v0
