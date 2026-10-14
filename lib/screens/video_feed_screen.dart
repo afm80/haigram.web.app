@@ -599,6 +599,7 @@ class _VideoPageState extends State<_VideoPage>
   bool _failed = false;
   bool _appResumed = true;
   bool _resumeAfterLifecycle = false;
+  bool _userPaused = false; // أوقفه المستخدم يدوياً بالنقر
   bool _showLikeFeedback = false;
   bool _likeInProgress = false;
   bool _mainMutedBySound = false;
@@ -688,12 +689,13 @@ class _VideoPageState extends State<_VideoPage>
   @override
   void didUpdateWidget(covariant _VideoPage old) {
     super.didUpdateWidget(old);
+    if (old.playing != widget.playing) _userPaused = false;
     _sync();
   }
 
   void _sync() {
     if (!_ready) return;
-    if (widget.playing && _appResumed) {
+    if (widget.playing && _appResumed && !_userPaused) {
       _vc!.play();
       if (_soundVc != null) _soundVc!.play();
       _disc.repeat();
@@ -735,6 +737,7 @@ class _VideoPageState extends State<_VideoPage>
     if (!_ready) return;
     final shouldPlay = !_vc!.value.isPlaying;
     setState(() {
+      _userPaused = !shouldPlay;
       if (shouldPlay) {
         _vc!.play();
         _soundVc?.play();
@@ -814,6 +817,7 @@ class _VideoPageState extends State<_VideoPage>
   Widget build(BuildContext context) {
     final p = widget.post;
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: _togglePlay,
       onDoubleTap: () => unawaited(_likeOnDoubleTap()),
       onHorizontalDragStart: (_) => _profileDragDistance = 0,
@@ -841,7 +845,7 @@ class _VideoPageState extends State<_VideoPage>
                       textDirection: TextDirection.ltr,
                       child: AspectRatio(
                         aspectRatio: aspectRatio,
-                        child: VideoPlayer(_vc!),
+                        child: IgnorePointer(child: VideoPlayer(_vc!)),
                       ),
                     ),
                   ),
@@ -857,9 +861,11 @@ class _VideoPageState extends State<_VideoPage>
           else
             const AppLoading(message: 'جارٍ تحميل الفيديو...'),
           if (_ready && !_vc!.value.isPlaying)
-            const Center(
-                child: Icon(Icons.play_arrow_rounded,
-                    size: 90, color: Colors.white70)),
+            const IgnorePointer(
+              child: Center(
+                  child: Icon(Icons.play_arrow_rounded,
+                      size: 90, color: Colors.white70)),
+            ),
           IgnorePointer(
             child: Center(
               child: AnimatedScale(
