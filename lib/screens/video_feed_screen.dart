@@ -16,6 +16,10 @@ import '../route_state.dart';
 
 const _shadow = [Shadow(blurRadius: 6, color: Colors.black54)];
 
+/// أيقونة البث المباشر.
+const _liveIconUrl =
+    'https://raw.githubusercontent.com/afm80/img/refs/heads/main/live.png';
+
 /// تبويب الفيديوهات القصيرة: تجربة تيك توك (تبويبات "أتابعهم | لك" + تمرير عمودي لا نهائي).
 class VideoFeedScreen extends StatefulWidget {
   final bool active;
@@ -149,29 +153,32 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   /// زر البث المباشر (واجهة مبدئية): يظهر أعلى اليمين كما في تيك توك،
   /// وعند الضغط يعرض رسالة "قريباً" فقط حتى تتوفر خدمة البث.
   Widget _liveButton() {
-    return GestureDetector(
-      onTap: () => showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          content: Text('البث المباشر قريباً',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  color: ctx.appColors.text,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800)),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('حسناً'),
-            ),
-          ],
+    // نفس بنية زر البحث تماماً (IconButton داخل حاوية شفافة) لتتبع الأيقونة
+    // لون الوضع الفاتح/الداكن تلقائياً بنفس لون أيقونة البحث.
+    return Container(
+      margin: const EdgeInsets.only(left: 8, right: 10),
+      decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(12)),
+      child: IconButton(
+        onPressed: () => showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            content: Text('البث المباشر قريباً',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: ctx.appColors.text,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('حسناً'),
+              ),
+            ],
+          ),
         ),
-      ),
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: 48,
-        alignment: Alignment.center,
-        child: const _LiveTvIcon(),
+        icon: const ImageIcon(NetworkImage(_liveIconUrl), size: 24),
       ),
     );
   }
@@ -249,77 +256,6 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       ),
     );
   }
-}
-
-/// أيقونة تلفزيون (شاشة بحواف دائرية مع هوائي) وبداخلها كلمة LIVE.
-class _LiveTvIcon extends StatelessWidget {
-  const _LiveTvIcon();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 40,
-      height: 34,
-      child: Stack(
-        children: [
-          Positioned.fill(child: CustomPaint(painter: _LiveTvPainter())),
-          const Positioned(
-            left: 0,
-            right: 0,
-            top: 7,
-            height: 25,
-            child: Center(
-              child: Text(
-                'LIVE',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  height: 1,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.3,
-                  shadows: _shadow,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _LiveTvPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final screen = RRect.fromRectAndRadius(
-        Rect.fromLTWH(2, 7, size.width - 4, size.height - 9),
-        const Radius.circular(7));
-    final antenna = Path()
-      ..moveTo(size.width / 2, 7)
-      ..lineTo(size.width / 2 - 7, 1)
-      ..moveTo(size.width / 2, 7)
-      ..lineTo(size.width / 2 + 7, 1);
-
-    final shadowPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2
-      ..strokeCap = StrokeCap.round
-      ..color = Colors.black54
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2
-      ..strokeCap = StrokeCap.round
-      ..color = Colors.white;
-
-    canvas.drawRRect(screen, shadowPaint);
-    canvas.drawPath(antenna, shadowPaint);
-    canvas.drawRRect(screen, paint);
-    canvas.drawPath(antenna, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// عارض فيديوهات بملء الشاشة يبدأ من فيديو محدد (عند الضغط على فيديو في ملف شخصي).
