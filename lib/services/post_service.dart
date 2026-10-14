@@ -9,11 +9,10 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:http/http.dart' as http;
 
-import '../web_trim.dart';
 import 'social_service.dart';
 import 'user_service.dart';
 
-enum PostType { video, photo, text, story }
+enum PostType { photo, text, story }
 
 class Post {
   final String id;
@@ -24,18 +23,8 @@ class Post {
   final String caption;
   final String? mediaUrl;
   final String? mediaId; // وضع التجربة: الملف مخزّن في Firestore على قطع
-  final String? soundPostId;
-  final String? soundUsername;
-
-  /// تعديل غير مدمّر للقصص المنشورة من صفحة الصوت: تكبير وإزاحة (نسبة من الإطار).
-  final double? cropScale;
-  final double? cropDx;
-  final double? cropDy;
   final int chunks;
   final String mime;
-
-  /// صورة JPEG مصغّرة صغيرة للفيديو (للشبكات)، أو null للمنشورات القديمة.
-  final Uint8List? thumb;
   final int likes;
   final int views;
   final int comments;
@@ -51,14 +40,8 @@ class Post {
     required this.caption,
     required this.mediaUrl,
     this.mediaId,
-    this.soundPostId,
-    this.soundUsername,
-    this.cropScale,
-    this.cropDx,
-    this.cropDy,
     this.chunks = 0,
-    this.mime = 'video/mp4',
-    this.thumb,
+    this.mime = 'image/jpeg',
     required this.likes,
     required this.views,
     this.comments = 0,
@@ -78,14 +61,8 @@ class Post {
       caption: m['caption'] ?? '',
       mediaUrl: m['mediaUrl'],
       mediaId: m['mediaId'],
-      soundPostId: m['soundPostId'] as String?,
-      soundUsername: m['soundUsername'] as String?,
-      cropScale: (m['cropScale'] as num?)?.toDouble(),
-      cropDx: (m['cropDx'] as num?)?.toDouble(),
-      cropDy: (m['cropDy'] as num?)?.toDouble(),
       chunks: (m['chunks'] ?? 0) as int,
-      mime: m['mime'] ?? 'video/mp4',
-      thumb: (m['thumb'] as Blob?)?.bytes,
+      mime: m['mime'] ?? 'image/jpeg',
       likes: (m['likes'] ?? 0) as int,
       views: (m['views'] ?? 0) as int,
       comments: (m['comments'] ?? 0) as int,
@@ -94,10 +71,13 @@ class Post {
     );
   }
 
-  /// هل الوسائط فيديو (ريلز أو قصة فيديو)؟
-  bool get isVideoMedia =>
-      type == PostType.video ||
-      (type == PostType.story && mime.startsWith('video/'));
+  /// منشور فيديو قديم بقي في قاعدة البيانات (التطبيق لا يعرض الفيديو).
+  static bool isLegacyVideo(DocumentSnapshot<Map<String, dynamic>> d) {
+    final m = d.data();
+    if (m == null) return false;
+    return m['type'] == 'video' ||
+        (m['mime'] is String && (m['mime'] as String).startsWith('video/'));
+  }
 
   List<String> get hashtags => RegExp(r'#[\p{L}\p{N}_]+', unicode: true)
       .allMatches(caption)
@@ -172,17 +152,25 @@ class PostService {
     return q
         .limit(limit)
         .snapshots()
-        .map((s) => s.docs.map(Post.fromDoc).toList());
+        .map((s) => _parse(s.docs));
   }
+
+  /// يحوّل المستندات إلى منشورات ويتجاهل الفيديوهات القديمة.
+  static List<Post> _parse(
+          Iterable<DocumentSnapshot<Map<String, dynamic>>> docs) =>
+      [
+        for (final d in docs)
+          if (!Post.isLegacyVideo(d)) Post.fromDoc(d),
+      ];
 
   static Stream<List<Post>> profilePosts(String uid, {int limit = 90}) => _db
       .collection('posts')
-      .where('type', whereIn: const ['video', 'photo', 'text'])
+      .where('type', whereIn: const ['photo', 'text'])
       .where('uid', isEqualTo: uid)
       .orderBy('createdAt', descending: true)
       .limit(limit)
       .snapshots()
-      .map((snapshot) => snapshot.docs.map(Post.fromDoc).toList());
+      .map((snapshot) => _parse(snapshot.docs));
 
   static Future<List<Post>> search(String text) async {
     final snap = await _db
@@ -190,7 +178,7 @@ class PostService {
         .orderBy('createdAt', descending: true)
         .limit(150)
         .get();
-    final all = snap.docs.map(Post.fromDoc);
+    final all = _parse(snap.docs);
     final q = text.toLowerCase();
     return all
         .where((p) =>
@@ -206,8 +194,6 @@ class PostService {
   static const _trendingReadLimit = 60;
   static DateTime? _tagsAt;
   static Map<String, int>? _tagsCache;
-  static DateTime? _videosAt;
-  static List<Post>? _videosCache;
 
   static bool _fresh(DateTime? at) =>
       at != null && DateTime.now().difference(at) < _trendingTtl;
@@ -220,8 +206,7 @@ class PostService {
         .limit(_trendingReadLimit)
         .get();
     final counts = <String, int>{};
-    for (final d in snap.docs) {
-      final post = Post.fromDoc(d);
+    for (final post in _parse(snap.docs)) {
       if (post.type == PostType.story) continue;
       for (final t in post.hashtags) {
         counts[t] = (counts[t] ?? 0) + 1;
@@ -234,71 +219,14 @@ class PostService {
     return _tagsCache!;
   }
 
-  static Future<List<Post>> trendingVideos() async {
-    if (_fresh(_videosAt) && _videosCache != null) return _videosCache!;
-    final snap = await _db
-        .collection('posts')
-        .where('type', isEqualTo: PostType.video.name)
-        .orderBy('createdAt', descending: true)
-        .limit(_trendingReadLimit)
-        .get();
-    final videos = snap.docs.map(Post.fromDoc).toList()
-      ..sort((a, b) {
-        final aScore = a.likes * 2 + a.comments * 3;
-        final bScore = b.likes * 2 + b.comments * 3;
-        final byEngagement = bScore.compareTo(aScore);
-        return byEngagement != 0
-            ? byEngagement
-            : b.createdAt.compareTo(a.createdAt);
-      });
-    _videosCache = videos.take(30).toList();
-    _videosAt = DateTime.now();
-    return _videosCache!;
-  }
-
   static Future<Post?> postById(String postId) async {
     final snapshot = await _db.collection('posts').doc(postId).get();
-    return snapshot.exists ? Post.fromDoc(snapshot) : null;
+    if (!snapshot.exists || Post.isLegacyVideo(snapshot)) return null;
+    return Post.fromDoc(snapshot);
   }
 
   static String postLink(Post post) =>
       Uri.base.replace(path: '/', queryParameters: {'p': post.id}).toString();
-
-  // ---- حفظ الأصوات ----
-  static DocumentReference<Map<String, dynamic>> _savedSoundRef(
-          String soundId) =>
-      _db
-          .collection('users')
-          .doc(_user.uid)
-          .collection('savedSounds')
-          .doc(soundId);
-
-  static Stream<bool> isSoundSaved(String soundId) =>
-      _savedSoundRef(soundId).snapshots().map((s) => s.exists);
-
-  static Future<void> setSoundSaved(Post sound, bool saved) => saved
-      ? _savedSoundRef(sound.id).set({
-          'at': FieldValue.serverTimestamp(),
-          'username': sound.username,
-        })
-      : _savedSoundRef(sound.id).delete();
-
-  static Stream<List<Post>> videosWithSound(Post sound) => _db
-          .collection('posts')
-          .where('soundPostId', isEqualTo: sound.id)
-          .snapshots()
-          .map((snapshot) {
-        final videos = snapshot.docs
-            .map(Post.fromDoc)
-            .where((post) => post.type == PostType.video)
-            .toList();
-        if (sound.type == PostType.video &&
-            !videos.any((post) => post.id == sound.id)) {
-          videos.add(sound);
-        }
-        videos.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        return videos;
-      });
 
   /// رفع ملف إلى Storage مع تتبّع نسبة التقدم.
   static Future<String> _upload(Uint8List bytes, String path,
@@ -316,10 +244,9 @@ class PostService {
   /// ملاحظة: التقدم هنا ثنائي (يبدأ 0 وينتهي 1) لأن حزمة http لا تعطي تقدّم الرفع.
   static Future<String> _uploadCloudinary(
       Uint8List bytes, String mime, String ext) async {
-    final resource = mime.startsWith('video/') ? 'video' : 'image';
     final fileExt = ext == 'quicktime' ? 'mov' : ext;
     final uri = Uri.https(
-        'api.cloudinary.com', '/v1_1/$cloudinaryCloud/$resource/upload');
+        'api.cloudinary.com', '/v1_1/$cloudinaryCloud/image/upload');
     final request = http.MultipartRequest('POST', uri)
       ..fields['upload_preset'] = cloudinaryPreset
       ..files.add(http.MultipartFile.fromBytes('file', bytes,
@@ -360,7 +287,6 @@ class PostService {
   }
 
   static final _bytesCache = <String, Future<Uint8List>>{};
-  static final _urlCache = <String, Future<String>>{};
 
   /// بايتات الملف المخزّن في Firestore (مع تخزين مؤقت في الذاكرة).
   static Future<Uint8List> mediaBytes(Post p) {
@@ -375,53 +301,10 @@ class PostService {
     });
   }
 
-  static Future<Uint8List> videoBytes(Post post) async {
-    if (!post.isVideoMedia) {
-      throw ArgumentError.value(post.id, 'post', 'المنشور ليس فيديو');
-    }
-    if (post.mediaId != null) return mediaBytes(post);
-    final url = post.mediaUrl;
-    if (url == null || url.isEmpty) {
-      throw StateError('ملف الفيديو غير متاح للتنزيل');
-    }
-    if (isCloudinaryUrl(url)) {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode != 200) {
-        throw StateError('تعذر تنزيل بيانات الفيديو (${response.statusCode})');
-      }
-      return response.bodyBytes;
-    }
-    final bytes = await _storage.refFromURL(url).getData(300 * 1024 * 1024);
-    if (bytes == null) throw StateError('تعذر تنزيل بيانات الفيديو');
-    return bytes;
-  }
-
-  static Future<void> addVideoToStory(Post post) async {
-    final bytes = await videoBytes(post);
-    final extension = post.mime.split('/').last.split(';').first;
-    await publishMedia(
-      PostType.story,
-      bytes,
-      mime: post.mime,
-      ext: extension,
-      caption: 'فيديو تمت مشاركته من @${post.username}',
-      onProgress: (_) {},
-    );
-  }
-
-  /// رابط قابل للتشغيل في video_player (رابط Storage أو رابط blob محلي).
-  static Future<String> videoUrl(Post p) {
-    if (p.mediaUrl != null) return Future.value(p.mediaUrl!);
-    return _urlCache.putIfAbsent(
-        p.mediaId!, () async => makeBlobUrl(await mediaBytes(p), p.mime));
-  }
-
   static Future<void> _create(PostType type, String caption, String? url,
       {String? mediaId,
       int chunks = 0,
       String? mime,
-      String? soundPostId,
-      String? soundUsername,
       Map<String, dynamic> extra = const {}}) {
     final data = <String, dynamic>{
       'type': type.name,
@@ -438,17 +321,13 @@ class PostService {
       'comments': 0,
       'createdAt': FieldValue.serverTimestamp(),
     };
-    if (soundPostId != null) {
-      data['soundPostId'] = soundPostId;
-      data['soundUsername'] = soundUsername;
-    }
     data.addAll(extra);
     return _db.collection('posts').add(data).then((_) => notifyStatsChanged());
   }
 
   static String _stamp() => DateTime.now().millisecondsSinceEpoch.toString();
 
-  /// ينشر وسائط (ريلز/صورة/قصة). [mime] مثل image/jpeg أو video/mp4.
+  /// ينشر وسائط (صورة/قصة). [mime] مثل image/jpeg.
   static Future<void> publishMedia(
     PostType type,
     Uint8List bytes, {
@@ -456,45 +335,23 @@ class PostService {
     required String ext,
     required String caption,
     required void Function(double) onProgress,
-    Uint8List? thumb,
-    String? soundPostId,
-    String? soundUsername,
     Map<String, dynamic> extra = const {},
   }) async {
-    if (thumb != null && thumb.isNotEmpty && thumb.length <= 60 * 1024) {
-      extra = {...extra, 'thumb': Blob(thumb)};
-    }
-    if (soundPostId != null &&
-        type != PostType.video &&
-        type != PostType.story) {
-      throw ArgumentError('Only videos and stories can reuse audio');
-    }
     if (useCloudinary) {
       onProgress(0);
       final url = await _uploadCloudinary(bytes, mime, ext);
       onProgress(1);
-      await _create(type, caption, url,
-          mime: mime,
-          soundPostId: soundPostId,
-          soundUsername: soundUsername,
-          extra: extra);
+      await _create(type, caption, url, mime: mime, extra: extra);
     } else if (useStorage) {
-      final folder = mime.startsWith('video/') ? 'videos' : 'photos';
       final url = await _upload(
-          bytes, '$folder/${_user.uid}/${_stamp()}.$ext', mime, onProgress);
-      await _create(type, caption, url,
-          mime: mime,
-          soundPostId: soundPostId,
-          soundUsername: soundUsername,
-          extra: extra);
+          bytes, 'photos/${_user.uid}/${_stamp()}.$ext', mime, onProgress);
+      await _create(type, caption, url, mime: mime, extra: extra);
     } else {
       final id = await _storeInFirestore(bytes, onProgress);
       await _create(type, caption, null,
           mediaId: id,
           chunks: (bytes.length / _chunkSize).ceil(),
           mime: mime,
-          soundPostId: soundPostId,
-          soundUsername: soundUsername,
           extra: extra);
     }
   }
@@ -789,9 +646,9 @@ class PostService {
           .count ??
       0;
 
-  /// عدد منشورات المستخدم (فيديو + صور + نص، دون القصص).
+  /// عدد منشورات المستخدم (صور + نص، دون القصص).
   static Future<int> countPosts(String uid) async {
-    final counts = await Future.wait(['video', 'photo', 'text'].map((t) async {
+    final counts = await Future.wait(['photo', 'text'].map((t) async {
       final snap = await _db
           .collection('posts')
           .where('type', isEqualTo: t)
@@ -824,7 +681,10 @@ class PostService {
         .collection('posts')
         .where(FieldPath.documentId, whereIn: ids.take(10).toList())
         .get();
-    final byId = {for (final d in snap.docs) d.id: Post.fromDoc(d)};
+    final byId = {
+      for (final d in snap.docs)
+        if (!Post.isLegacyVideo(d)) d.id: Post.fromDoc(d),
+    };
     return [
       for (final id in ids)
         if (byId[id] != null) byId[id]!,
@@ -836,7 +696,7 @@ class PostService {
       .collection('posts')
       .doc(id)
       .snapshots()
-      .map((d) => d.exists ? Post.fromDoc(d) : null);
+      .map((d) => d.exists && !Post.isLegacyVideo(d) ? Post.fromDoc(d) : null);
 
   /// تعديل نص المنشور/وصف الفيديو (للمالك فقط حسب قواعد Firestore).
   static Future<void> updateCaption(Post p, String caption) async {
@@ -871,11 +731,11 @@ class PostService {
           .asyncMap((s) async {
         final docs = await Future.wait(
             s.docs.map((d) => _db.collection('posts').doc(d.id).get()));
-        return docs.where((d) => d.exists).map(Post.fromDoc).toList();
+        return _parse(docs.where((d) => d.exists));
       });
 
-  /// الفيديوهات التي أعجب بها المستخدم [uid]، الأحدث أولاً.
-  static Stream<List<Post>> likedVideos(String uid, {int limit = 60}) => _db
+  /// المنشورات (صور ونصوص) التي أعجب بها المستخدم [uid]، الأحدث أولاً.
+  static Stream<List<Post>> likedPosts(String uid, {int limit = 60}) => _db
           .collection('users')
           .doc(uid)
           .collection('liked')
@@ -885,10 +745,8 @@ class PostService {
           .asyncMap((s) async {
         final docs = await Future.wait(
             s.docs.map((d) => _db.collection('posts').doc(d.id).get()));
-        return docs
-            .where((d) => d.exists)
-            .map(Post.fromDoc)
-            .where((post) => post.type == PostType.video)
+        return _parse(docs.where((d) => d.exists))
+            .where((post) => post.type != PostType.story)
             .toList();
       });
 
