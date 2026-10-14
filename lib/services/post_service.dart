@@ -740,6 +740,11 @@ class PostService {
       .snapshots()
       .map((d) => d.exists ? Post.fromDoc(d) : null);
 
+  /// تعديل نص المنشور/وصف الفيديو (للمالك فقط حسب قواعد Firestore).
+  static Future<void> updateCaption(Post p, String caption) async {
+    await _db.collection('posts').doc(p.id).update({'caption': caption});
+  }
+
   static Future<void> deletePost(Post p) async {
     if (p.mediaId != null) {
       for (var i = 0; i < p.chunks; i++) {
