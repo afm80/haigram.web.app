@@ -171,10 +171,6 @@ service cloud.firestore {
         && request.resource.data.participants[0] is string
         && request.resource.data.participants[1] is string
         && request.resource.data.participants[0] != request.resource.data.participants[1]
-        && isMutualFriendAfter(
-          request.resource.data.participants[0],
-          request.resource.data.participants[1]
-        )
         && !isBlocked(
           request.resource.data.participants[0],
           request.resource.data.participants[1]
