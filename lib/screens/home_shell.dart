@@ -77,6 +77,11 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   int _index = 0;
   bool _appVisible = true;
   DateTime? _lastBackPress;
+  // بعد أول ضغطة رجوع على الرئيسية نسمح بالخروج الفعلي لمدة ثانيتين.
+  bool _exitArmed = false;
+  Timer? _exitTimer;
+  // التبويبات التي زرتها قبل الحالي (الأحدث في النهاية) ليعيدك الرجوع إليها.
+  final List<int> _tabHistory = [];
   Timer? _presenceHeartbeat;
   final _selectedTab = ValueNotifier<int>(0);
   final _tabNavigators =
@@ -107,6 +112,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _presenceHeartbeat?.cancel();
+    _exitTimer?.cancel();
     _updatePresence(false);
     _selectedTab.dispose();
     _searchRequest.dispose();
@@ -278,14 +284,24 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
       navigator.maybePop();
       return;
     }
+    // الرجوع من تبويب: يعيدك إلى التبويب الذي جئت منه، وإلا إلى الرئيسية.
+    if (_tabHistory.isNotEmpty) {
+      _selectTab(_tabHistory.removeLast(), fromBack: true);
+      return;
+    }
     if (_index != 0) {
-      _selectTab(0);
+      _selectTab(0, fromBack: true);
       return;
     }
     final now = DateTime.now();
     final last = _lastBackPress;
     if (last == null || now.difference(last) > const Duration(seconds: 2)) {
       _lastBackPress = now;
+      setState(() => _exitArmed = true);
+      _exitTimer?.cancel();
+      _exitTimer = Timer(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _exitArmed = false);
+      });
       final messenger = ScaffoldMessenger.of(context);
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(const SnackBar(
@@ -294,6 +310,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
       ));
       return;
     }
+    _exitTimer?.cancel();
     SystemNavigator.pop();
   }
 
@@ -307,7 +324,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
         videoTabSelected || isDark ? Colors.white70 : Colors.black54;
 
     return PopScope(
-      canPop: false,
+      // الضغطة الثانية خلال ثانيتين تمرّ للنظام فيُغلق التطبيق فعلاً.
+      canPop: _exitArmed,
       onPopInvoked: (didPop) {
         if (!didPop) _handleBack();
       },
@@ -386,12 +404,21 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
         _ => const SizedBox.shrink(),
       };
 
-  void _selectTab(int tab) {
-    // كل ضغطة على تبويب تفتح صفحته الرئيسية: نُغلق أي صفحات فرعية
-    // (ملف مستخدم آخر، منشور...) بقيت مفتوحة داخل التبويب سابقاً.
-    final navigator = _tabNavigators[tab].currentState;
-    if (navigator != null && navigator.canPop()) {
-      navigator.popUntil((route) => route.isFirst);
+  void _selectTab(int tab, {bool fromBack = false}) {
+    if (!fromBack) {
+      // كل ضغطة على تبويب تفتح صفحته الرئيسية: نُغلق أي صفحات فرعية
+      // (ملف مستخدم آخر، منشور...) بقيت مفتوحة داخل التبويب سابقاً.
+      final navigator = _tabNavigators[tab].currentState;
+      if (navigator != null && navigator.canPop()) {
+        navigator.popUntil((route) => route.isFirst);
+      }
+      if (tab != _index) {
+        _tabHistory
+          ..remove(tab)
+          ..remove(_index)
+          ..add(_index);
+        if (_tabHistory.length > 10) _tabHistory.removeAt(0);
+      }
     }
     setState(() => _index = tab);
     _selectedTab.value = tab;
