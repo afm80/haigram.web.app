@@ -722,12 +722,16 @@ class _VideoPagerState extends State<VideoPager> {
     return PageView.builder(
       controller: _controller,
       scrollDirection: Axis.vertical,
+      // يبني الصفحة المجاورة مسبقاً لنحمّل الفيديو التالي قبل الوصول إليه.
+      allowImplicitScrolling: true,
       onPageChanged: (i) => setState(() => _page = i),
       // itemCount غير محدد => تمرير لا نهائي يعيد الفيديوهات بالتناوب
       itemBuilder: (context, i) => _VideoPage(
         key: ValueKey('$i-${widget.posts[i % n].id}'),
         post: widget.posts[i % n],
         playing: widget.active && i == _page,
+        // نحمّل الفيديو الحالي والتالي فقط (وليس السابق) لتوفير الذاكرة.
+        load: i == _page || (n > 1 && i == _page + 1),
         bottomBase: widget.bottomBase,
       ),
     );
@@ -737,11 +741,13 @@ class _VideoPagerState extends State<VideoPager> {
 class _VideoPage extends StatefulWidget {
   final Post post;
   final bool playing;
+  final bool load;
   final double bottomBase;
   const _VideoPage(
       {super.key,
       required this.post,
       required this.playing,
+      this.load = true,
       required this.bottomBase});
 
   @override
@@ -756,6 +762,8 @@ class _VideoPageState extends State<_VideoPage>
       AnimationController(vsync: this, duration: const Duration(seconds: 6));
   bool _ready = false;
   bool _failed = false;
+  bool _opening = false;
+  bool _soundStarted = false;
   bool _appResumed = true;
   bool _resumeAfterLifecycle = false;
   bool _userPaused = false; // أوقفه المستخدم يدوياً بالنقر
@@ -774,10 +782,12 @@ class _VideoPageState extends State<_VideoPage>
     _appResumed =
         WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
     WidgetsBinding.instance.addObserver(this);
-    _open();
+    if (widget.load) _open();
   }
 
   Future<void> _open() async {
+    if (_opening) return;
+    _opening = true;
     try {
       final url = await PostService.videoUrl(widget.post);
       if (!mounted) return;
@@ -789,11 +799,20 @@ class _VideoPageState extends State<_VideoPage>
       if (!mounted) return;
       setState(() => _ready = true);
       _sync();
-      final soundPostId = widget.post.soundPostId;
-      if (soundPostId != null) _openSoundTrack(soundPostId);
+      _ensureSoundTrack();
     } catch (_) {
       if (mounted) setState(() => _failed = true);
     }
+  }
+
+  /// مسار الصوت المنفصل يُحمَّل فقط عندما يصبح الفيديو هو المعروض (لا مسبقاً).
+  void _ensureSoundTrack() {
+    final soundPostId = widget.post.soundPostId;
+    if (soundPostId == null || _soundStarted || !_ready || !widget.playing) {
+      return;
+    }
+    _soundStarted = true;
+    _openSoundTrack(soundPostId);
   }
 
   Future<void> _openSoundTrack(String postId) async {
@@ -851,7 +870,9 @@ class _VideoPageState extends State<_VideoPage>
   void didUpdateWidget(covariant _VideoPage old) {
     super.didUpdateWidget(old);
     if (old.playing != widget.playing) _userPaused = false;
+    if (widget.load && _vc == null && !_opening && !_failed) _open();
     _sync();
+    _ensureSoundTrack();
   }
 
   /// تُحسب مشاهدة بعد ثانيتين من التشغيل الفعلي (مرة واحدة لكل مستخدم).

@@ -327,6 +327,18 @@ class PostImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // نفكّ الصورة بحجم مكان عرضها فقط (وليس بحجمها الأصلي الكبير) لتخفيف الذاكرة.
+    return LayoutBuilder(builder: (context, constraints) {
+      final dpr = MediaQuery.devicePixelRatioOf(context);
+      final maxW = constraints.maxWidth.isFinite
+          ? constraints.maxWidth
+          : MediaQuery.sizeOf(context).width;
+      final decodeWidth = (maxW * dpr).round().clamp(160, 1080).toInt();
+      return _content(context, decodeWidth);
+    });
+  }
+
+  Widget _content(BuildContext context, int decodeWidth) {
     final loading = SizedBox(
         height: height ?? 240,
         child: const Center(child: CircularProgressIndicator()));
@@ -352,6 +364,7 @@ class PostImage extends StatelessWidget {
         width: double.infinity,
         height: height,
         fit: fit,
+        memCacheWidth: decodeWidth,
         placeholder: (_, __) => loading,
         errorWidget: (_, __, ___) => broken,
       );
@@ -366,6 +379,7 @@ class PostImage extends StatelessWidget {
             width: double.infinity,
             height: height,
             fit: fit,
+            cacheWidth: decodeWidth,
             gaplessPlayback: true);
       },
     );

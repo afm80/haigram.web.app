@@ -1,7 +1,35 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import '../services/post_service.dart';
+
+/// يسمح بتحميل عدد قليل من المصغّرات في نفس الوقت، حتى لا تُحمَّل عشرات
+/// الفيديوهات دفعة واحدة عند فتح شبكة (الملف الشخصي / الاستكشاف) فيتجمّد الجهاز.
+class _ThumbnailQueue {
+  static const _maxConcurrent = 2;
+  static int _running = 0;
+  static final _waiting = <Completer<void>>[];
+
+  static Future<void> acquire() async {
+    if (_running < _maxConcurrent) {
+      _running++;
+      return;
+    }
+    final completer = Completer<void>();
+    _waiting.add(completer);
+    await completer.future;
+  }
+
+  static void release() {
+    if (_waiting.isNotEmpty) {
+      _waiting.removeAt(0).complete(); // ينتقل الدور للتالي مباشرة
+    } else {
+      _running--;
+    }
+  }
+}
 
 class VideoThumbnail extends StatefulWidget {
   final Post post;
@@ -23,7 +51,10 @@ class _VideoThumbnailState extends State<VideoThumbnail> {
   }
 
   Future<void> _load() async {
+    await _ThumbnailQueue.acquire();
     try {
+      // إن غادر المستخدم الشبكة أثناء الانتظار لا نحمّل شيئاً.
+      if (!mounted) return;
       final url = await PostService.videoUrl(widget.post);
       if (!mounted) return;
       final controller = VideoPlayerController.networkUrl(Uri.parse(url));
@@ -33,6 +64,8 @@ class _VideoThumbnailState extends State<VideoThumbnail> {
       if (mounted) setState(() {});
     } catch (_) {
       if (mounted) setState(() => _failed = true);
+    } finally {
+      _ThumbnailQueue.release();
     }
   }
 
