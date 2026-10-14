@@ -475,11 +475,50 @@ class _Header extends StatelessWidget {
                   style: const TextStyle(fontSize: 14, height: 1.45)),
             ),
           ],
+          if (u.website.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: GestureDetector(
+                onTap: () => _openWebsite(context, u.website),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.link_rounded,
+                        size: 16, color: context.appColors.text),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        u.website.replaceFirst(RegExp(r'^https?://'), ''),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textDirection: TextDirection.ltr,
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           if (isMe) _myButtons(context, u) else _otherButtons(context, u),
         ],
       ),
     );
+  }
+
+  Future<void> _openWebsite(BuildContext context, String url) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final uri = Uri.parse(url);
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        messenger.showSnackBar(const SnackBar(content: Text('تعذر فتح الرابط')));
+      }
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(content: Text('تعذر فتح الرابط')));
+    }
   }
 
   Widget _avatar(AppUser u) {
@@ -1316,6 +1355,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late final _username =
       TextEditingController(text: UserService.me?.username ?? '');
   late final _bio = TextEditingController(text: UserService.me?.bio ?? '');
+  late final _website =
+      TextEditingController(text: UserService.me?.website ?? '');
   late String? _photoB64 = UserService.me?.photoB64;
   bool _busy = false;
   String? _error;
@@ -1442,12 +1483,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       setState(() => _error = err);
       return;
     }
+    final website = UserService.normalizeWebsite(_website.text);
+    if (website == null) {
+      setState(() => _error = 'الرابط غير صالح، مثال: example.com');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
       await UserService.updateProfile(
+          website: website,
           name: _name.text.trim(),
           username: username,
           bio: _bio.text.trim(),
@@ -1471,13 +1518,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('تعديل الملف الشخصي'),
-        actions: [
-          TextButton(
-            onPressed: _busy ? null : _save,
-            child: const Text('حفظ',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-          ),
-        ],
       ),
       body: SafeArea(
         child: ListView(
@@ -1519,6 +1559,20 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 maxLines: 5,
                 maxLength: 150,
                 decoration: const InputDecoration(hintText: 'عرّف بنفسك')),
+            const SizedBox(height: 16),
+            Text('الرابط', style: TextStyle(color: context.appColors.textDim)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _website,
+              maxLength: 100,
+              keyboardType: TextInputType.url,
+              textDirection: TextDirection.ltr,
+              autocorrect: false,
+              decoration: const InputDecoration(
+                  hintText: 'example.com',
+                  prefixIcon: Icon(Icons.link_rounded),
+                  counterText: ''),
+            ),
             if (_error != null)
               Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
