@@ -11,6 +11,10 @@ service cloud.firestore {
         && followsAfter(secondUid, firstUid);
     }
 
+    function isPrivateUser(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data.get('isPrivate', false) == true;
+    }
+
     function isBlocked(firstUid, secondUid) {
       return exists(/databases/$(database)/documents/userBlocks/$(firstUid)/blocked/$(secondUid))
         || exists(/databases/$(database)/documents/userBlocks/$(secondUid)/blocked/$(firstUid));
@@ -33,6 +37,16 @@ service cloud.firestore {
             && notificationId == 'follow_' + actorUid
             && existsAfter(/databases/$(database)/documents/users/$(ownerUid)/followers/$(actorUid))
             && followsAfter(actorUid, ownerUid))
+          ||
+          (data.type == 'followRequest'
+            && data.keys().hasOnly(['type', 'actorUid', 'actorUsername', 'read', 'createdAt'])
+            && notificationId == 'followRequest_' + actorUid
+            && existsAfter(/databases/$(database)/documents/users/$(ownerUid)/followRequests/$(actorUid)))
+          ||
+          (data.type == 'followAccepted'
+            && data.keys().hasOnly(['type', 'actorUid', 'actorUsername', 'read', 'createdAt'])
+            && notificationId == 'followAccepted_' + actorUid
+            && existsAfter(/databases/$(database)/documents/users/$(ownerUid)/following/$(actorUid)))
           ||
           (data.type == 'like'
             && data.keys().hasOnly(['type', 'actorUid', 'actorUsername', 'postId', 'read', 'createdAt'])
@@ -397,16 +411,41 @@ service cloud.firestore {
     }
 
     match /users/{uid}/{sub}/{doc} {
+      // طلبات المتابعة: يقرؤها صاحب الحساب أو مرسل الطلب فقط. باقي المجموعات (غير الإشعارات) مفتوحة للقراءة.
       allow read: if request.auth != null
-        && (sub != 'notifications' || request.auth.uid == uid);
-      // saved / following: للمالك فقط. followers: يكتب فيها المتابِع نفسه.
+        && (sub != 'notifications' || request.auth.uid == uid)
+        && (sub != 'followRequests' || request.auth.uid == uid || request.auth.uid == doc);
+
       allow create: if request.auth != null && (
-        (request.auth.uid == uid && sub != 'notifications') ||
-        (sub == 'followers' && doc == request.auth.uid) ||
+        // المالك: saved / liked ... لكن ليس followers ولا followRequests ولا الإشعارات.
+        (request.auth.uid == uid
+          && !(sub in ['notifications', 'followers', 'followRequests', 'following'])) ||
+        // متابعة مباشرة: فقط إذا كان الحساب الهدف عاماً.
+        (sub == 'following' && request.auth.uid == uid
+          && doc != uid && !isPrivateUser(doc)
+          && !isBlocked(uid, doc)) ||
+        (sub == 'followers' && doc == request.auth.uid
+          && doc != uid && !isPrivateUser(uid)
+          && !isBlocked(uid, doc)) ||
+        // طلب متابعة: يرسله المتابِع إلى حساب خاص فقط.
+        (sub == 'followRequests' && doc == request.auth.uid
+          && doc != uid && isPrivateUser(uid)
+          && !isBlocked(uid, doc)
+          && request.resource.data.keys().hasOnly(['at'])
+          && request.resource.data.at == request.time
+          && !exists(/databases/$(database)/documents/users/$(uid)/followers/$(doc))) ||
+        // الموافقة: صاحب الحساب الخاص يضيف المتابِع بعد وجود طلبه فقط.
+        (sub == 'followers' && request.auth.uid == uid
+          && exists(/databases/$(database)/documents/users/$(uid)/followRequests/$(doc))) ||
+        (sub == 'following' && doc == request.auth.uid
+          && exists(/databases/$(database)/documents/users/$(doc)/followRequests/$(uid))) ||
         (sub == 'notifications' && validNotificationCreate(uid, doc))
       );
       allow update: if request.auth != null && (
-        (request.auth.uid == uid && sub != 'notifications') ||
+        (request.auth.uid == uid
+          && !(sub in ['notifications', 'followers', 'followRequests', 'following'])) ||
+        (sub == 'following' && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['at'])) ||
         (sub == 'followers' && doc == request.auth.uid
           && request.resource.data.keys().hasOnly(['at'])
           && request.resource.data.at == request.time) ||
@@ -416,8 +455,9 @@ service cloud.firestore {
           && request.resource.data.read is bool)
       );
       allow delete: if request.auth != null
-        && ((request.auth.uid == uid && sub != 'notifications')
+        && ((request.auth.uid == uid && sub != 'notifications' && sub != 'followers')
           || (sub == 'followers' && doc == request.auth.uid)
+          || (sub == 'followRequests' && doc == request.auth.uid)
           || (sub == 'notifications' && request.auth.uid == uid));
     }
   }
