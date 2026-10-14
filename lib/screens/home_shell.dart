@@ -50,7 +50,7 @@ class _HomeShellState extends State<HomeShell> {
         }
         if (!snap.hasData)
           return const Scaffold(
-              body: AppLoading(message: 'جارٍ إعداد حسابك...'));
+              body: Center(child: LamhaLogo(size: 96)));
         return _Tabs(
           themeMode: widget.themeMode,
           onThemeModeChanged: widget.onThemeModeChanged,
