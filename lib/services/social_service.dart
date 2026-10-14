@@ -80,6 +80,13 @@ class ChatMessage {
   }
 }
 
+/// زيارة لملفي الشخصي.
+class ProfileVisit {
+  final String uid;
+  final DateTime at;
+  const ProfileVisit(this.uid, this.at);
+}
+
 class ChatBlockState {
   final bool blockedByMe;
   final bool blockedByThem;
@@ -542,6 +549,35 @@ class SocialService {
           .snapshots()
           .map((snapshot) =>
               snapshot.docs.map(SocialNotification.fromDoc).toList());
+
+  /// يسجّل زيارتي لملف [ownerUid] (يُحدَّث وقتها عند كل زيارة).
+  static Future<void> recordProfileVisit(String ownerUid) {
+    if (ownerUid == _uid) return Future.value();
+    return _db
+        .collection('users')
+        .doc(ownerUid)
+        .collection('profileVisits')
+        .doc(_uid)
+        .set({'at': FieldValue.serverTimestamp()});
+  }
+
+  /// من زاروا ملفي خلال آخر 30 يوماً (الأحدث أولاً).
+  static Stream<List<ProfileVisit>> profileVisits() {
+    final cutoff = DateTime.now().subtract(const Duration(days: 30));
+    return _db
+        .collection('users')
+        .doc(_uid)
+        .collection('profileVisits')
+        .where('at', isGreaterThan: Timestamp.fromDate(cutoff))
+        .orderBy('at', descending: true)
+        .limit(100)
+        .snapshots()
+        .map((snapshot) => [
+              for (final doc in snapshot.docs)
+                if (doc.data()['at'] is Timestamp)
+                  ProfileVisit(doc.id, (doc.data()['at'] as Timestamp).toDate()),
+            ]);
+  }
 
   static Stream<int> unreadNotificationCount() => _notifications(_uid)
       .where('read', isEqualTo: false)

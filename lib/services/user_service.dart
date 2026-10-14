@@ -26,6 +26,9 @@ class AppUser {
   /// إخفاء تبويب الإعجابات عن الآخرين.
   final bool hideLikes;
 
+  /// تسجيل زيارات الملف الشخصي وعرضها (يعمل عندما يفعّله الطرفان).
+  final bool profileVisits;
+
   /// معرّفات المنشورات المثبّتة أعلى الملف (الأحدث تثبيتاً أولاً، حتى 3).
   final List<String> pinnedPostIds;
 
@@ -39,12 +42,14 @@ class AppUser {
     this.photoB64,
     this.isPrivate = false,
     this.hideLikes = false,
+    this.profileVisits = true,
     this.pinnedPostIds = const [],
   });
 
   AppUser withSettings({
     bool? isPrivate,
     bool? hideLikes,
+    bool? profileVisits,
     List<String>? pinnedPostIds,
   }) =>
       AppUser(
@@ -57,6 +62,7 @@ class AppUser {
         photoB64: photoB64,
         isPrivate: isPrivate ?? this.isPrivate,
         hideLikes: hideLikes ?? this.hideLikes,
+        profileVisits: profileVisits ?? this.profileVisits,
         pinnedPostIds: pinnedPostIds ?? this.pinnedPostIds,
       );
 
@@ -87,6 +93,7 @@ class AppUser {
       photoB64: m['photoB64'] as String?,
       isPrivate: m['isPrivate'] == true,
       hideLikes: m['hideLikes'] == true,
+      profileVisits: m['profileVisits'] != false,
       pinnedPostIds: List<String>.unmodifiable(
           (m['pinnedPostIds'] as List? ?? const []).whereType<String>()),
     );
@@ -269,15 +276,20 @@ class UserService {
   static const maxPinned = 3;
 
   /// يحدّث إعدادات الخصوصية (يُمرَّر ما تغيّر فقط).
-  static Future<void> updatePrivacy({bool? isPrivate, bool? hideLikes}) async {
+  static Future<void> updatePrivacy(
+      {bool? isPrivate, bool? hideLikes, bool? profileVisits}) async {
     final u = FirebaseAuth.instance.currentUser!;
     final data = <String, dynamic>{
       if (isPrivate != null) 'isPrivate': isPrivate,
       if (hideLikes != null) 'hideLikes': hideLikes,
+      if (profileVisits != null) 'profileVisits': profileVisits,
     };
     if (data.isEmpty) return;
     await _db.collection('users').doc(u.uid).update(data);
-    _applyToMe(isPrivate: isPrivate, hideLikes: hideLikes);
+    _applyToMe(
+        isPrivate: isPrivate,
+        hideLikes: hideLikes,
+        profileVisits: profileVisits);
   }
 
   /// يثبّت منشوراً أعلى ملفي أو يلغي تثبيته. يرمي [PinLimitReached] عند تجاوز الحد.
@@ -302,12 +314,16 @@ class UserService {
   }
 
   static void _applyToMe(
-      {bool? isPrivate, bool? hideLikes, List<String>? pinnedPostIds}) {
+      {bool? isPrivate,
+      bool? hideLikes,
+      bool? profileVisits,
+      List<String>? pinnedPostIds}) {
     final current = me;
     if (current == null) return;
     final fresh = current.withSettings(
       isPrivate: isPrivate,
       hideLikes: hideLikes,
+      profileVisits: profileVisits,
       pinnedPostIds: pinnedPostIds,
     );
     me = fresh;
