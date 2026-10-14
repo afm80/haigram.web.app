@@ -401,6 +401,10 @@ service cloud.firestore {
         && request.resource.data.username.matches('^[a-z0-9._]{3,24}$')
         && request.resource.data.name.size() <= 50
         && request.resource.data.bio.size() <= 150
+        && request.resource.data.get('website', '') is string
+        && request.resource.data.get('website', '').size() <= 100
+        && (request.resource.data.get('website', '') == ''
+            || request.resource.data.get('website', '').matches('^https?://[^ ]+$'))
         && request.resource.data.get('pinnedPostIds', []).size() <= 3
         && (request.resource.data.get('photoB64', null) == null
             || request.resource.data.photoB64.size() < 200000);
