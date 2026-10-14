@@ -428,7 +428,7 @@ class _Header extends StatelessWidget {
                     ),
                     Expanded(
                       child: _LiveStat(
-                        label: 'متابعي',
+                        label: 'متابعين',
                         load: () => PostService.countFollowers(uid),
                         onTap: () => _showFollowSheet(context, uid, 0),
                       ),
@@ -1191,7 +1191,7 @@ class _FollowSheet extends StatelessWidget {
                 decoration: BoxDecoration(
                     color: context.appColors.textDim,
                     borderRadius: BorderRadius.circular(2))),
-            const TabBar(tabs: [Tab(text: 'متابعي'), Tab(text: 'أتابعه')]),
+            const TabBar(tabs: [Tab(text: 'متابعين'), Tab(text: 'أتابعه')]),
             Expanded(
               child: TabBarView(
                 children: [
@@ -1298,42 +1298,13 @@ class _UserListState extends State<_UserList> {
                     // فيلتهم مساحة الاسم والصورة داخل ListTile.
                     trailing: isMe
                         ? null
-                        : Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SizedBox(
-                                width: 118,
-                                height: 38,
-                                child: Center(
-                                  child: FollowActionButton(
-                                      uid: u.uid, compact: true),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              SizedBox(
-                                width: 38,
-                                height: 38,
-                                child: IconButton(
-                                  tooltip: 'مراسلة',
-                                  padding: EdgeInsets.zero,
-                                  style: IconButton.styleFrom(
-                                    backgroundColor:
-                                        context.appColors.surfaceHigh,
-                                    foregroundColor: context.appColors.text,
-                                    shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(10)),
-                                  ),
-                                  icon: const Icon(
-                                      Icons.chat_bubble_outline_rounded,
-                                      size: 18),
-                                  onPressed: () {
-                                    Navigator.pop(context);
-                                    openChatWith(widget.outerContext, u.uid);
-                                  },
-                                ),
-                              ),
-                            ],
+                        : SizedBox(
+                            width: 118,
+                            height: 38,
+                            child: Center(
+                              child:
+                                  FollowActionButton(uid: u.uid, compact: true),
+                            ),
                           ),
                   );
                 },
