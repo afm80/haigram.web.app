@@ -16,6 +16,7 @@ import 'photo_tools.dart';
 import 'post_widgets.dart';
 import 'settings_screen.dart';
 import 'social_screens.dart' show ChatScreen;
+import 'story_widgets.dart' show StoryViewer;
 import 'video_feed_screen.dart';
 import 'video_thumbnail.dart';
 import '../route_state.dart';
@@ -537,6 +538,25 @@ class _Header extends StatelessWidget {
     }
   }
 
+  Future<void> _openStory(
+    BuildContext context,
+    List<StoryGroup> groups,
+    String ownerUid,
+  ) async {
+    final index = groups.indexWhere((group) => group.uid == ownerUid);
+    if (index < 0) return;
+    await rootNavigatorOf(context).push<void>(
+      PageRouteBuilder(
+        opaque: true,
+        // نعرض قصص هذا المستخدم فقط، وعند انتهائها يعود المشاهد للملف.
+        pageBuilder: (_, __, ___) =>
+            StoryViewer(groups: [groups[index]], initial: 0),
+        transitionsBuilder: (_, animation, __, child) =>
+            FadeTransition(opacity: animation, child: child),
+      ),
+    );
+  }
+
   Widget _avatar(AppUser u) {
     final image = u.avatarImage;
     return StreamBuilder<List<StoryGroup>>(
@@ -559,6 +579,11 @@ class _Header extends StatelessWidget {
         return StreamBuilder<bool>(
           stream: PresenceService.isOnline(u.uid),
           builder: (context, presence) => GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            // الضغط على الصورة: إن كان لصاحب الملف قصة فتُفتح (له ولغيره).
+            onTap: hasStory
+                ? () => _openStory(context, stories.data!, u.uid)
+                : null,
             onLongPress: () => showProfilePhoto(context, u),
             child: SizedBox(
             width: 96,
