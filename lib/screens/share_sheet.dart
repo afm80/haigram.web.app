@@ -109,6 +109,7 @@ class _PostShareSheetState extends State<_PostShareSheet> {
         lastError = error;
       }
     }
+    if (sent > 0) unawaited(PostService.registerShare(_post.id));
     if (!mounted) return;
     Navigator.pop(context);
     if (sent == friends.length) {
@@ -137,6 +138,7 @@ class _PostShareSheetState extends State<_PostShareSheet> {
     try {
       final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!opened) throw StateError('تعذر فتح تطبيق المشاركة');
+      unawaited(PostService.registerShare(_post.id));
     } catch (error) {
       _toast('تعذرت المشاركة: $error');
     }
@@ -145,6 +147,7 @@ class _PostShareSheetState extends State<_PostShareSheet> {
   Future<void> _copyLink() async {
     Navigator.pop(context);
     await Clipboard.setData(ClipboardData(text: _link));
+    unawaited(PostService.registerShare(_post.id));
     _toast('تم نسخ رابط $_noun');
   }
 
@@ -155,6 +158,9 @@ class _PostShareSheetState extends State<_PostShareSheet> {
       if (result.status == ShareResultStatus.unavailable) {
         await Clipboard.setData(ClipboardData(text: _link));
         _toast('تم نسخ رابط $_noun');
+      }
+      if (result.status != ShareResultStatus.dismissed) {
+        unawaited(PostService.registerShare(_post.id));
       }
     } catch (error) {
       _toast('تعذرت المشاركة: $error');
