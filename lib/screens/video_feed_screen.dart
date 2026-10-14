@@ -18,7 +18,7 @@ const _shadow = [Shadow(blurRadius: 6, color: Colors.black54)];
 
 /// أيقونة البث المباشر.
 const _liveIconUrl =
-    'https://raw.githubusercontent.com/afm80/img/refs/heads/main/live.png';
+    'https://raw.githubusercontent.com/afm80/img/refs/heads/main/LIVE.png';
 
 /// تبويب الفيديوهات القصيرة: تجربة تيك توك (تبويبات "أتابعهم | لك" + تمرير عمودي لا نهائي).
 class VideoFeedScreen extends StatefulWidget {
