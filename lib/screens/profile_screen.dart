@@ -96,6 +96,20 @@ class _ProfileViewState extends State<ProfileView> {
       widget.isMe ? null : SocialService.blockState(widget.uid);
   late final Stream<bool>? _followingStream =
       widget.isMe ? null : PostService.isFollowing(widget.uid);
+  bool _visitRecorded = false;
+
+  /// يسجّل زيارتي لهذا الملف مرة واحدة (إن فعّل الطرفان الميزة ولا يوجد حظر).
+  void _recordVisit(AppUser user, _Access access) {
+    if (_visitRecorded || widget.isMe) return;
+    if (access == _Access.loading ||
+        access == _Access.blockedByMe ||
+        access == _Access.blockedByThem) {
+      return;
+    }
+    _visitRecorded = true;
+    if (!user.profileVisits || UserService.me?.profileVisits == false) return;
+    SocialService.recordProfileVisit(widget.uid).catchError((_) {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -135,6 +149,7 @@ class _ProfileViewState extends State<ProfileView> {
                           : (user.isPrivate && followSnap.data != true)
                               ? _Access.privateLocked
                               : _Access.open;
+              _recordVisit(user, access);
               return _body(context, user, access);
             },
           ),

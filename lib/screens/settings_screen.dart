@@ -160,11 +160,14 @@ class _PrivacySectionState extends State<_PrivacySection> {
     FirebaseAuth.instance.currentUser?.uid ?? '',
   );
 
-  Future<void> _update({bool? isPrivate, bool? hideLikes}) async {
+  Future<void> _update(
+      {bool? isPrivate, bool? hideLikes, bool? profileVisits}) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await UserService.updatePrivacy(
-          isPrivate: isPrivate, hideLikes: hideLikes);
+          isPrivate: isPrivate,
+          hideLikes: hideLikes,
+          profileVisits: profileVisits);
       if (isPrivate == false) {
         // الحساب أصبح عاماً: تُقبل الطلبات المعلّقة تلقائياً.
         await PostService.approveAllFollowRequests();
@@ -219,6 +222,22 @@ class _PrivacySectionState extends State<_PrivacySection> {
                 activeColor: AppColors.brandRed,
                 onChanged:
                     enabled ? (value) => _update(hideLikes: value) : null,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              Divider(height: 1, color: colors.text.withOpacity(0.08)),
+              SwitchListTile(
+                secondary: const Icon(Icons.visibility_outlined),
+                title: const Text('زيارات الملف الشخصي'),
+                subtitle: Text(
+                  'تعرف من زار ملفك خلال 30 يوماً، ويرى الآخرون زياراتك لهم. تعمل عندما يفعّلها الطرفان',
+                  style: dim(),
+                ),
+                value: user?.profileVisits ?? true,
+                activeColor: AppColors.brandRed,
+                onChanged:
+                    enabled ? (value) => _update(profileVisits: value) : null,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),

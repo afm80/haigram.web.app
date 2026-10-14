@@ -1364,6 +1364,14 @@ class ActivityScreen extends StatelessWidget {
         appBar: AppBar(
           title: const Text('النشاط'),
           actions: [
+            IconButton(
+              tooltip: 'زيارات الملف الشخصي',
+              icon: const Icon(Icons.visibility_outlined),
+              onPressed: () => rootNavigatorOf(context).push(
+                appRoute('profileVisits', const {},
+                    (_) => const ProfileVisitsScreen()),
+              ),
+            ),
             TextButton(
               onPressed: () => _markAllRead(context),
               child: const Text('قراءة الكل'),
@@ -1772,6 +1780,134 @@ class _SuggestionThumbsState extends State<_SuggestionThumbs> {
                 ),
               ],
             ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// «زيارات الملف الشخصي»: من زاروا ملفي خلال آخر 30 يوماً.
+class ProfileVisitsScreen extends StatelessWidget {
+  const ProfileVisitsScreen({super.key});
+
+  Future<void> _setEnabled(BuildContext context, bool value) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await UserService.updatePrivacy(profileVisits: value);
+    } catch (error) {
+      messenger.showSnackBar(
+          SnackBar(content: Text('تعذر حفظ الإعداد: $error')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final myUid = SocialService.currentUid;
+    return StreamBuilder<AppUser?>(
+      stream: UserService.profileStream(myUid),
+      builder: (context, profileSnapshot) {
+        final enabled =
+            (profileSnapshot.data ?? UserService.me)?.profileVisits ?? true;
+        return Scaffold(
+          backgroundColor: colors.bg,
+          appBar: AppBar(
+            title: const Text('زيارات الملف الشخصي'),
+            actions: [
+              Switch(
+                value: enabled,
+                activeColor: AppColors.brandRed,
+                onChanged: (value) => _setEnabled(context, value),
+              ),
+              const SizedBox(width: 8),
+            ],
+          ),
+          body: !enabled
+              ? const _MessageState(
+                  message:
+                      'ميزة زيارات الملف الشخصي متوقفة.\nشغّلها من الزر بالأعلى لتعرف من زار ملفك ويرى الآخرون زياراتك لهم.',
+                  icon: Icons.visibility_off_outlined,
+                )
+              : StreamBuilder<List<ProfileVisit>>(
+                  stream: SocialService.profileVisits(),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return _MessageState(
+                          message: 'تعذر تحميل الزيارات\n${snapshot.error}');
+                    }
+                    if (!snapshot.hasData) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final visits = snapshot.data!;
+                    return ListView(
+                      children: [
+                        if (visits.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 36),
+                            child: Column(
+                              children: [
+                                Icon(Icons.visibility_outlined,
+                                    size: 50, color: colors.textDim),
+                                const SizedBox(height: 12),
+                                Text('لا توجد زيارات بعد',
+                                    style: TextStyle(color: colors.textDim)),
+                              ],
+                            ),
+                          ),
+                        for (final visit in visits) _VisitTile(visit: visit),
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text(
+                            'قد تظهر هنا أسماء الأشخاص الذين شغّلوا سجل الزيارات لديهم وزاروا ملفك الشخصي خلال آخر 30 يوماً. بإمكانهم أيضاً رؤية متى تزور ملفهم الشخصي. يمكنك إيقاف هذا الإعداد في أي وقت.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                color: colors.textDim,
+                                fontSize: 12,
+                                height: 1.5),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+        );
+      },
+    );
+  }
+}
+
+class _VisitTile extends StatelessWidget {
+  final ProfileVisit visit;
+  const _VisitTile({required this.visit});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return FutureBuilder<AppUser?>(
+      future: UserService.profileOf(visit.uid),
+      builder: (context, snapshot) {
+        final user = snapshot.data;
+        return ListTile(
+          onTap: () => openProfile(context, visit.uid),
+          leading: UserAvatar(
+            uid: visit.uid,
+            fallbackName: user?.username ?? '',
+            profile: user,
+            radius: 24,
+          ),
+          title: Text(user?.displayName ?? 'مستخدم',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: Text(timeAgo(visit.at),
+              style: TextStyle(color: colors.textDim, fontSize: 12)),
+          trailing: SizedBox(
+            width: 118,
+            height: 38,
+            child: Center(
+              child: FollowActionButton(uid: visit.uid, compact: true),
+            ),
           ),
         );
       },
