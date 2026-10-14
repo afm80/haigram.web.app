@@ -28,6 +28,7 @@ class Post {
   final int likes;
   final int views;
   final int comments;
+  final int shares;
   final DateTime createdAt;
 
   Post({
@@ -46,6 +47,7 @@ class Post {
     required this.likes,
     required this.views,
     this.comments = 0,
+    this.shares = 0,
     required this.createdAt,
   });
 
@@ -68,6 +70,7 @@ class Post {
       likes: (m['likes'] ?? 0) as int,
       views: (m['views'] ?? 0) as int,
       comments: (m['comments'] ?? 0) as int,
+      shares: (m['shares'] ?? 0) as int,
       createdAt: (m['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
@@ -594,36 +597,68 @@ class PostService {
       .snapshots()
       .map((s) => s.docs.map(Comment.fromDoc).toList());
 
-  static Future<void> addComment(String postId, String text) async {
+  /// يضيف تعليقاً (نصاً أو ملصقاً أو صورة). بلا قراءات مسبقة، فيظهر فوراً.
+  /// [kind]: text | sticker | image.
+  static Future<void> addComment(
+    String postId,
+    String text, {
+    required String ownerUid,
+    String kind = 'text',
+    Uint8List? imageBytes,
+  }) async {
+    if (imageBytes != null && (imageBytes.isEmpty || imageBytes.length > 700 * 1024)) {
+      throw ArgumentError('حجم الصورة يجب ألا يتجاوز 700 كيلوبايت');
+    }
     final batch = _db.batch();
     final commentRef = _commentsRef(postId).doc();
-    final postSnapshot = await _db.collection('posts').doc(postId).get();
-    if (!postSnapshot.exists) {
-      throw StateError('المنشور غير موجود');
-    }
-    batch.set(commentRef, {
+    final data = <String, dynamic>{
       'uid': _user.uid,
       'username': username,
       'name': displayName,
       'text': text,
+      'kind': kind,
       'likedBy': <String>[],
       'createdAt': FieldValue.serverTimestamp(),
-    });
+    };
+    if (imageBytes != null) data['image'] = Blob(imageBytes);
+    batch.set(commentRef, data);
     batch.update(_db.collection('posts').doc(postId),
         {'comments': FieldValue.increment(1)});
-    final ownerUid = postSnapshot.data()?['uid'] as String?;
-    if (ownerUid != null) {
-      SocialService.addCommentNotification(
-        batch: batch,
-        recipientUid: ownerUid,
-        actorUid: _user.uid,
-        actorUsername: username,
-        postId: postId,
-        commentId: commentRef.id,
-        commentText: text,
-      );
-    }
+    SocialService.addCommentNotification(
+      batch: batch,
+      recipientUid: ownerUid,
+      actorUid: _user.uid,
+      actorUsername: username,
+      postId: postId,
+      commentId: commentRef.id,
+      commentText: text,
+    );
     await batch.commit();
+  }
+
+  /// يسجّل مشاهدة واحدة لكل مستخدم لكل فيديو (مستند viewers يمنع التكرار).
+  /// لا يُحسب المالك. الأخطاء (مثل: سُجّلت من قبل) تُتجاهل.
+  static Future<void> registerView(Post post) async {
+    final uid = _user.uid;
+    if (post.uid == uid) return;
+    final postRef = _db.collection('posts').doc(post.id);
+    final batch = _db.batch();
+    batch.set(postRef.collection('viewers').doc(uid),
+        {'createdAt': FieldValue.serverTimestamp()});
+    batch.update(postRef, {'views': FieldValue.increment(1)});
+    try {
+      await batch.commit();
+    } catch (_) {}
+  }
+
+  /// يزيد عدّاد المشاركات بمقدار 1 عند مشاركة المنشور.
+  static Future<void> registerShare(String postId) async {
+    try {
+      await _db
+          .collection('posts')
+          .doc(postId)
+          .update({'shares': FieldValue.increment(1)});
+    } catch (_) {}
   }
 
   static Future<void> deleteComment(String postId, String commentId) async {
@@ -702,6 +737,8 @@ class Comment {
   final String username;
   final String name;
   final String text;
+  final String kind;
+  final Uint8List? imageBytes;
   final List<String> likedBy;
   final DateTime createdAt;
 
@@ -711,6 +748,8 @@ class Comment {
       required this.username,
       required this.name,
       required this.text,
+      this.kind = 'text',
+      this.imageBytes,
       required this.likedBy,
       required this.createdAt});
 
@@ -722,6 +761,8 @@ class Comment {
       username: m['username'] ?? 'مستخدم',
       name: m['name'] ?? '',
       text: m['text'] ?? '',
+      kind: m['kind'] as String? ?? 'text',
+      imageBytes: (m['image'] as Blob?)?.bytes,
       likedBy: List<String>.from(m['likedBy'] as List? ?? const []),
       createdAt: (m['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
