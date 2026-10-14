@@ -185,7 +185,7 @@ class _ProfileViewState extends State<ProfileView> {
     final showLikes = widget.isMe || !user.hideLikes;
     final tabs = <Tab>[
       const Tab(icon: Icon(Icons.video_library_outlined)),
-      const Tab(icon: Icon(Icons.grid_on_rounded)),
+      const Tab(icon: Icon(Icons.photo_library_outlined)),
       if (widget.isMe) const Tab(icon: Icon(Icons.bookmark_border_rounded)),
       if (showLikes) const Tab(icon: Icon(Icons.favorite_border_rounded)),
     ];
@@ -1741,7 +1741,7 @@ class _PostsTabState extends State<_PostsTab> {
           final list = _pinnedFirst(widget.pinned, recent);
           if (list.isEmpty) {
             return EmptyState(
-              icon: Icons.grid_on_rounded,
+              icon: Icons.photo_library_outlined,
               title: widget.isMe ? 'ابدأ بأول منشور' : 'لا توجد منشورات بعد',
               message: widget.isMe
                   ? 'شارك صورة أو فكرة وستظهر هنا في ملفك.'
