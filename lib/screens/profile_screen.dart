@@ -12,6 +12,7 @@ import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
 import 'create_flow.dart' show CreateKind, startCreate;
+import 'photo_tools.dart';
 import 'post_widgets.dart';
 import 'settings_screen.dart';
 import 'social_screens.dart' show ChatScreen;
@@ -542,7 +543,9 @@ class _Header extends StatelessWidget {
         );
         return StreamBuilder<bool>(
           stream: PresenceService.isOnline(u.uid),
-          builder: (context, presence) => SizedBox(
+          builder: (context, presence) => GestureDetector(
+            onLongPress: () => showProfilePhoto(context, u),
+            child: SizedBox(
             width: 96,
             height: 96,
             child: Stack(
@@ -593,6 +596,7 @@ class _Header extends StatelessWidget {
                   ),
               ],
             ),
+          ),
           ),
         );
       },
@@ -1364,10 +1368,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Future<void> _pickPhoto(ImageSource source) async {
     try {
       // تصغير إلى 320px وجودة 70% فيصبح حجم الصورة بضع عشرات الكيلوبايت.
+      // نلتقطها بدقة أعلى ثم يقصّها المستخدم ويحجّمها قبل الإضافة.
       final f = await ImagePicker().pickImage(
-          source: source, maxWidth: 320, maxHeight: 320, imageQuality: 70);
+          source: source, maxWidth: 1600, maxHeight: 1600, imageQuality: 90);
       if (f == null) return;
-      final Uint8List bytes = await f.readAsBytes();
+      final Uint8List original = await f.readAsBytes();
+      if (!mounted) return;
+      final Uint8List? bytes = await cropProfilePhoto(context, original);
+      if (bytes == null) return;
       if (bytes.length > 150 * 1024) {
         setState(() => _error = 'الصورة كبيرة جداً، جرّب صورة أخرى');
         return;
