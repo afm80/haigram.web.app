@@ -153,8 +153,12 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       onTap: () => showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('البث المباشر قريباً 🎥'),
-          content: const Text('نعمل عليه، ترقّب التفعيل'),
+          content: Text('البث المباشر قريباً',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  color: ctx.appColors.text,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800)),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
@@ -167,21 +171,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       child: Container(
         width: 48,
         alignment: Alignment.center,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFE2C55),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: const Text(
-            'LIVE',
-            style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w900,
-                color: Colors.white,
-                letterSpacing: 0.5),
-          ),
-        ),
+        child: const Icon(Icons.live_tv_rounded,
+            size: 26, color: Colors.white, shadows: _shadow),
       ),
     );
   }
