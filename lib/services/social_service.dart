@@ -405,6 +405,29 @@ class SocialService {
     );
   }
 
+  // ===== «حذف لديّ فقط»: معرّفات الرسائل المخفية عن المستخدم الحالي =====
+  static DocumentReference<Map<String, dynamic>> _hiddenDoc(
+          String conversationId) =>
+      _chats.doc(conversationId).collection('hiddenMessages').doc(_uid);
+
+  static Stream<Set<String>> hiddenMessageIds(String conversationId) =>
+      _hiddenDoc(conversationId).snapshots().map(
+            (snapshot) =>
+                Set<String>.from((snapshot.data()?['ids'] as List?) ?? const []),
+          );
+
+  static Future<void> hideMessageForMe(
+      String conversationId, String messageId) async {
+    await _hiddenDoc(conversationId).set(
+      {
+        'ids': FieldValue.arrayUnion([messageId]),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  /// «حذف لدى الجميع»: يحذف رسالتي (نصاً أو صورة أو ملصقاً) من المحادثة نهائياً.
   static Future<void> deleteMessage(
       String conversationId, String messageId) async {
     final chat = _chats.doc(conversationId);
