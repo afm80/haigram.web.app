@@ -881,6 +881,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       fallbackName: user?.username ?? '',
                       radius: 19,
                       showOnline: true,
+                      onTap: () => openProfile(context, widget.otherUid),
                     ),
                     const SizedBox(width: 10),
                     Flexible(
@@ -984,18 +985,14 @@ class _ChatScreenState extends State<ChatScreen> {
                         final mine =
                             message.senderUid == SocialService.currentUid;
                         final sticker = message.kind == 'sticker';
-                        return Align(
-                          alignment: mine
-                              ? AlignmentDirectional.centerEnd
-                              : AlignmentDirectional.centerStart,
-                          child: GestureDetector(
+                          final bubble = GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onLongPress: () =>
                                 _showMessageActions(message, mine),
                             child: Container(
                             constraints: BoxConstraints(
                                 maxWidth:
-                                    MediaQuery.sizeOf(context).width * 0.78),
+                                    MediaQuery.sizeOf(context).width * (mine ? 0.78 : 0.70)),
                             margin: const EdgeInsets.symmetric(vertical: 4),
                             padding: sticker
                                 ? const EdgeInsets.symmetric(
@@ -1084,7 +1081,32 @@ class _ChatScreenState extends State<ChatScreen> {
                               ],
                             ),
                             ),
-                          ),
+                          );
+                        return Align(
+                          alignment: mine
+                              ? AlignmentDirectional.centerEnd
+                              : AlignmentDirectional.centerStart,
+                          child: mine
+                              ? bubble
+                              : Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    // النقر على صورة المرسل يفتح حسابه.
+                                    Padding(
+                                      padding:
+                                          const EdgeInsetsDirectional.only(
+                                              end: 6, bottom: 4),
+                                      child: UserAvatar(
+                                        uid: message.senderUid,
+                                        radius: 14,
+                                        onTap: () => openProfile(
+                                            context, message.senderUid),
+                                      ),
+                                    ),
+                                    Flexible(child: bubble),
+                                  ],
+                                ),
                         );
                       },
                     );
