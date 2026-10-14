@@ -53,6 +53,14 @@ jobs:
           sed -i -E "s/applicationId\s*=?\s*\"[^\"]+\"/applicationId = \"$PKG\"/" "$GRADLE"
           # حدّ أدنى 23 لمتطلبات مكتبات Firebase
           sed -i -E 's/(minSdk(Version)?)(\s*=\s*|\s+)flutter\.minSdkVersion/\1 = 23/' "$GRADLE"
+          # رفع إصدار Kotlin: قالب Flutter 3.22 يستخدم 1.7 والمكتبات (مثل file_saver) تحتاج 1.9
+          for f in android/build.gradle android/build.gradle.kts android/settings.gradle android/settings.gradle.kts; do
+            [ -f "$f" ] || continue
+            sed -i -E "s/(ext\.kotlin_version\s*=\s*)'[^']+'/\1'1.9.24'/" "$f"
+            sed -i -E "s/(org\.jetbrains\.kotlin\.android\"\)?\s+version\s+\")[^\"]+/\11.9.24/" "$f"
+          done
+          grep -rn "kotlin" android/build.gradle android/build.gradle.kts android/settings.gradle android/settings.gradle.kts 2>/dev/null || true
+
           # اسم التطبيق الظاهر
           sed -i -E "s/android:label=\"[^\"]*\"/android:label=\"$APP_NAME\"/" "$MANIFEST"
           # صلاحية الإنترنت (غير موجودة في نسخة release افتراضياً)
