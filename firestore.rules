@@ -414,7 +414,8 @@ service cloud.firestore {
       // طلبات المتابعة: يقرؤها صاحب الحساب أو مرسل الطلب فقط. باقي المجموعات (غير الإشعارات) مفتوحة للقراءة.
       allow read: if request.auth != null
         && (sub != 'notifications' || request.auth.uid == uid)
-        && (sub != 'followRequests' || request.auth.uid == uid || request.auth.uid == doc);
+        && (sub != 'followRequests' || request.auth.uid == uid || request.auth.uid == doc)
+        && (sub != 'profileVisits' || request.auth.uid == uid);
 
       allow create: if request.auth != null && (
         // المالك: saved / liked ... لكن ليس followers ولا followRequests ولا الإشعارات.
@@ -439,6 +440,11 @@ service cloud.firestore {
           && exists(/databases/$(database)/documents/users/$(uid)/followRequests/$(doc))) ||
         (sub == 'following' && doc == request.auth.uid
           && exists(/databases/$(database)/documents/users/$(doc)/followRequests/$(uid))) ||
+        // زيارة الملف الشخصي: الزائر يسجّل زيارته بنفسه فقط (وقت الخادم).
+        (sub == 'profileVisits' && doc == request.auth.uid
+          && doc != uid && !isBlocked(uid, doc)
+          && request.resource.data.keys().hasOnly(['at'])
+          && request.resource.data.at == request.time) ||
         (sub == 'notifications' && validNotificationCreate(uid, doc))
       );
       allow update: if request.auth != null && (
@@ -447,6 +453,11 @@ service cloud.firestore {
         (sub == 'following' && request.auth.uid == uid
           && request.resource.data.keys().hasOnly(['at'])) ||
         (sub == 'followers' && doc == request.auth.uid
+          && request.resource.data.keys().hasOnly(['at'])
+          && request.resource.data.at == request.time) ||
+        // زيارة الملف الشخصي: الزائر يسجّل زيارته بنفسه فقط (وقت الخادم).
+        (sub == 'profileVisits' && doc == request.auth.uid
+          && doc != uid && !isBlocked(uid, doc)
           && request.resource.data.keys().hasOnly(['at'])
           && request.resource.data.at == request.time) ||
         (sub == 'notifications' && validNotificationCreate(uid, doc)) ||
