@@ -10,6 +10,7 @@ import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
 import 'post_widgets.dart' show PostDetailScreen, timeAgo;
+import 'profile_screen.dart' show openChatWith;
 import 'sticker_sheet.dart';
 import 'story_widgets.dart' show StoryViewed, StoryViewer;
 import 'video_feed_screen.dart' show VideoViewerScreen;
@@ -50,7 +51,7 @@ class InboxScreen extends StatelessWidget {
                   stories: stories,
                   error: storySnapshot.error,
                 ),
-                const _ActivityTiles(),
+                const _ActivitySummaryTile(),
                 const Padding(
                   padding: EdgeInsetsDirectional.fromSTEB(16, 14, 16, 6),
                   child: Text('المحادثات',
@@ -176,152 +177,91 @@ class InboxScreen extends StatelessWidget {
   }
 }
 
-/// نوع نشاط في صندوق البريد (متابعون / إعجابات / تعليقات).
-class _ActivityCategory {
-  final String type;
-  final String title;
-  final String emptyText;
-  final IconData icon;
-  final Color color;
-
-  const _ActivityCategory({
-    required this.type,
-    required this.title,
-    required this.emptyText,
-    required this.icon,
-    required this.color,
-  });
-}
-
-const _activityCategories = [
-  _ActivityCategory(
-    type: 'followRequest',
-    title: 'طلبات المتابعة',
-    emptyText: 'لا توجد طلبات متابعة',
-    icon: Icons.how_to_reg_rounded,
-    color: AppColors.accent,
-  ),
-  _ActivityCategory(
-    type: 'follow',
-    title: 'المتابعون',
-    emptyText: 'لا يوجد متابعون جدد',
-    icon: Icons.person_add_alt_1_rounded,
-    color: AppColors.brandCyan,
-  ),
-  _ActivityCategory(
-    type: 'like',
-    title: 'الإعجابات',
-    emptyText: 'لا توجد إعجابات جديدة',
-    icon: Icons.favorite_rounded,
-    color: AppColors.brandRed,
-  ),
-  _ActivityCategory(
-    type: 'comment',
-    title: 'التعليقات',
-    emptyText: 'لا توجد تعليقات جديدة',
-    icon: Icons.chat_bubble_rounded,
-    color: AppColors.accent,
-  ),
-];
-
-class _ActivityTiles extends StatefulWidget {
-  const _ActivityTiles();
+/// صف واحد «النشاط والمتابعون الجدد» (على طريقة تيكتوك) يفتح صفحة النشاط.
+class _ActivitySummaryTile extends StatefulWidget {
+  const _ActivitySummaryTile();
 
   @override
-  State<_ActivityTiles> createState() => _ActivityTilesState();
+  State<_ActivitySummaryTile> createState() => _ActivitySummaryTileState();
 }
 
-class _ActivityTilesState extends State<_ActivityTiles> {
+class _ActivitySummaryTileState extends State<_ActivitySummaryTile> {
   late final Stream<List<SocialNotification>> _notifications =
       SocialService.notifications();
 
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<List<SocialNotification>>(
-      stream: _notifications,
-      builder: (context, snapshot) {
-        final all = snapshot.data ?? const <SocialNotification>[];
-        return Column(
-          children: [
-            for (final category in _activityCategories)
-              _ActivityTile(
-                category: category,
-                items: all
-                    .where((n) => _matchesCategory(n, category.type))
-                    .toList(),
-              ),
-          ],
-        );
-      },
-    );
+  String _summary(List<SocialNotification> all) {
+    final names = <String>[];
+    for (final n in all) {
+      if ((n.type == 'follow' || n.type == 'followRequest') &&
+          !names.contains(n.actorUsername)) {
+        names.add(n.actorUsername);
+      }
+    }
+    if (names.length == 1) return '@${names[0]} بدأ بمتابعتك';
+    if (names.length == 2) return '@${names[0]} و @${names[1]} يتابعانك';
+    if (names.length > 2) {
+      return '@${names[0]} و @${names[1]} و ${names.length - 2} آخرين يتابعونك';
+    }
+    if (all.isNotEmpty) {
+      return '@${all.first.actorUsername} ${_notificationMessage(all.first)}';
+    }
+    return 'لا يوجد نشاط جديد';
   }
-}
-
-class _ActivityTile extends StatelessWidget {
-  final _ActivityCategory category;
-  final List<SocialNotification> items;
-
-  const _ActivityTile({required this.category, required this.items});
 
   @override
   Widget build(BuildContext context) {
     final colors = context.appColors;
-    final unread = items.where((n) => !n.read).length;
-    final latest = items.isEmpty ? null : items.first;
-    return ListTile(
-      // صفوف متلاصقة بلا مسافات زائدة بين الأيقونات.
-      dense: true,
-      visualDensity: VisualDensity.compact,
-      minVerticalPadding: 0,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
-      leading: CircleAvatar(
-        radius: 22,
-        backgroundColor: category.color,
-        child: Icon(category.icon, color: Colors.white, size: 22),
-      ),
-      title: Text(category.title,
-          style: const TextStyle(fontWeight: FontWeight.w700)),
-      subtitle: Text(
-        latest == null
-            ? category.emptyText
-            : '@${latest.actorUsername} ${_notificationMessage(latest)}',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: colors.textDim),
-      ),
-      trailing: unread > 0
-          // بدون alignment: الحاوية مع alignment كانت تتمدد لتملأ عرض
-          // الصف كله فيتكسر النص وتطول البطاقة.
-          ? Container(
-              constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: const BoxDecoration(
-                color: Colors.red,
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                widthFactor: 1,
-                heightFactor: 1,
-                child: Text(
-                  unread > 99 ? '99+' : '$unread',
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700),
-                ),
-              ),
-            )
-          : Icon(Icons.chevron_left_rounded, color: colors.textDim),
-      onTap: () => rootNavigatorOf(context).push(
-        appRoute(
-          'notifications',
-          {'type': category.type, 'title': category.title},
-          (_) => NotificationsScreen(
-            type: category.type,
-            title: category.title,
+    return StreamBuilder<List<SocialNotification>>(
+      stream: _notifications,
+      builder: (context, snapshot) {
+        final all = snapshot.data ?? const <SocialNotification>[];
+        final unread = all.where((n) => !n.read).length;
+        return ListTile(
+          dense: true,
+          visualDensity: VisualDensity.compact,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+          leading: const CircleAvatar(
+            radius: 22,
+            backgroundColor: AppColors.brandRed,
+            child: Icon(Icons.bolt_rounded, color: Colors.white, size: 24),
           ),
-        ),
-      ),
+          title: const Text('النشاط والمتابعون الجدد',
+              style: TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: Text(
+            _summary(all),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: colors.textDim),
+          ),
+          trailing: unread > 0
+              ? Container(
+                  constraints:
+                      const BoxConstraints(minWidth: 22, minHeight: 22),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    widthFactor: 1,
+                    heightFactor: 1,
+                    child: Text(
+                      unread > 99 ? '99+' : '$unread',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                )
+              : Icon(Icons.chevron_left_rounded, color: colors.textDim),
+          onTap: () => rootNavigatorOf(context).push(
+            appRoute('activity', const {}, (_) => const ActivityScreen()),
+          ),
+        );
+      },
     );
   }
 }
@@ -1314,46 +1254,274 @@ class NotificationsScreen extends StatelessWidget {
             itemCount: notifications.length,
             separatorBuilder: (_, __) =>
                 Divider(height: 1, indent: 76, color: colors.surfaceHigh),
-            itemBuilder: (context, index) {
-              final notification = notifications[index];
-              return ListTile(
-                onTap: () => _openNotification(context, notification),
-                leading: UserAvatar(
-                  uid: notification.actorUid,
-                  fallbackName: notification.actorUsername,
-                  radius: 23,
-                  onTap: () => openProfile(context, notification.actorUid),
-                ),
-                title: Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: '@${notification.actorUsername} ',
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      TextSpan(text: _notificationMessage(notification)),
-                    ],
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  timeAgo(notification.createdAt),
-                  style: TextStyle(color: colors.textDim, fontSize: 12),
-                ),
-                trailing: notification.type == 'followRequest'
-                    ? _FollowRequestActions(requesterUid: notification.actorUid)
-                    : notification.read
-                        ? null
-                        : const Icon(Icons.circle,
-                            color: AppColors.accent, size: 9),
-                tileColor:
-                    notification.read ? null : colors.surface.withOpacity(0.7),
-              );
-            },
+            itemBuilder: (context, index) =>
+                _NotificationTile(notification: notifications[index]),
           );
         },
       ),
+    );
+  }
+}
+
+/// صف إشعار واحد (يُستعمل في شاشة الإشعارات وتبويب النشاط).
+class _NotificationTile extends StatelessWidget {
+  final SocialNotification notification;
+  final Widget? trailing;
+  final String? subtitle;
+
+  const _NotificationTile(
+      {required this.notification, this.trailing, this.subtitle});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return ListTile(
+      onTap: () => _openNotification(context, notification),
+      leading: UserAvatar(
+        uid: notification.actorUid,
+        fallbackName: notification.actorUsername,
+        radius: 23,
+        onTap: () => openProfile(context, notification.actorUid),
+      ),
+      title: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: '@${notification.actorUsername} ',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            TextSpan(text: _notificationMessage(notification)),
+          ],
+        ),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        subtitle ?? timeAgo(notification.createdAt),
+        style: TextStyle(color: colors.textDim, fontSize: 12),
+      ),
+      trailing: trailing ??
+          (notification.type == 'followRequest'
+              ? _FollowRequestActions(requesterUid: notification.actorUid)
+              : notification.read
+                  ? null
+                  : const Icon(Icons.circle,
+                      color: AppColors.accent, size: 9)),
+      tileColor: notification.read ? null : colors.surface.withOpacity(0.7),
+    );
+  }
+}
+
+const _arabicMonths = [
+  'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+  'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
+];
+
+String _shortDate(DateTime d) {
+  final base = '${d.day} ${_arabicMonths[d.month - 1]}';
+  return d.year == DateTime.now().year ? base : '$base ${d.year}';
+}
+
+/// صفحة «النشاط والمتابعون الجدد»: تبويبان على طريقة تيكتوك.
+class ActivityScreen extends StatelessWidget {
+  const ActivityScreen({super.key});
+
+  Future<void> _markAllRead(BuildContext context) async {
+    try {
+      await SocialService.markAllNotificationsRead();
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر تحديث الإشعارات: $error')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        backgroundColor: colors.bg,
+        appBar: AppBar(
+          title: const Text('النشاط'),
+          actions: [
+            TextButton(
+              onPressed: () => _markAllRead(context),
+              child: const Text('قراءة الكل'),
+            ),
+          ],
+          bottom: const TabBar(
+            tabs: [Tab(text: 'متابعون جدد'), Tab(text: 'النشاط')],
+          ),
+        ),
+        body: StreamBuilder<List<SocialNotification>>(
+          stream: SocialService.notifications(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return _MessageState(
+                  message: 'تعذر تحميل الإشعارات\n${snapshot.error}');
+            }
+            if (!snapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final all = snapshot.data!;
+            final followers = all
+                .where((n) => n.type == 'follow' || n.type == 'followRequest')
+                .toList();
+            final activity = all
+                .where((n) => n.type != 'follow' && n.type != 'followRequest')
+                .toList();
+            return TabBarView(
+              children: [
+                _NewFollowersTab(items: followers),
+                _ActivityListTab(items: activity),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _NewFollowersTab extends StatefulWidget {
+  final List<SocialNotification> items;
+  const _NewFollowersTab({required this.items});
+
+  @override
+  State<_NewFollowersTab> createState() => _NewFollowersTabState();
+}
+
+class _NewFollowersTabState extends State<_NewFollowersTab> {
+  static const _collapsedCount = 3;
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final items = widget.items;
+    if (items.isEmpty) {
+      return const _MessageState(
+        message: 'لا يوجد متابعون جدد',
+        icon: Icons.person_add_alt_1_rounded,
+      );
+    }
+    final shown = _expanded ? items : items.take(_collapsedCount).toList();
+    return ListView(
+      children: [
+        for (final n in shown)
+          _NotificationTile(
+            notification: n,
+            subtitle:
+                '${n.type == 'followRequest' ? 'يريد متابعتك' : 'بدأ في متابعتك'}. ${_shortDate(n.createdAt)}',
+            trailing: n.type == 'followRequest'
+                ? _FollowRequestActions(requesterUid: n.actorUid)
+                : _FollowBackButton(uid: n.actorUid),
+          ),
+        if (items.length > _collapsedCount)
+          TextButton.icon(
+            onPressed: () => setState(() => _expanded = !_expanded),
+            icon: Icon(
+              _expanded
+                  ? Icons.keyboard_arrow_up_rounded
+                  : Icons.keyboard_arrow_down_rounded,
+              color: colors.textDim,
+            ),
+            label: Text(_expanded ? 'عرض أقل' : 'عرض الكل',
+                style: TextStyle(color: colors.textDim)),
+          ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+}
+
+class _ActivityListTab extends StatelessWidget {
+  final List<SocialNotification> items;
+  const _ActivityListTab({required this.items});
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) {
+      return const _MessageState(
+        message: 'لا يوجد نشاط جديد',
+        icon: Icons.notifications_none_rounded,
+      );
+    }
+    return ListView.separated(
+      itemCount: items.length,
+      separatorBuilder: (_, __) => Divider(
+          height: 1, indent: 76, color: context.appColors.surfaceHigh),
+      itemBuilder: (context, index) =>
+          _NotificationTile(notification: items[index]),
+    );
+  }
+}
+
+/// «رد المتابعة» إن لم أكن أتابعه، وإلا «مراسلة».
+class _FollowBackButton extends StatelessWidget {
+  final String uid;
+  const _FollowBackButton({required this.uid});
+
+  Future<void> _onPressed(BuildContext context, FollowState state) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      switch (state) {
+        case FollowState.none:
+          final result = await PostService.follow(uid);
+          if (result == FollowState.requested) {
+            messenger.showSnackBar(const SnackBar(
+                content: Text('تم إرسال طلب المتابعة، بانتظار الموافقة')));
+          }
+        case FollowState.requested:
+          await PostService.cancelFollowRequest(uid);
+        case FollowState.following:
+          await openChatWith(context, uid);
+      }
+    } catch (error) {
+      messenger.showSnackBar(
+          SnackBar(content: Text('تعذر تنفيذ الإجراء: $error')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return StreamBuilder<FollowState>(
+      stream: PostService.followState(uid),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          );
+        }
+        final state = snapshot.data!;
+        final red = state == FollowState.none;
+        return FilledButton(
+          onPressed: () => _onPressed(context, state),
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(0, 36),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            backgroundColor: red ? AppColors.brandRed : colors.surfaceHigh,
+            foregroundColor: red ? Colors.white : colors.text,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10)),
+          ),
+          child: Text(
+            switch (state) {
+              FollowState.none => 'رد المتابعة',
+              FollowState.requested => 'تم إرسال الطلب',
+              FollowState.following => 'مراسلة',
+            },
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        );
+      },
     );
   }
 }

@@ -227,6 +227,9 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
           {'type': type, 'title': title},
           (_) => NotificationsScreen(type: type, title: title),
         );
+      case 'activity':
+        return appRoute<void>(
+            'activity', const {}, (_) => const ActivityScreen());
       case 'search':
         return appRoute<void>(
             'search', const {}, (_) => const ExploreSearchScreen());
