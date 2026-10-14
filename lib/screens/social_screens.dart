@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 
@@ -7,6 +9,7 @@ import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
 import 'post_widgets.dart' show PostDetailScreen, timeAgo;
+import 'sticker_sheet.dart';
 import 'story_widgets.dart' show StoryViewed, StoryViewer;
 import 'video_feed_screen.dart' show VideoViewerScreen;
 import '../route_state.dart';
@@ -624,36 +627,6 @@ class _ChatScreenState extends State<ChatScreen> {
   final _picker = ImagePicker();
   late final Stream<ChatBlockState> _blockState;
   bool _sending = false;
-  bool _showStickers = false;
-
-  static const _stickers = [
-    '❤️',
-    '😂',
-    '😍',
-    '🥹',
-    '👍',
-    '👏',
-    '🔥',
-    '🥰',
-    '😎',
-    '🤍',
-    '💯',
-    '🎉',
-    '🥳',
-    '😘',
-    '😭',
-    '🙏',
-    '✨',
-    '🫶',
-  ];
-  static const _stickerColors = [
-    Color(0xFFFFE0E8),
-    Color(0xFFFFF0C2),
-    Color(0xFFE4DBFF),
-    Color(0xFFD8F5E8),
-    Color(0xFFDDF2FF),
-    Color(0xFFFFE7D6),
-  ];
 
   @override
   void initState() {
@@ -686,12 +659,20 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _openImage(Uint8List bytes) {
+    rootNavigatorOf(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => _ChatImageViewer(bytes: bytes),
+      ),
+    );
+  }
+
   Future<void> _sendSticker(String sticker) async {
     if (_sending) return;
     setState(() => _sending = true);
     try {
       await SocialService.sendSticker(widget.conversationId, sticker);
-      if (mounted) setState(() => _showStickers = false);
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -994,12 +975,15 @@ class _ChatScreenState extends State<ChatScreen> {
                               children: [
                                 if (message.kind == 'image' &&
                                     message.imageBytes != null)
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(13),
-                                    child: Image.memory(
-                                      message.imageBytes!,
-                                      width: 220,
-                                      fit: BoxFit.cover,
+                                  GestureDetector(
+                                    onTap: () => _openImage(message.imageBytes!),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(13),
+                                      child: Image.memory(
+                                        message.imageBytes!,
+                                        width: 220,
+                                        fit: BoxFit.cover,
+                                      ),
                                     ),
                                   )
                                 else
@@ -1062,40 +1046,6 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
               if (!blockState.blocked) ...[
-                if (_showStickers)
-                  Container(
-                    height: 150,
-                    color: colors.surface,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
-                    child: GridView.count(
-                      crossAxisCount: 6,
-                      mainAxisSpacing: 6,
-                      crossAxisSpacing: 8,
-                      children: [
-                        for (var i = 0; i < _stickers.length; i++)
-                          InkWell(
-                            onTap:
-                                _sending
-                                    ? null
-                                    : () => _sendSticker(_stickers[i]),
-                            borderRadius: BorderRadius.circular(12),
-                            child: Container(
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: _stickerColors[
-                                    i % _stickerColors.length],
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                _stickers[i],
-                                style: const TextStyle(fontSize: 27),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
                 SafeArea(
                   top: false,
                   child: Padding(
@@ -1110,15 +1060,16 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                         IconButton(
                           tooltip: 'الملصقات والرموز التعبيرية',
-                          onPressed: () {
-                            FocusScope.of(context).unfocus();
-                            setState(() => _showStickers = !_showStickers);
-                          },
-                          icon: Icon(
-                            _showStickers
-                                ? Icons.keyboard_rounded
-                                : Icons.emoji_emotions_outlined,
-                          ),
+                          onPressed: _sending
+                              ? null
+                              : () {
+                                  FocusScope.of(context).unfocus();
+                                  showStickerSheet(
+                                    context,
+                                    onPick: _sendSticker,
+                                  );
+                                },
+                          icon: const Icon(Icons.emoji_emotions_outlined),
                         ),
                         Expanded(
                           child: TextField(
@@ -1128,11 +1079,6 @@ class _ChatScreenState extends State<ChatScreen> {
                             maxLength: 2000,
                             textInputAction: TextInputAction.send,
                             onSubmitted: (_) => _send(),
-                            onTap: () {
-                              if (_showStickers) {
-                                setState(() => _showStickers = false);
-                              }
-                            },
                             decoration: const InputDecoration(
                               hintText: 'اكتب رسالة...',
                               counterText: '',
@@ -1361,4 +1307,41 @@ class _MessageState extends StatelessWidget {
           ),
         ),
       );
+}
+
+/// عارض الصورة بملء الشاشة: تكبير بالقرص، وإغلاق بالنقر أو زر الإغلاق.
+class _ChatImageViewer extends StatelessWidget {
+  final Uint8List bytes;
+  const _ChatImageViewer({required this.bytes});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          tooltip: 'إغلاق',
+          icon: const Icon(Icons.close_rounded),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => Navigator.of(context).pop(),
+        child: SizedBox.expand(
+          child: InteractiveViewer(
+            minScale: 1,
+            maxScale: 5,
+            child: Center(
+              child: Image.memory(bytes, fit: BoxFit.contain),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
