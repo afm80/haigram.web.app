@@ -307,9 +307,20 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
       });
       final messenger = ScaffoldMessenger.of(context);
       messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(const SnackBar(
-        content: Text('اضغط مرة أخرى للخروج'),
-        duration: Duration(seconds: 2),
+      // رسالة صغيرة عائمة بأسلوب إنستغرام.
+      messenger.showSnackBar(SnackBar(
+        content: const Text(
+          'اضغط مرة أخرى للخروج',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.white, fontSize: 13),
+        ),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+        width: 190,
+        backgroundColor: Colors.black87,
+        elevation: 0,
+        shape: const StadiumBorder(),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       ));
       return;
     }
