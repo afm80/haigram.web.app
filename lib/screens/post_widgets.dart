@@ -45,29 +45,9 @@ class _PostCardState extends State<PostCard> {
           .showSnackBar(const SnackBar(content: Text('تم نسخ رابط المنشور')));
   }
 
-  Future<void> _confirmDelete() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('حذف المنشور؟'),
-        content: const Text('لا يمكن التراجع عن هذا الإجراء.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('إلغاء')),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('حذف')),
-        ],
-      ),
-    );
-    if (ok == true) await PostService.deletePost(widget.post);
-  }
-
   @override
   Widget build(BuildContext context) {
     final p = widget.post;
-    final mine = p.uid == PostService.uidOrEmpty;
     final isText = p.type == PostType.text;
     final colors = context.appColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -75,7 +55,7 @@ class _PostCardState extends State<PostCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _header(p, mine),
+        _header(p),
         StreamBuilder<bool>(
           stream: PostService.isLiked(p.id),
           builder: (context, s) {
@@ -194,7 +174,7 @@ class _PostCardState extends State<PostCard> {
     );
   }
 
-  Widget _header(Post p, bool mine) {
+  Widget _header(Post p) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
       child: Row(
@@ -218,14 +198,10 @@ class _PostCardState extends State<PostCard> {
             color: context.appColors.surfaceHigh,
             onSelected: (v) {
               if (v == 'link') _copyPostLink();
-              if (v == 'delete') _confirmDelete();
             },
             itemBuilder: (_) => [
               const PopupMenuItem(
                   value: 'link', child: Text('نسخ رابط المنشور')),
-              if (mine)
-                const PopupMenuItem(
-                    value: 'delete', child: Text('حذف المنشور')),
             ],
           ),
         ],
@@ -273,8 +249,8 @@ class _PostCardState extends State<PostCard> {
             onPressed: () => showPostShareSheet(context, widget.post),
             icon: Transform.scale(
               scaleX: -1,
-              child: Icon(Icons.send_outlined,
-                  size: 26, color: context.appColors.text),
+              child: Icon(Icons.reply_rounded,
+                  size: 30, color: context.appColors.text),
             ),
           ),
           const Spacer(),
