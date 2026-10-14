@@ -218,7 +218,17 @@ class SocialService {
             .collection('users')
             .doc(otherUid)
             .collection('followers')
-            .doc(_uid));
+            .doc(_uid))
+        ..delete(_db
+            .collection('users')
+            .doc(otherUid)
+            .collection('followRequests')
+            .doc(_uid))
+        ..delete(_db
+            .collection('users')
+            .doc(_uid)
+            .collection('followRequests')
+            .doc(otherUid));
       await batch.commit();
     } else {
       await reference.delete();
@@ -546,7 +556,11 @@ class SocialService {
     final notifications = _notifications(_uid);
     while (true) {
       var query = notifications.where('read', isEqualTo: false);
-      if (type != null) query = query.where('type', isEqualTo: type);
+      if (type == 'follow') {
+        query = query.where('type', whereIn: ['follow', 'followAccepted']);
+      } else if (type != null) {
+        query = query.where('type', isEqualTo: type);
+      }
       final snapshot = await query.limit(450).get();
       if (snapshot.docs.isEmpty) return;
       final batch = _db.batch();
@@ -567,6 +581,38 @@ class SocialService {
     if (recipientUid == actorUid) return;
     batch.set(_notifications(recipientUid).doc('follow_$actorUid'), {
       'type': 'follow',
+      'actorUid': actorUid,
+      'actorUsername': actorUsername,
+      'read': false,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static void addFollowRequestNotification({
+    required WriteBatch batch,
+    required String recipientUid,
+    required String actorUid,
+    required String actorUsername,
+  }) {
+    if (recipientUid == actorUid) return;
+    batch.set(_notifications(recipientUid).doc('followRequest_$actorUid'), {
+      'type': 'followRequest',
+      'actorUid': actorUid,
+      'actorUsername': actorUsername,
+      'read': false,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static void addFollowAcceptedNotification({
+    required WriteBatch batch,
+    required String recipientUid,
+    required String actorUid,
+    required String actorUsername,
+  }) {
+    if (recipientUid == actorUid) return;
+    batch.set(_notifications(recipientUid).doc('followAccepted_$actorUid'), {
+      'type': 'followAccepted',
       'actorUid': actorUid,
       'actorUsername': actorUsername,
       'read': false,

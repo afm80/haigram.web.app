@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -85,6 +86,9 @@ class Post {
       .map((m) => m.group(0)!)
       .toList();
 }
+
+/// علاقتي بحساب آخر: لا شيء، طلب متابعة معلّق (حساب خاص)، أو أتابعه.
+enum FollowState { none, requested, following }
 
 class PostService {
   /// false = وضع التجربة المجاني تماماً (الملفات داخل Firestore، بدون بطاقة).
@@ -426,33 +430,192 @@ class PostService {
       .snapshots()
       .map((s) => s.exists);
 
-  static Future<void> toggleFollow(String targetUid, bool following) async {
-    final mine = _db
-        .collection('users')
-        .doc(_user.uid)
-        .collection('following')
-        .doc(targetUid);
-    final theirs = _db
-        .collection('users')
-        .doc(targetUid)
-        .collection('followers')
-        .doc(_user.uid);
+  static DocumentReference<Map<String, dynamic>> _requestRef(
+          String targetUid, String requesterUid) =>
+      _db
+          .collection('users')
+          .doc(targetUid)
+          .collection('followRequests')
+          .doc(requesterUid);
+
+  /// حالة علاقتي بحساب: لا شيء / طلب معلّق / أتابعه.
+  static Stream<FollowState> followState(String targetUid) {
+    late final StreamController<FollowState> controller;
+    StreamSubscription<bool>? followSub;
+    StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? requestSub;
+    bool? following;
+    bool? requested;
+
+    void emitIfReady() {
+      if (following == null || requested == null) return;
+      controller.add(following!
+          ? FollowState.following
+          : requested!
+              ? FollowState.requested
+              : FollowState.none);
+    }
+
+    controller = StreamController<FollowState>(
+      onListen: () {
+        followSub = isFollowing(targetUid).listen((value) {
+          following = value;
+          emitIfReady();
+        }, onError: controller.addError);
+        requestSub = _requestRef(targetUid, _user.uid).snapshots().listen(
+          (snapshot) {
+            requested = snapshot.exists;
+            emitIfReady();
+          },
+          onError: (Object error) {
+            // قراءة الطلب غير ضرورية للمتابعة العامة: نتعامل معه كغير موجود.
+            requested = false;
+            emitIfReady();
+          },
+        );
+      },
+      onCancel: () async {
+        await followSub?.cancel();
+        await requestSub?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
+  /// متابعة حقيقية: حساب عام ← متابعة فورية، حساب خاص ← طلب ينتظر موافقة صاحبه.
+  static Future<FollowState> follow(String targetUid) async {
+    if (targetUid.isEmpty || targetUid == _user.uid) {
+      throw ArgumentError.value(targetUid, 'targetUid', 'مستخدم غير صالح');
+    }
+    // قراءة طازجة من الخادم (دون التخزين المؤقت) لمعرفة هل الحساب خاص الآن.
+    final target = await _db.collection('users').doc(targetUid).get();
+    final isPrivate = target.data()?['isPrivate'] == true;
     final batch = _db.batch();
-    if (following) {
-      batch.delete(mine);
-      batch.delete(theirs);
-    } else {
-      batch.set(mine, {'at': FieldValue.serverTimestamp()});
-      batch.set(theirs, {'at': FieldValue.serverTimestamp()});
-      SocialService.addFollowNotification(
+    if (isPrivate) {
+      batch.set(_requestRef(targetUid, _user.uid),
+          {'at': FieldValue.serverTimestamp()});
+      SocialService.addFollowRequestNotification(
         batch: batch,
         recipientUid: targetUid,
         actorUid: _user.uid,
         actorUsername: username,
       );
+      await batch.commit();
+      return FollowState.requested;
     }
+    batch.set(
+        _db
+            .collection('users')
+            .doc(_user.uid)
+            .collection('following')
+            .doc(targetUid),
+        {'at': FieldValue.serverTimestamp()});
+    batch.set(
+        _db
+            .collection('users')
+            .doc(targetUid)
+            .collection('followers')
+            .doc(_user.uid),
+        {'at': FieldValue.serverTimestamp()});
+    SocialService.addFollowNotification(
+      batch: batch,
+      recipientUid: targetUid,
+      actorUid: _user.uid,
+      actorUsername: username,
+    );
     await batch.commit();
     notifyStatsChanged();
+    return FollowState.following;
+  }
+
+  static Future<void> unfollow(String targetUid) async {
+    final batch = _db.batch()
+      ..delete(_db
+          .collection('users')
+          .doc(_user.uid)
+          .collection('following')
+          .doc(targetUid))
+      ..delete(_db
+          .collection('users')
+          .doc(targetUid)
+          .collection('followers')
+          .doc(_user.uid));
+    await batch.commit();
+    notifyStatsChanged();
+  }
+
+  /// يلغي طلب متابعة أرسلته ولم يُقبل بعد.
+  static Future<void> cancelFollowRequest(String targetUid) =>
+      _requestRef(targetUid, _user.uid).delete();
+
+  /// للتوافق: يتابع أو يلغي المتابعة حسب [following] (الحالة الحالية).
+  static Future<void> toggleFollow(String targetUid, bool following) async {
+    if (following) {
+      await unfollow(targetUid);
+    } else {
+      await follow(targetUid);
+    }
+  }
+
+  // ===== طلبات المتابعة الواردة إلى حسابي الخاص =====
+  static Stream<List<String>> incomingFollowRequestIds() => _db
+      .collection('users')
+      .doc(_user.uid)
+      .collection('followRequests')
+      .snapshots()
+      .map((s) => s.docs.map((d) => d.id).toList());
+
+  static Stream<bool> hasIncomingRequest(String requesterUid) =>
+      _requestRef(_user.uid, requesterUid).snapshots().map((s) => s.exists);
+
+  static void _approveInto(WriteBatch batch, String requesterUid,
+      {required bool notify}) {
+    final me = _user.uid;
+    batch.set(
+        _db.collection('users').doc(me).collection('followers').doc(requesterUid),
+        {'at': FieldValue.serverTimestamp()});
+    batch.set(
+        _db.collection('users').doc(requesterUid).collection('following').doc(me),
+        {'at': FieldValue.serverTimestamp()});
+    batch.delete(_requestRef(me, requesterUid));
+    if (notify) {
+      SocialService.addFollowAcceptedNotification(
+        batch: batch,
+        recipientUid: requesterUid,
+        actorUid: me,
+        actorUsername: username,
+      );
+    }
+  }
+
+  /// يقبل طلب متابعة: يصبح صاحب الطلب متابِعاً فعلياً ويصله إشعار بالقبول.
+  static Future<void> approveFollowRequest(String requesterUid) async {
+    final batch = _db.batch();
+    _approveInto(batch, requesterUid, notify: true);
+    await batch.commit();
+    notifyStatsChanged();
+  }
+
+  /// يرفض طلب متابعة (يُحذف الطلب دون إشعار).
+  static Future<void> declineFollowRequest(String requesterUid) =>
+      _requestRef(_user.uid, requesterUid).delete();
+
+  /// عند تحويل الحساب إلى عام: تُقبل كل الطلبات المعلّقة تلقائياً.
+  static Future<void> approveAllFollowRequests() async {
+    final snapshot = await _db
+        .collection('users')
+        .doc(_user.uid)
+        .collection('followRequests')
+        .get();
+    final ids = snapshot.docs.map((d) => d.id).toList();
+    // حد قواعد Firestore: 20 عملية وصول للدفعة، وكل قبول يستهلك 2.
+    for (var i = 0; i < ids.length; i += 8) {
+      final batch = _db.batch();
+      for (final id in ids.skip(i).take(8)) {
+        _approveInto(batch, id, notify: false);
+      }
+      await batch.commit();
+    }
+    if (ids.isNotEmpty) notifyStatsChanged();
   }
 
   static Stream<List<String>> followerIds(String uid) => _db
