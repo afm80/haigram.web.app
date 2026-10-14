@@ -724,7 +724,8 @@ class FollowActionButton extends StatelessWidget {
             FollowState.requested => 'تم إرسال الطلب',
             FollowState.none => 'متابعة',
           },
-          style: TextStyle(fontSize: compact ? 11 : 14),
+          style: TextStyle(
+              fontSize: compact ? 14 : 15, fontWeight: FontWeight.w600),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         );
@@ -763,31 +764,12 @@ class _MessageActionButton extends StatefulWidget {
 }
 
 class _MessageActionButtonState extends State<_MessageActionButton> {
-  late Future<bool> _mutualFriendship =
-      SocialService.areMutualFriends(widget.uid);
   bool _opening = false;
 
   Future<void> _openChat() async {
     setState(() => _opening = true);
     try {
-      final conversationId = await SocialService.startConversation(widget.uid);
-      if (!mounted) return;
-      await rootNavigatorOf(context).push<void>(
-        appRoute<void>(
-          'chat',
-          {'cid': conversationId, 'uid': widget.uid},
-          (_) => ChatScreen(
-            conversationId: conversationId,
-            otherUid: widget.uid,
-          ),
-        ),
-      );
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر فتح المحادثة: $error')),
-        );
-      }
+      await openChatWith(context, widget.uid);
     } finally {
       if (mounted) setState(() => _opening = false);
     }
@@ -796,55 +778,52 @@ class _MessageActionButtonState extends State<_MessageActionButton> {
   @override
   Widget build(BuildContext context) {
     final colors = context.appColors;
-    return FutureBuilder<bool>(
-      future: _mutualFriendship,
-      builder: (context, snapshot) {
-        final canMessage = snapshot.data ?? false;
-        final button = OutlinedButton.icon(
-          onPressed: snapshot.hasError
-              ? () => ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                          'تعذر التحقق من إمكانية المراسلة: ${snapshot.error}'),
-                    ),
-                  )
-              : canMessage && !_opening
-                  ? _openChat
-                  : null,
-          icon: _opening || (!snapshot.hasData && !snapshot.hasError)
-              ? SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: colors.textDim,
-                  ),
-                )
-              : const Icon(Icons.chat_bubble_outline_rounded, size: 16),
-          label: const Text(
-            'مراسلة',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size.fromHeight(42),
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            backgroundColor: colors.surfaceHigh,
-            foregroundColor: colors.text,
-            side: BorderSide.none,
-            textStyle: const TextStyle(fontSize: 12),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-        );
-        if (!canMessage && !snapshot.hasError) {
-          return Tooltip(
-            message: 'تتاح المراسلة عندما يتابع كل منكما الآخر',
-            child: button,
-          );
-        }
-        return button;
-      },
+    return OutlinedButton.icon(
+      onPressed: _opening ? null : _openChat,
+      icon: _opening
+          ? SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: colors.textDim,
+              ),
+            )
+          : const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+      label: const Text(
+        'مراسلة',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size.fromHeight(42),
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        backgroundColor: colors.surfaceHigh,
+        foregroundColor: colors.text,
+        side: BorderSide.none,
+        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+}
+
+/// يبدأ (أو يفتح) محادثة مع مستخدم ويعرضها فوق الشريط السفلي.
+Future<void> openChatWith(BuildContext context, String uid) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final navigator = rootNavigatorOf(context);
+  try {
+    final conversationId = await SocialService.startConversation(uid);
+    await navigator.push<void>(
+      appRoute<void>(
+        'chat',
+        {'cid': conversationId, 'uid': uid},
+        (_) => ChatScreen(conversationId: conversationId, otherUid: uid),
+      ),
+    );
+  } catch (error) {
+    messenger.showSnackBar(
+      SnackBar(content: Text('تعذر فتح المحادثة: $error')),
     );
   }
 }
@@ -1276,13 +1255,42 @@ class _UserListState extends State<_UserList> {
                     // فيلتهم مساحة الاسم والصورة داخل ListTile.
                     trailing: isMe
                         ? null
-                        : SizedBox(
-                            width: 112,
-                            height: 38,
-                            child: Center(
-                              child: FollowActionButton(
-                                  uid: u.uid, compact: true),
-                            ),
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                width: 118,
+                                height: 38,
+                                child: Center(
+                                  child: FollowActionButton(
+                                      uid: u.uid, compact: true),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              SizedBox(
+                                width: 38,
+                                height: 38,
+                                child: IconButton(
+                                  tooltip: 'مراسلة',
+                                  padding: EdgeInsets.zero,
+                                  style: IconButton.styleFrom(
+                                    backgroundColor:
+                                        context.appColors.surfaceHigh,
+                                    foregroundColor: context.appColors.text,
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(10)),
+                                  ),
+                                  icon: const Icon(
+                                      Icons.chat_bubble_outline_rounded,
+                                      size: 18),
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                    openChatWith(widget.outerContext, u.uid);
+                                  },
+                                ),
+                              ),
+                            ],
                           ),
                   );
                 },
