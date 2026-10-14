@@ -1,27 +1,16 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../services/post_service.dart';
 import '../services/presence_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
 import 'post_widgets.dart' show timeAgo;
+import 'sticker_sheet.dart';
 import 'profile_screen.dart';
 import '../route_state.dart';
-
-const _commentStickers = [
-  '🥰',
-  '😂',
-  '😍',
-  '🥹',
-  '👍',
-  '👏',
-  '🔥',
-  '🥳',
-  '🤍',
-  '💯',
-  '🎉',
-  '😘',
-];
 
 /// يفتح ملف مستخدم (مثل تيك توك / إنستغرام).
 void openProfile(BuildContext context, String uid) {
@@ -159,36 +148,64 @@ class _CommentsSheet extends StatefulWidget {
 class _CommentsSheetState extends State<_CommentsSheet> {
   final _text = TextEditingController();
   bool _sending = false;
-  bool _showStickers = false;
+  final _picker = ImagePicker();
+  Uint8List? _pendingImage; // صورة مرفقة بانتظار الإرسال اليدوي
 
-  void _insertSticker(String sticker) {
-    final text = _text.text;
-    final selection = _text.selection;
-    final start = selection.isValid
-        ? selection.start.clamp(0, text.length).toInt()
-        : text.length;
-    final end = selection.isValid
-        ? selection.end.clamp(start, text.length).toInt()
-        : start;
-    _text.value = TextEditingValue(
-      text: text.replaceRange(start, end, sticker),
-      selection: TextSelection.collapsed(offset: start + sticker.length),
-    );
-    setState(() => _showStickers = false);
+  void _fail(String what, Object error) {
+    if (mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('$what: $error')));
+    }
   }
 
-  Future<void> _send() async {
+  void _post(String text,
+      {String kind = 'text',
+      Uint8List? imageBytes,
+      String failure = 'تعذر إرسال التعليق'}) {
+    PostService.addComment(
+      widget.post.id,
+      text,
+      ownerUid: widget.post.uid,
+      kind: kind,
+      imageBytes: imageBytes,
+    ).catchError((Object e) => _fail(failure, e));
+  }
+
+  /// يرسل ما في خانة الكتابة (نص/ملصق) والصورة المرفقة عند ضغط زر الإرسال فقط.
+  void _send() {
     final t = _text.text.trim();
-    if (t.isEmpty || _sending) return;
+    final image = _pendingImage;
+    if (t.isEmpty && image == null) return;
+    _text.clear();
+    setState(() => _pendingImage = null);
+    if (image != null) {
+      _post('📷 صورة',
+          kind: 'image', imageBytes: image, failure: 'تعذر إرسال الصورة');
+    }
+    if (t.isNotEmpty) {
+      _post(t, kind: isSingleSticker(t) ? 'sticker' : 'text');
+    }
+  }
+
+  Future<void> _pickImage() async {
+    if (_sending) return;
     setState(() => _sending = true);
     try {
-      await PostService.addComment(widget.post.id, t);
-      _text.clear();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('تعذر إرسال التعليق: $e')));
+      final image = await _picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1280,
+        maxHeight: 1280,
+        imageQuality: 70,
+      );
+      if (image == null) return;
+      final bytes = await image.readAsBytes();
+      if (bytes.length > 700 * 1024) {
+        _fail('تعذر إرفاق الصورة', 'حجم الصورة يجب ألا يتجاوز 700 كيلوبايت');
+        return;
       }
+      if (mounted) setState(() => _pendingImage = bytes);
+    } catch (e) {
+      _fail('تعذر إرفاق الصورة', e);
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -327,8 +344,29 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                     onLongPress: canDelete
                                         ? () => _showCommentActions(c)
                                         : null,
-                                    child: Text(c.text,
-                                        style: const TextStyle(height: 1.4)),
+                                    child: c.kind == 'image' &&
+                                            c.imageBytes != null
+                                        ? GestureDetector(
+                                            onTap: () => openFullScreenImage(
+                                                context, c.imageBytes!),
+                                            child: ClipRRect(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              child: Image.memory(
+                                                c.imageBytes!,
+                                                width: 180,
+                                                fit: BoxFit.cover,
+                                              ),
+                                            ),
+                                          )
+                                        : Text(
+                                            c.text,
+                                            style: TextStyle(
+                                              height: 1.4,
+                                              fontSize:
+                                                  c.kind == 'sticker' ? 40 : null,
+                                            ),
+                                          ),
                                   ),
                                   Row(
                                     mainAxisSize: MainAxisSize.min,
@@ -374,39 +412,10 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                 },
               ),
             ),
-            if (_showStickers)
-              SizedBox(
-                height: 104,
-                child: GridView.count(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  crossAxisCount: 6,
-                  mainAxisSpacing: 6,
-                  crossAxisSpacing: 8,
-                  children: [
-                    for (var i = 0; i < _commentStickers.length; i++)
-                      InkWell(
-                        onTap: () => _insertSticker(_commentStickers[i]),
-                        borderRadius: BorderRadius.circular(14),
-                        child: Container(
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: [
-                              const Color(0xFFFFE0E8),
-                              const Color(0xFFFFF0C2),
-                              const Color(0xFFE4DBFF),
-                              const Color(0xFFD8F5E8),
-                            ][i % 4],
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: Text(
-                            _commentStickers[i],
-                            style: const TextStyle(fontSize: 25),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
+            if (_pendingImage != null)
+              PendingImagePreview(
+                bytes: _pendingImage!,
+                onRemove: () => setState(() => _pendingImage = null),
               ),
             Divider(
                 height: 1, color: context.appColors.text.withOpacity(0.12)),
@@ -422,18 +431,26 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                         radius: 17),
                     const SizedBox(width: 10),
                     IconButton(
-                      tooltip: _showStickers ? 'إخفاء الملصقات' : 'الملصقات',
+                      tooltip: 'الملصقات',
                       visualDensity: VisualDensity.compact,
                       onPressed: () {
                         FocusScope.of(context).unfocus();
-                        setState(() => _showStickers = !_showStickers);
+                        showStickerSheet(
+                          context,
+                          useRootNavigator: true,
+                          onPick: (sticker) =>
+                              insertAtCursor(_text, sticker),
+                        );
                       },
-                      icon: Icon(
-                        _showStickers
-                            ? Icons.keyboard_rounded
-                            : Icons.emoji_emotions_outlined,
-                        color: AppColors.accent,
-                      ),
+                      icon: const Icon(Icons.emoji_emotions_outlined,
+                          color: AppColors.accent),
+                    ),
+                    IconButton(
+                      tooltip: 'إرسال صورة',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: _sending ? null : _pickImage,
+                      icon: const Icon(Icons.image_outlined,
+                          color: AppColors.accent),
                     ),
                     Expanded(
                       child: TextField(
@@ -441,11 +458,6 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                         maxLength: 500,
                         textInputAction: TextInputAction.send,
                         onSubmitted: (_) => _send(),
-                        onTap: () {
-                          if (_showStickers) {
-                            setState(() => _showStickers = false);
-                          }
-                        },
                         decoration: const InputDecoration(
                           hintText: 'أضف تعليقاً...',
                           counterText: '',
@@ -457,7 +469,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                     ),
                     const SizedBox(width: 6),
                     IconButton(
-                      onPressed: _sending ? null : _send,
+                      onPressed: _send,
                       icon: const Icon(Icons.send_rounded,
                           color: AppColors.accent),
                     ),
@@ -538,6 +550,90 @@ class _LikeBuilderState extends State<LikeBuilder> {
           },
         );
       },
+    );
+  }
+}
+
+/// يفتح الصورة بملء الشاشة (تكبير بالقرص، إغلاق بالنقر أو زر ✕).
+void openFullScreenImage(BuildContext context, Uint8List bytes) {
+  Navigator.of(context, rootNavigator: true).push(
+    MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (_) => FullScreenImageViewer(bytes: bytes),
+    ),
+  );
+}
+
+class FullScreenImageViewer extends StatelessWidget {
+  final Uint8List bytes;
+  const FullScreenImageViewer({super.key, required this.bytes});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          tooltip: 'إغلاق',
+          icon: const Icon(Icons.close_rounded),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => Navigator.of(context).pop(),
+        child: SizedBox.expand(
+          child: InteractiveViewer(
+            minScale: 1,
+            maxScale: 5,
+            child: Center(child: Image.memory(bytes, fit: BoxFit.contain)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// معاينة صورة مرفقة داخل شريط الكتابة مع زر إزالة، قبل الإرسال اليدوي.
+class PendingImagePreview extends StatelessWidget {
+  final Uint8List bytes;
+  final VoidCallback onRemove;
+  const PendingImagePreview(
+      {super.key, required this.bytes, required this.onRemove});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+      alignment: AlignmentDirectional.centerStart,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.memory(bytes, height: 90, fit: BoxFit.cover),
+          ),
+          PositionedDirectional(
+            top: -6,
+            end: -6,
+            child: GestureDetector(
+              onTap: onRemove,
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: const BoxDecoration(
+                    color: Colors.black87, shape: BoxShape.circle),
+                child: const Icon(Icons.close_rounded,
+                    size: 16, color: Colors.white),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
