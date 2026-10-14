@@ -10,11 +10,12 @@ import '../services/social_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
-import 'post_widgets.dart' show PostDetailScreen, timeAgo;
-import 'profile_screen.dart' show openChatWith;
+import 'post_widgets.dart' show PostDetailScreen, PostImage, timeAgo;
+import 'profile_screen.dart' show FollowActionButton, openChatWith;
 import 'sticker_sheet.dart';
 import 'story_widgets.dart' show StoryViewed, StoryViewer;
 import 'video_feed_screen.dart' show VideoViewerScreen;
+import 'video_thumbnail.dart';
 import '../route_state.dart';
 
 /// صندوق البريد (على طريقة تيكتوك): صف الأصدقاء، ثم المتابعون والإعجابات
@@ -1419,9 +1420,23 @@ class _NewFollowersTabState extends State<_NewFollowersTab> {
     final colors = context.appColors;
     final items = widget.items;
     if (items.isEmpty) {
-      return const _MessageState(
-        message: 'لا يوجد متابعون جدد',
-        icon: Icons.person_add_alt_1_rounded,
+      return ListView(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 36),
+            child: Column(
+              children: [
+                Icon(Icons.person_add_alt_1_rounded,
+                    size: 50, color: colors.textDim),
+                const SizedBox(height: 12),
+                Text('لا يوجد متابعون جدد',
+                    style: TextStyle(color: colors.textDim)),
+              ],
+            ),
+          ),
+          const _SuggestedAccounts(),
+          const SizedBox(height: 24),
+        ],
       );
     }
     final shown = _expanded ? items : items.take(_collapsedCount).toList();
@@ -1448,6 +1463,7 @@ class _NewFollowersTabState extends State<_NewFollowersTab> {
             label: Text(_expanded ? 'عرض أقل' : 'عرض الكل',
                 style: TextStyle(color: colors.textDim)),
           ),
+        const _SuggestedAccounts(),
         const SizedBox(height: 24),
       ],
     );
@@ -1534,6 +1550,228 @@ class _FollowBackButton extends StatelessWidget {
               FollowState.following => 'مراسلة',
             },
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// حساب مقترح مع سبب الاقتراح.
+class _Suggestion {
+  final AppUser user;
+  final String reason;
+  const _Suggestion(this.user, this.reason);
+}
+
+/// «حسابات مقترحة»: أولاً من يتابعهم من أتابعهم، ثم أصحاب آخر المنشورات.
+class _SuggestedAccounts extends StatefulWidget {
+  const _SuggestedAccounts();
+
+  @override
+  State<_SuggestedAccounts> createState() => _SuggestedAccountsState();
+}
+
+class _SuggestedAccountsState extends State<_SuggestedAccounts> {
+  static const _maxSuggestions = 8;
+  late final Future<List<_Suggestion>> _future = _load();
+  final Set<String> _dismissed = {};
+
+  Future<List<_Suggestion>> _load() async {
+    final me = PostService.uidOrEmpty;
+    final following = (await PostService.followingIdsOnce(me)).toSet();
+    final known = {me, ...following};
+
+    // 1) من يتابعهم من أتابعهم (حتى 10 حسابات للعيّنة).
+    final counts = <String, int>{};
+    final sample = following.take(10).toList();
+    final lists = await Future.wait(sample.map((uid) async {
+      try {
+        return await PostService.followingIdsOnce(uid);
+      } catch (_) {
+        return const <String>[];
+      }
+    }));
+    for (final ids in lists) {
+      for (final id in ids) {
+        if (!known.contains(id)) counts[id] = (counts[id] ?? 0) + 1;
+      }
+    }
+    final ranked = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final candidates = <String, String>{
+      for (final e in ranked) e.key: 'أشخاص قد تعرفهم',
+    };
+
+    // 2) تكملة من أصحاب أحدث الفيديوهات.
+    if (candidates.length < _maxSuggestions) {
+      try {
+        final recent = await PostService.trendingVideos();
+        for (final post in recent) {
+          if (!known.contains(post.uid) && !candidates.containsKey(post.uid)) {
+            candidates[post.uid] = 'مقترح لك';
+          }
+        }
+      } catch (_) {}
+    }
+
+    final result = <_Suggestion>[];
+    for (final entry in candidates.entries) {
+      if (result.length >= _maxSuggestions) break;
+      try {
+        if (await SocialService.isBlockedEither(entry.key)) continue;
+        final user = await UserService.profileOf(entry.key);
+        if (user != null) result.add(_Suggestion(user, entry.value));
+      } catch (_) {}
+    }
+    return result;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return FutureBuilder<List<_Suggestion>>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          );
+        }
+        final items = (snapshot.data ?? const <_Suggestion>[])
+            .where((s) => !_dismissed.contains(s.user.uid))
+            .toList();
+        if (items.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 4),
+              child: Text('حسابات مقترحة',
+                  style: TextStyle(
+                      color: colors.textDim, fontWeight: FontWeight.w700)),
+            ),
+            for (final item in items)
+              _SuggestionCard(
+                key: ValueKey(item.user.uid),
+                suggestion: item,
+                onDismiss: () =>
+                    setState(() => _dismissed.add(item.user.uid)),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _SuggestionCard extends StatelessWidget {
+  final _Suggestion suggestion;
+  final VoidCallback onDismiss;
+
+  const _SuggestionCard(
+      {super.key, required this.suggestion, required this.onDismiss});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final user = suggestion.user;
+    return Column(
+      children: [
+        ListTile(
+          onTap: () => openProfile(context, user.uid),
+          leading: UserAvatar(
+            uid: user.uid,
+            fallbackName: user.username,
+            profile: user,
+            radius: 24,
+          ),
+          title: Text(user.displayName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: Text('@${user.username} · ${suggestion.reason}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: colors.textDim, fontSize: 12)),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 100,
+                height: 38,
+                child: Center(
+                  child: FollowActionButton(uid: user.uid, compact: true),
+                ),
+              ),
+              IconButton(
+                tooltip: 'إخفاء',
+                onPressed: onDismiss,
+                icon: Icon(Icons.close_rounded, color: colors.textDim),
+              ),
+            ],
+          ),
+        ),
+        if (!user.isPrivate) _SuggestionThumbs(uid: user.uid),
+        Divider(height: 20, color: colors.surfaceHigh),
+      ],
+    );
+  }
+}
+
+/// حتى 4 صور مصغّرة من أحدث منشورات الحساب المقترح.
+class _SuggestionThumbs extends StatefulWidget {
+  final String uid;
+  const _SuggestionThumbs({required this.uid});
+
+  @override
+  State<_SuggestionThumbs> createState() => _SuggestionThumbsState();
+}
+
+class _SuggestionThumbsState extends State<_SuggestionThumbs> {
+  late final Future<List<Post>> _posts = _load();
+
+  Future<List<Post>> _load() async {
+    try {
+      final posts = await PostService.profilePosts(widget.uid, limit: 8).first;
+      return posts
+          .where((p) => p.type == PostType.photo || p.type == PostType.video)
+          .take(4)
+          .toList();
+    } catch (_) {
+      return const <Post>[];
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Post>>(
+      future: _posts,
+      builder: (context, snapshot) {
+        final posts = snapshot.data ?? const <Post>[];
+        if (posts.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              for (var i = 0; i < 4; i++) ...[
+                if (i > 0) const SizedBox(width: 4),
+                Expanded(
+                  child: AspectRatio(
+                    aspectRatio: 3 / 4,
+                    child: i < posts.length
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: posts[i].type == PostType.video
+                                ? VideoThumbnail(post: posts[i])
+                                : PostImage(post: posts[i]),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ),
+              ],
+            ],
           ),
         );
       },
