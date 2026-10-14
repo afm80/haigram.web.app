@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -6,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart' show ValueNotifier;
+import 'package:http/http.dart' as http;
 
 import '../web_trim.dart';
 import 'social_service.dart';
@@ -31,6 +33,9 @@ class Post {
   final double? cropDy;
   final int chunks;
   final String mime;
+
+  /// صورة JPEG مصغّرة صغيرة للفيديو (للشبكات)، أو null للمنشورات القديمة.
+  final Uint8List? thumb;
   final int likes;
   final int views;
   final int comments;
@@ -53,6 +58,7 @@ class Post {
     this.cropDy,
     this.chunks = 0,
     this.mime = 'video/mp4',
+    this.thumb,
     required this.likes,
     required this.views,
     this.comments = 0,
@@ -79,6 +85,7 @@ class Post {
       cropDy: (m['cropDy'] as num?)?.toDouble(),
       chunks: (m['chunks'] ?? 0) as int,
       mime: m['mime'] ?? 'video/mp4',
+      thumb: (m['thumb'] as Blob?)?.bytes,
       likes: (m['likes'] ?? 0) as int,
       views: (m['views'] ?? 0) as int,
       comments: (m['comments'] ?? 0) as int,
@@ -106,6 +113,29 @@ class PostService {
   /// true  = Firebase Storage (يتطلب خطة Blaze). فعّله بـ --dart-define=USE_STORAGE=true
   static const useStorage = bool.fromEnvironment('USE_STORAGE');
   static const _chunkSize = 900 * 1024; // أقل من حد مستند Firestore (1MB)
+
+  /// Cloudinary (مجاني): رفع غير موقّع عبر upload preset. يُفعَّل بتمرير
+  /// --dart-define=CLOUDINARY_CLOUD_NAME=... --dart-define=CLOUDINARY_UPLOAD_PRESET=...
+  /// وإن لم تُمرَّر القيمتان يعمل التطبيق كما كان (Firebase Storage أو Firestore).
+  static const cloudinaryCloud = String.fromEnvironment('CLOUDINARY_CLOUD_NAME');
+  static const cloudinaryPreset =
+      String.fromEnvironment('CLOUDINARY_UPLOAD_PRESET');
+  static bool get useCloudinary =>
+      cloudinaryCloud.isNotEmpty && cloudinaryPreset.isNotEmpty;
+
+  /// هل الوسائط تُخزَّن خارج Firestore (رابط مباشر)؟ تحدد حدود الحجم.
+  static bool get useRemoteMedia => useCloudinary || useStorage;
+
+  static bool isCloudinaryUrl(String url) =>
+      url.startsWith('https://res.cloudinary.com/');
+
+  /// رابط صورة مُحسَّن من Cloudinary (صيغة وجودة تلقائية وعرض محدد).
+  /// الروابط الأخرى تُرجَع كما هي.
+  static String optimizedImageUrl(String url, int width) {
+    const marker = '/image/upload/';
+    if (!isCloudinaryUrl(url) || !url.contains(marker)) return url;
+    return url.replaceFirst(marker, '${marker}f_auto,q_auto,w_$width/');
+  }
   static final _db = FirebaseFirestore.instance;
   static final _storage = FirebaseStorage.instance;
   static User get _user => FirebaseAuth.instance.currentUser!;
@@ -170,11 +200,24 @@ class PostService {
         .toList();
   }
 
+  // الأكثر رواجاً: نخزّن النتيجة 5 دقائق في الذاكرة ونقرأ 60 منشوراً فقط
+  // (كان 150 لكل فتح لصفحة الاستكشاف) لتوفير قراءات Firebase.
+  static const _trendingTtl = Duration(minutes: 5);
+  static const _trendingReadLimit = 60;
+  static DateTime? _tagsAt;
+  static Map<String, int>? _tagsCache;
+  static DateTime? _videosAt;
+  static List<Post>? _videosCache;
+
+  static bool _fresh(DateTime? at) =>
+      at != null && DateTime.now().difference(at) < _trendingTtl;
+
   static Future<Map<String, int>> trendingTags() async {
+    if (_fresh(_tagsAt) && _tagsCache != null) return _tagsCache!;
     final snap = await _db
         .collection('posts')
         .orderBy('createdAt', descending: true)
-        .limit(150)
+        .limit(_trendingReadLimit)
         .get();
     final counts = <String, int>{};
     for (final d in snap.docs) {
@@ -186,15 +229,18 @@ class PostService {
     }
     final sorted = counts.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
-    return Map.fromEntries(sorted.take(15));
+    _tagsCache = Map.fromEntries(sorted.take(15));
+    _tagsAt = DateTime.now();
+    return _tagsCache!;
   }
 
   static Future<List<Post>> trendingVideos() async {
+    if (_fresh(_videosAt) && _videosCache != null) return _videosCache!;
     final snap = await _db
         .collection('posts')
         .where('type', isEqualTo: PostType.video.name)
         .orderBy('createdAt', descending: true)
-        .limit(150)
+        .limit(_trendingReadLimit)
         .get();
     final videos = snap.docs.map(Post.fromDoc).toList()
       ..sort((a, b) {
@@ -205,7 +251,9 @@ class PostService {
             ? byEngagement
             : b.createdAt.compareTo(a.createdAt);
       });
-    return videos.take(30).toList();
+    _videosCache = videos.take(30).toList();
+    _videosAt = DateTime.now();
+    return _videosCache!;
   }
 
   static Future<Post?> postById(String postId) async {
@@ -264,6 +312,36 @@ class PostService {
     return ref.getDownloadURL();
   }
 
+  /// يرفع الملف إلى Cloudinary ويعيد الرابط المباشر (https).
+  /// ملاحظة: التقدم هنا ثنائي (يبدأ 0 وينتهي 1) لأن حزمة http لا تعطي تقدّم الرفع.
+  static Future<String> _uploadCloudinary(
+      Uint8List bytes, String mime, String ext) async {
+    final resource = mime.startsWith('video/') ? 'video' : 'image';
+    final fileExt = ext == 'quicktime' ? 'mov' : ext;
+    final uri = Uri.https(
+        'api.cloudinary.com', '/v1_1/$cloudinaryCloud/$resource/upload');
+    final request = http.MultipartRequest('POST', uri)
+      ..fields['upload_preset'] = cloudinaryPreset
+      ..files.add(http.MultipartFile.fromBytes('file', bytes,
+          filename: '${_stamp()}.$fileExt'));
+    final streamed = await request.send().timeout(const Duration(minutes: 5));
+    final body = await streamed.stream.bytesToString();
+    Map<String, dynamic> json = const {};
+    try {
+      json = jsonDecode(body) as Map<String, dynamic>;
+    } catch (_) {}
+    if (streamed.statusCode != 200) {
+      final message = (json['error'] is Map ? json['error']['message'] : null) ??
+          'HTTP ${streamed.statusCode}';
+      throw StateError('فشل الرفع إلى Cloudinary: $message');
+    }
+    final url = json['secure_url'] as String?;
+    if (url == null || url.isEmpty) {
+      throw StateError('لم يُرجع Cloudinary رابط الملف');
+    }
+    return url;
+  }
+
   /// وضع التجربة: يقسّم الملف إلى قطع ويحفظها في مجموعة media.
   static Future<String> _storeInFirestore(
       Uint8List bytes, void Function(double)? onProgress) async {
@@ -305,6 +383,13 @@ class PostService {
     final url = post.mediaUrl;
     if (url == null || url.isEmpty) {
       throw StateError('ملف الفيديو غير متاح للتنزيل');
+    }
+    if (isCloudinaryUrl(url)) {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode != 200) {
+        throw StateError('تعذر تنزيل بيانات الفيديو (${response.statusCode})');
+      }
+      return response.bodyBytes;
     }
     final bytes = await _storage.refFromURL(url).getData(300 * 1024 * 1024);
     if (bytes == null) throw StateError('تعذر تنزيل بيانات الفيديو');
@@ -371,16 +456,29 @@ class PostService {
     required String ext,
     required String caption,
     required void Function(double) onProgress,
+    Uint8List? thumb,
     String? soundPostId,
     String? soundUsername,
     Map<String, dynamic> extra = const {},
   }) async {
+    if (thumb != null && thumb.isNotEmpty && thumb.length <= 60 * 1024) {
+      extra = {...extra, 'thumb': Blob(thumb)};
+    }
     if (soundPostId != null &&
         type != PostType.video &&
         type != PostType.story) {
       throw ArgumentError('Only videos and stories can reuse audio');
     }
-    if (useStorage) {
+    if (useCloudinary) {
+      onProgress(0);
+      final url = await _uploadCloudinary(bytes, mime, ext);
+      onProgress(1);
+      await _create(type, caption, url,
+          mime: mime,
+          soundPostId: soundPostId,
+          soundUsername: soundUsername,
+          extra: extra);
+    } else if (useStorage) {
       final folder = mime.startsWith('video/') ? 'videos' : 'photos';
       final url = await _upload(
           bytes, '$folder/${_user.uid}/${_stamp()}.$ext', mime, onProgress);
