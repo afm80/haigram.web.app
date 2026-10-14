@@ -146,6 +146,46 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     );
   }
 
+  /// زر البث المباشر (واجهة مبدئية): يظهر أعلى اليمين كما في تيك توك،
+  /// وعند الضغط يعرض رسالة "قريباً" فقط حتى تتوفر خدمة البث.
+  Widget _liveButton() {
+    return GestureDetector(
+      onTap: () => showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('البث المباشر قريباً 🎥'),
+          content: const Text('نعمل عليه، ترقّب التفعيل'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('حسناً'),
+            ),
+          ],
+        ),
+      ),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 48,
+        alignment: Alignment.center,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFE2C55),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: const Text(
+            'LIVE',
+            style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+                letterSpacing: 0.5),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _topBar() {
     Widget tab(String label, bool selected, VoidCallback onTap) =>
         GestureDetector(
@@ -193,7 +233,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       ),
       child: Row(
         children: [
-          const SizedBox(width: 48),
+          _liveButton(),
           Expanded(
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
