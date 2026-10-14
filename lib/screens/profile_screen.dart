@@ -147,7 +147,8 @@ class _ProfileViewState extends State<ProfileView> {
         _Access.privateLocked => const EmptyState(
             icon: Icons.lock_outline_rounded,
             title: 'هذا الحساب خاص',
-            message: 'تابع هذا الحساب لتشاهد منشوراته ومقاطعه.',
+            message:
+                'أرسل طلب متابعة، وعند موافقة صاحب الحساب ستشاهد منشوراته ومقاطعه.',
           ),
         _Access.blockedByMe => const EmptyState(
             icon: Icons.block,
@@ -660,22 +661,34 @@ class FollowActionButton extends StatelessWidget {
     this.compact = false,
   });
 
-  Future<void> _toggle(BuildContext context, bool following) async {
+  Future<void> _onPressed(BuildContext context, FollowState state) async {
+    final messenger = ScaffoldMessenger.of(context);
     try {
-      await PostService.toggleFollow(uid, following);
-    } catch (error) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر تحديث المتابعة: $error')),
-        );
+      switch (state) {
+        case FollowState.following:
+          await PostService.unfollow(uid);
+        case FollowState.requested:
+          await PostService.cancelFollowRequest(uid);
+          messenger.showSnackBar(
+              const SnackBar(content: Text('تم إلغاء طلب المتابعة')));
+        case FollowState.none:
+          final result = await PostService.follow(uid);
+          if (result == FollowState.requested) {
+            messenger.showSnackBar(const SnackBar(
+                content: Text('تم إرسال طلب المتابعة، بانتظار الموافقة')));
+          }
       }
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('تعذر تحديث المتابعة: $error')),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<bool>(
-      stream: PostService.isFollowing(uid),
+    return StreamBuilder<FollowState>(
+      stream: PostService.followState(uid),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Text(
@@ -694,33 +707,42 @@ class FollowActionButton extends StatelessWidget {
           );
         }
 
-        final following = snapshot.data!;
+        final state = snapshot.data!;
+        final neutral = state != FollowState.none;
         final style = FilledButton.styleFrom(
           minimumSize: const Size.fromHeight(42),
           padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 14),
           backgroundColor:
-              following ? context.appColors.surfaceHigh : AppColors.brandRed,
-          foregroundColor: following ? context.appColors.text : Colors.white,
+              neutral ? context.appColors.surfaceHigh : AppColors.brandRed,
+          foregroundColor: neutral ? context.appColors.text : Colors.white,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         );
         final label = Text(
-          following ? 'إلغاء المتابعة' : 'متابعة',
+          switch (state) {
+            FollowState.following => 'إلغاء المتابعة',
+            FollowState.requested => 'تم إرسال الطلب',
+            FollowState.none => 'متابعة',
+          },
           style: TextStyle(fontSize: compact ? 11 : 14),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         );
         if (compact) {
           return FilledButton(
-            onPressed: () => _toggle(context, following),
+            onPressed: () => _onPressed(context, state),
             style: style,
             child: label,
           );
         }
         return FilledButton.icon(
-          onPressed: () => _toggle(context, following),
+          onPressed: () => _onPressed(context, state),
           icon: Icon(
-            following ? Icons.person_remove_alt_1 : Icons.person_add_alt_1,
+            switch (state) {
+              FollowState.following => Icons.person_remove_alt_1,
+              FollowState.requested => Icons.hourglass_top_rounded,
+              FollowState.none => Icons.person_add_alt_1,
+            },
             size: 18,
           ),
           label: label,

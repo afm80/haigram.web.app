@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/post_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
 import '../route_state.dart';
@@ -164,6 +165,10 @@ class _PrivacySectionState extends State<_PrivacySection> {
     try {
       await UserService.updatePrivacy(
           isPrivate: isPrivate, hideLikes: hideLikes);
+      if (isPrivate == false) {
+        // الحساب أصبح عاماً: تُقبل الطلبات المعلّقة تلقائياً.
+        await PostService.approveAllFollowRequests();
+      }
     } catch (error) {
       messenger.showSnackBar(
         SnackBar(content: Text('تعذر حفظ الإعداد: $error')),
@@ -191,7 +196,7 @@ class _PrivacySectionState extends State<_PrivacySection> {
                 secondary: const Icon(Icons.lock_outline_rounded),
                 title: const Text('حساب خاص'),
                 subtitle: Text(
-                  'منشوراتك ومقاطعك تظهر لمتابعيك فقط',
+                  'منشوراتك ومقاطعك تظهر لمتابعيك فقط، ومن يريد متابعتك يرسل طلباً تقبله أنت',
                   style: dim(),
                 ),
                 value: user?.isPrivate ?? false,

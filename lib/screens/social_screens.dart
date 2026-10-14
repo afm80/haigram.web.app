@@ -195,6 +195,13 @@ class _ActivityCategory {
 
 const _activityCategories = [
   _ActivityCategory(
+    type: 'followRequest',
+    title: 'طلبات المتابعة',
+    emptyText: 'لا توجد طلبات متابعة',
+    icon: Icons.how_to_reg_rounded,
+    color: AppColors.accent,
+  ),
+  _ActivityCategory(
     type: 'follow',
     title: 'المتابعون',
     emptyText: 'لا يوجد متابعون جدد',
@@ -239,7 +246,9 @@ class _ActivityTilesState extends State<_ActivityTiles> {
             for (final category in _activityCategories)
               _ActivityTile(
                 category: category,
-                items: all.where((n) => n.type == category.type).toList(),
+                items: all
+                    .where((n) => _matchesCategory(n, category.type))
+                    .toList(),
               ),
           ],
         );
@@ -317,10 +326,18 @@ class _ActivityTile extends StatelessWidget {
   }
 }
 
+/// «المتابعون» يشمل المتابعة المباشرة وقبول طلباتي.
+bool _matchesCategory(SocialNotification n, String type) =>
+    n.type == type || (type == 'follow' && n.type == 'followAccepted');
+
 String _notificationMessage(SocialNotification notification) {
   switch (notification.type) {
     case 'follow':
       return 'بدأ بمتابعتك';
+    case 'followRequest':
+      return 'يريد متابعتك';
+    case 'followAccepted':
+      return 'قبل طلب متابعتك';
     case 'like':
       return 'أعجب بمنشورك';
     case 'comment':
@@ -1163,7 +1180,9 @@ Future<void> _openNotification(
     });
   }
 
-  if (notification.type == 'follow') {
+  if (notification.type == 'follow' ||
+      notification.type == 'followRequest' ||
+      notification.type == 'followAccepted') {
     openProfile(context, notification.actorUid);
     return;
   }
@@ -1260,7 +1279,9 @@ class NotificationsScreen extends StatelessWidget {
           }
           final notifications = type == null
               ? snapshot.data!
-              : snapshot.data!.where((n) => n.type == type).toList();
+              : snapshot.data!
+                  .where((n) => _matchesCategory(n, type!))
+                  .toList();
           if (notifications.isEmpty) {
             return const _MessageState(
               message: 'لا توجد إشعارات بعد',
@@ -1298,10 +1319,12 @@ class NotificationsScreen extends StatelessWidget {
                   timeAgo(notification.createdAt),
                   style: TextStyle(color: colors.textDim, fontSize: 12),
                 ),
-                trailing: notification.read
-                    ? null
-                    : const Icon(Icons.circle,
-                        color: AppColors.accent, size: 9),
+                trailing: notification.type == 'followRequest'
+                    ? _FollowRequestActions(requesterUid: notification.actorUid)
+                    : notification.read
+                        ? null
+                        : const Icon(Icons.circle,
+                            color: AppColors.accent, size: 9),
                 tileColor:
                     notification.read ? null : colors.surface.withOpacity(0.7),
               );
@@ -1309,6 +1332,78 @@ class NotificationsScreen extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+/// أزرار قبول/رفض طلب متابعة وارد (تظهر فقط ما دام الطلب معلّقاً).
+class _FollowRequestActions extends StatefulWidget {
+  final String requesterUid;
+
+  const _FollowRequestActions({required this.requesterUid});
+
+  @override
+  State<_FollowRequestActions> createState() => _FollowRequestActionsState();
+}
+
+class _FollowRequestActionsState extends State<_FollowRequestActions> {
+  late final Stream<bool> _pending =
+      PostService.hasIncomingRequest(widget.requesterUid);
+  bool _busy = false;
+
+  Future<void> _run(Future<void> Function() action) async {
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      await action();
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text('تعذر تنفيذ الإجراء: $error')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return StreamBuilder<bool>(
+      stream: _pending,
+      builder: (context, snapshot) {
+        if (snapshot.data != true) {
+          return Text('تمت المعالجة',
+              style: TextStyle(color: colors.textDim, fontSize: 12));
+        }
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FilledButton(
+              onPressed: _busy
+                  ? null
+                  : () => _run(() =>
+                      PostService.approveFollowRequest(widget.requesterUid)),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.brandRed,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(0, 34),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+              ),
+              child: const Text('قبول', style: TextStyle(fontSize: 12)),
+            ),
+            const SizedBox(width: 6),
+            OutlinedButton(
+              onPressed: _busy
+                  ? null
+                  : () => _run(() =>
+                      PostService.declineFollowRequest(widget.requesterUid)),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(0, 34),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+              ),
+              child: const Text('رفض', style: TextStyle(fontSize: 12)),
+            ),
+          ],
+        );
+      },
     );
   }
 }
