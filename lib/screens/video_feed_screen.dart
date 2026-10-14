@@ -600,6 +600,8 @@ class _VideoPageState extends State<_VideoPage>
   bool _appResumed = true;
   bool _resumeAfterLifecycle = false;
   bool _userPaused = false; // أوقفه المستخدم يدوياً بالنقر
+  bool _viewCounted = false;
+  Timer? _viewTimer;
   bool _showLikeFeedback = false;
   bool _likeInProgress = false;
   bool _mainMutedBySound = false;
@@ -693,8 +695,21 @@ class _VideoPageState extends State<_VideoPage>
     _sync();
   }
 
+  /// تُحسب مشاهدة بعد ثانيتين من التشغيل الفعلي (مرة واحدة لكل مستخدم).
+  void _scheduleView(bool playingNow) {
+    if (_viewCounted) return;
+    _viewTimer?.cancel();
+    if (!playingNow) return;
+    _viewTimer = Timer(const Duration(seconds: 2), () {
+      if (!mounted || _viewCounted) return;
+      _viewCounted = true;
+      unawaited(PostService.registerView(widget.post));
+    });
+  }
+
   void _sync() {
     if (!_ready) return;
+    _scheduleView(widget.playing && _appResumed && !_userPaused);
     if (widget.playing && _appResumed && !_userPaused) {
       _vc!.play();
       if (_soundVc != null) _soundVc!.play();
@@ -729,6 +744,7 @@ class _VideoPageState extends State<_VideoPage>
     _vc?.dispose();
     _soundVc?.dispose();
     _likeFeedbackTimer?.cancel();
+    _viewTimer?.cancel();
     _disc.dispose();
     super.dispose();
   }
@@ -736,6 +752,7 @@ class _VideoPageState extends State<_VideoPage>
   void _togglePlay() {
     if (!_ready) return;
     final shouldPlay = !_vc!.value.isPlaying;
+    _scheduleView(shouldPlay);
     setState(() {
       _userPaused = !shouldPlay;
       if (shouldPlay) {
