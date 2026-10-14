@@ -10,6 +10,7 @@ import '../theme.dart';
 import 'common_widgets.dart';
 import 'profile_screen.dart';
 import 'share_sheet.dart';
+import 'sound_story.dart';
 import 'video_thumbnail.dart';
 import '../route_state.dart';
 
@@ -234,8 +235,51 @@ class SoundScreen extends StatelessWidget {
 
   const SoundScreen({super.key, required this.sound});
 
-  void _useSound(BuildContext context, CreateKind kind) =>
-      startCreate(context, kind, sound: sound);
+  /// نشر إلى قصة: معاينة فيديو الصوت الأصلي مع إمكانية التحريك والتكبير.
+  void _shareToStory(BuildContext context) =>
+      Navigator.of(context, rootNavigator: true).push<void>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => SoundStoryEditor(sound: sound),
+        ),
+      );
+
+  /// استخدام الصوت: اختيار فيديو (ريلز) أو صورة (قصة بالصوت) ثم التعديل.
+  void _useSound(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: context.appColors.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const Icon(Icons.videocam_rounded),
+              title: const Text('إضافة فيديو'),
+              subtitle: const Text('ريلز جديد بهذا الصوت (مع القص والتعديل)'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                startCreate(context, CreateKind.reel, sound: sound);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_outlined),
+              title: const Text('إضافة صورة'),
+              subtitle: const Text('تُنشر كقصة يُشغَّل خلفها هذا الصوت'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                startCreate(context, CreateKind.story, sound: sound);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
 
   Future<void> _toggleSaved(BuildContext context, bool saved) async {
     final messenger = ScaffoldMessenger.of(context);
@@ -436,7 +480,7 @@ class SoundScreen extends StatelessWidget {
             children: [
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: () => _useSound(context, CreateKind.story),
+                  onPressed: () => _shareToStory(context),
                   icon: const Icon(Icons.add_circle_outline_rounded),
                   label: const Text('نشر إلى قصة'),
                   style: FilledButton.styleFrom(
@@ -451,7 +495,7 @@ class SoundScreen extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: () => _useSound(context, CreateKind.reel),
+                  onPressed: () => _useSound(context),
                   icon: const Icon(Icons.videocam_rounded),
                   label: const Text('استخدام الصوت'),
                   style: FilledButton.styleFrom(
@@ -1141,7 +1185,8 @@ class _VideoPageState extends State<_VideoPage>
         (MediaQuery.sizeOf(context).height / 700).clamp(0.72, 1.0).toDouble();
     return Positioned(
       left: 10,
-      bottom: widget.bottomBase * actionScale - 8,
+      // فوق مسار تقدم الفيديو حتى لا يغطيه قرص الصوت.
+      bottom: widget.bottomBase * actionScale + 22,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

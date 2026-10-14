@@ -559,9 +559,39 @@ class _StoryMediaState extends State<_StoryMedia> {
     if (widget.story.isVideoMedia) {
       final vc = _vc;
       if (vc != null) {
-        body = Center(
-            child: AspectRatio(
-                aspectRatio: vc.value.aspectRatio, child: VideoPlayer(vc)));
+        final scale = widget.story.cropScale;
+        if (scale != null) {
+          // قصة منشورة من صفحة الصوت مع تكبير/إزاحة محفوظين.
+          body = LayoutBuilder(builder: (context, c) {
+            final fw = c.maxWidth;
+            final fh = c.maxHeight;
+            final a = vc.value.aspectRatio;
+            final double w = a > fw / fh ? fh * a : fw;
+            final double h = a > fw / fh ? fh : fw / a;
+            final m = Matrix4.identity()
+              ..translate((widget.story.cropDx ?? 0) * fw,
+                  (widget.story.cropDy ?? 0) * fh)
+              ..scale(scale);
+            return ClipRect(
+              child: OverflowBox(
+                alignment: Alignment.topLeft,
+                minWidth: w,
+                maxWidth: w,
+                minHeight: h,
+                maxHeight: h,
+                child: Transform(
+                  transform: m,
+                  alignment: Alignment.topLeft,
+                  child: SizedBox(width: w, height: h, child: VideoPlayer(vc)),
+                ),
+              ),
+            );
+          });
+        } else {
+          body = Center(
+              child: AspectRatio(
+                  aspectRatio: vc.value.aspectRatio, child: VideoPlayer(vc)));
+        }
       } else if (_failed) {
         body = const Center(
             child: Text('تعذر تشغيل القصة',
@@ -579,7 +609,7 @@ class _StoryMediaState extends State<_StoryMedia> {
         fit: StackFit.expand,
         children: [
           body,
-          if (widget.story.soundPostId != null && soundUser != null)
+          if (soundUser != null)
             Positioned(
               left: 14,
               bottom: 70,
