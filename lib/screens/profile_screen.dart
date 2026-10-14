@@ -1876,24 +1876,7 @@ class _VideoGridView extends StatelessWidget {
                     size: 34, color: Colors.white70),
               ),
               if (pinnedIds.contains(list[i].id)) const _PinBadge(),
-              PositionedDirectional(
-                start: 6,
-                bottom: 6,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.play_arrow_outlined,
-                        size: 18, color: Colors.white),
-                    Text('${list[i].views}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          shadows: [Shadow(blurRadius: 4)],
-                        )),
-                  ],
-                ),
-              ),
+              _CardStats(post: list[i], showViews: true),
             ],
           ),
         ),
@@ -1970,6 +1953,8 @@ class _PostGrid extends StatelessWidget {
                     ),
                 },
                 if (pinnedIds.contains(post.id)) const _PinBadge(),
+                _CardStats(
+                    post: post, showViews: post.type == PostType.video),
               ],
             ),
           );
@@ -2151,6 +2136,99 @@ class _ProfileMoreMenuState extends State<_ProfileMoreMenu> {
           ],
         );
       },
+    );
+  }
+}
+
+String _compactCount(int n) {
+  if (n >= 1000000) {
+    final v = n / 1000000;
+    return '${v >= 10 ? v.toStringAsFixed(0) : v.toStringAsFixed(1)}M'
+        .replaceFirst('.0M', 'M');
+  }
+  if (n >= 1000) {
+    final v = n / 1000;
+    return '${v >= 10 ? v.toStringAsFixed(0) : v.toStringAsFixed(1)}K'
+        .replaceFirst('.0K', 'K');
+  }
+  return '$n';
+}
+
+/// أعداد المشاهدات والإعجابات والتعليقات والمشاركات أسفل كرت الفيديو/المنشور.
+class _CardStats extends StatelessWidget {
+  final Post post;
+  final bool showViews;
+  const _CardStats({required this.post, this.showViews = false});
+
+  Widget _item(Widget icon, int count) => Padding(
+        padding: const EdgeInsetsDirectional.only(end: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            icon,
+            const SizedBox(width: 2),
+            Text(
+              _compactCount(count),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                shadows: [Shadow(blurRadius: 4)],
+              ),
+            ),
+          ],
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    const shadow = [Shadow(blurRadius: 4)];
+    const size = 14.0;
+    return PositionedDirectional(
+      start: 0,
+      end: 0,
+      bottom: 0,
+      child: IgnorePointer(
+        child: Container(
+          padding: const EdgeInsetsDirectional.fromSTEB(6, 14, 6, 5),
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.bottomCenter,
+              end: Alignment.topCenter,
+              colors: [Color(0x99000000), Colors.transparent],
+            ),
+          ),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerStart,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (showViews)
+                  _item(
+                      const Icon(Icons.play_arrow_rounded,
+                          size: 16, color: Colors.white, shadows: shadow),
+                      post.views),
+                _item(
+                    const Icon(Icons.favorite_rounded,
+                        size: size, color: Colors.white, shadows: shadow),
+                    post.likes),
+                _item(
+                    const Icon(Icons.mode_comment_rounded,
+                        size: size, color: Colors.white, shadows: shadow),
+                    post.comments),
+                _item(
+                    Transform.flip(
+                      flipX: true,
+                      child: const Icon(Icons.reply_rounded,
+                          size: 16, color: Colors.white, shadows: shadow),
+                    ),
+                    post.shares),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
