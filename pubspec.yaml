@@ -1,5 +1,5 @@
 name: lamha
-description: Haigram - تطبيق فيديوهات قصيرة (PWA) بتصميم أصلي
+description: Haigram - تطبيق اجتماعي للصور والمنشورات والقصص (PWA)
 publish_to: "none"
 version: 1.0.0+1
 
@@ -16,7 +16,6 @@ dependencies:
   google_sign_in: ^6.2.1
   cloud_firestore: ^5.4.4
   firebase_storage: ^12.3.4
-  video_player: ^2.9.1
   image_picker: ^1.1.2
   image: ^4.2.0
   cached_network_image: ^3.4.1
@@ -24,7 +23,6 @@ dependencies:
   intl: any
   url_launcher: ^6.3.1
   share_plus: 10.1.4
-  file_saver: 0.2.14
   http: ^1.2.2
 
 dev_dependencies:
