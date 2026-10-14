@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../services/post_service.dart';
+import '../services/presence_service.dart';
 import '../services/social_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
@@ -145,15 +146,29 @@ class InboxScreen extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontWeight: FontWeight.w700),
           ),
-          subtitle: Text(
-            conversation.lastMessage.isEmpty
-                ? 'ابدأ المحادثة'
-                : conversation.lastSenderUid == SocialService.currentUid
-                    ? 'أنت: ${conversation.lastMessage}'
-                    : conversation.lastMessage,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: colors.textDim),
+          subtitle: StreamBuilder<bool>(
+            stream: PresenceService.isOnline(otherUid),
+            builder: (context, onlineSnapshot) {
+              // المتصل الآن: «نشط الآن» بدل آخر رسالة (كما في تيكتوك).
+              if (onlineSnapshot.data == true) {
+                return const Text(
+                  'نشط الآن',
+                  maxLines: 1,
+                  style: TextStyle(
+                      color: Color(0xFF25D366), fontWeight: FontWeight.w600),
+                );
+              }
+              return Text(
+                conversation.lastMessage.isEmpty
+                    ? 'ابدأ المحادثة'
+                    : conversation.lastSenderUid == SocialService.currentUid
+                        ? 'أنت: ${conversation.lastMessage}'
+                        : conversation.lastMessage,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: colors.textDim),
+              );
+            },
           ),
           trailing: conversation.updatedAt.millisecondsSinceEpoch == 0
               ? null
