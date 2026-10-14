@@ -30,7 +30,9 @@ class _HaigramBootstrapState extends State<HaigramBootstrap> {
   Future<SharedPreferences> _initialize() async {
     try {
       if (Firebase.apps.isEmpty) {
-        await Firebase.initializeApp(options: DefaultFirebaseOptions.web);
+        await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform,
+        );
       }
       return await SharedPreferences.getInstance();
     } catch (error, stackTrace) {
