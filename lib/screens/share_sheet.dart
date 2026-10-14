@@ -167,6 +167,78 @@ class _PostShareSheetState extends State<_PostShareSheet> {
     }
   }
 
+  bool get _mine => _post.uid == PostService.uidOrEmpty;
+
+  /// يغلق الورقة ثم يفتح حوار تعديل النص (نستعمل سياق الـ root لأنه يبقى صالحاً).
+  Future<void> _edit() async {
+    final rootContext = Navigator.of(context, rootNavigator: true).context;
+    final isText = _post.type == PostType.text;
+    Navigator.pop(context);
+    final controller = TextEditingController(text: _post.caption);
+    final result = await showDialog<String>(
+      context: rootContext,
+      builder: (ctx) => AlertDialog(
+        title: Text(isText ? 'تعديل المنشور' : 'تعديل الوصف'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 500,
+          minLines: 1,
+          maxLines: 6,
+          decoration: InputDecoration(
+              hintText: isText ? 'اكتب المنشور...' : 'اكتب وصفاً...'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('إلغاء')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+              child: const Text('حفظ')),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null || result == _post.caption) return;
+    if (isText && result.isEmpty) {
+      _toast('لا يمكن ترك المنشور فارغاً');
+      return;
+    }
+    try {
+      await PostService.updateCaption(_post, result);
+      _toast('تم تعديل ${isText ? 'المنشور' : 'الوصف'}');
+    } catch (error) {
+      _toast('تعذر التعديل: $error');
+    }
+  }
+
+  Future<void> _delete() async {
+    final rootContext = Navigator.of(context, rootNavigator: true).context;
+    Navigator.pop(context);
+    final ok = await showDialog<bool>(
+      context: rootContext,
+      builder: (ctx) => AlertDialog(
+        title: Text('حذف $_noun؟'),
+        content: const Text('لا يمكن التراجع عن هذا الإجراء.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('إلغاء')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('حذف')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await PostService.deletePost(_post);
+      _toast('تم حذف $_noun');
+    } catch (error) {
+      _toast('تعذر الحذف: $error');
+    }
+  }
+
   String _extension(String mime) {
     if (mime == 'video/quicktime') return 'mov';
     final subtype = mime.split('/').last.split(';').first;
@@ -484,6 +556,18 @@ class _PostShareSheetState extends State<_PostShareSheet> {
               label: 'تنزيل',
               icon: _icon(Icons.download_rounded),
               onTap: () => _runAndClose(_download, 'تم تنزيل الفيديو'),
+            ),
+          if (_mine)
+            _item(
+              label: 'تعديل',
+              icon: _icon(Icons.edit_outlined),
+              onTap: _edit,
+            ),
+          if (_mine)
+            _item(
+              label: 'حذف',
+              icon: _icon(Icons.delete_outline_rounded, Colors.redAccent),
+              onTap: _delete,
             ),
         ]);
       },
