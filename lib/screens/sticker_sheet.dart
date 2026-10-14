@@ -8,9 +8,11 @@ import 'sticker_data.dart';
 Future<void> showStickerSheet(
   BuildContext context, {
   required void Function(String sticker) onPick,
+  bool useRootNavigator = false,
 }) {
   return showModalBottomSheet<void>(
     context: context,
+    useRootNavigator: useRootNavigator,
     isScrollControlled: true,
     useSafeArea: true,
     backgroundColor: Colors.transparent,
@@ -129,4 +131,30 @@ class _StickerSheetState extends State<_StickerSheet> {
       ),
     );
   }
+}
+
+/// يُدخل [insert] في موضع المؤشر داخل خانة الكتابة (ولا يرسله).
+void insertAtCursor(TextEditingController controller, String insert) {
+  final text = controller.text;
+  final selection = controller.selection;
+  final start = selection.isValid
+      ? selection.start.clamp(0, text.length).toInt()
+      : text.length;
+  final end = selection.isValid
+      ? selection.end.clamp(start, text.length).toInt()
+      : start;
+  controller.value = TextEditingValue(
+    text: text.replaceRange(start, end, insert),
+    selection: TextSelection.collapsed(offset: start + insert.length),
+  );
+}
+
+Set<String>? _allStickers;
+
+/// هل النص كله ملصق واحد؟ (فيُرسل بشكل ملصق كبير بدل نص عادي).
+bool isSingleSticker(String text) {
+  final all = _allStickers ??= {
+    for (final category in stickerCategories) ...category.items,
+  };
+  return text.length <= 24 && all.contains(text);
 }
