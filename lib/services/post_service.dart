@@ -205,6 +205,25 @@ class PostService {
   static String postLink(Post post) =>
       Uri.base.replace(path: '/', queryParameters: {'p': post.id}).toString();
 
+  // ---- حفظ الأصوات ----
+  static DocumentReference<Map<String, dynamic>> _savedSoundRef(
+          String soundId) =>
+      _db
+          .collection('users')
+          .doc(_user.uid)
+          .collection('savedSounds')
+          .doc(soundId);
+
+  static Stream<bool> isSoundSaved(String soundId) =>
+      _savedSoundRef(soundId).snapshots().map((s) => s.exists);
+
+  static Future<void> setSoundSaved(Post sound, bool saved) => saved
+      ? _savedSoundRef(sound.id).set({
+          'at': FieldValue.serverTimestamp(),
+          'username': sound.username,
+        })
+      : _savedSoundRef(sound.id).delete();
+
   static Stream<List<Post>> videosWithSound(Post sound) => _db
           .collection('posts')
           .where('soundPostId', isEqualTo: sound.id)
@@ -342,8 +361,10 @@ class PostService {
     String? soundPostId,
     String? soundUsername,
   }) async {
-    if (soundPostId != null && type != PostType.video) {
-      throw ArgumentError('Only video posts can reuse audio');
+    if (soundPostId != null &&
+        type != PostType.video &&
+        type != PostType.story) {
+      throw ArgumentError('Only videos and stories can reuse audio');
     }
     if (useStorage) {
       final folder = mime.startsWith('video/') ? 'videos' : 'photos';
