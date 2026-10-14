@@ -180,18 +180,19 @@ class _ProfileViewState extends State<ProfileView> {
       );
     }
 
-    // منشورات، مقاطع ريلز، المحفوظات (لصاحب الحساب فقط)، الإعجابات
+    // مقاطع الفيديو (الافتراضي)، المنشورات، المحفوظات (لصاحب الحساب فقط)، الإعجابات
     // (تُخفى عن الآخرين إذا فعّل صاحب الحساب «إخفاء الإعجابات»).
     final showLikes = widget.isMe || !user.hideLikes;
     final tabs = <Tab>[
-      const Tab(icon: Icon(Icons.grid_on_rounded)),
       const Tab(icon: Icon(Icons.video_library_outlined)),
+      const Tab(icon: Icon(Icons.grid_on_rounded)),
       if (widget.isMe) const Tab(icon: Icon(Icons.bookmark_border_rounded)),
       if (showLikes) const Tab(icon: Icon(Icons.favorite_border_rounded)),
     ];
     final pinnedIds = user.pinnedPostIds.toSet();
     return DefaultTabController(
       key: ValueKey(tabs.length),
+      initialIndex: 0,
       length: tabs.length,
       child: _PinnedPosts(
         ids: user.pinnedPostIds,
@@ -212,18 +213,18 @@ class _ProfileViewState extends State<ProfileView> {
           ],
           body: TabBarView(
             children: [
-              _PostsTab(
-                uid: widget.uid,
-                isMe: widget.isMe,
-                pinned:
-                    pinned.where((p) => p.type != PostType.video).toList(),
-                pinnedIds: pinnedIds,
-              ),
               _VideoGrid(
                 uid: widget.uid,
                 isMe: widget.isMe,
                 pinned:
                     pinned.where((p) => p.type == PostType.video).toList(),
+                pinnedIds: pinnedIds,
+              ),
+              _PostsTab(
+                uid: widget.uid,
+                isMe: widget.isMe,
+                pinned:
+                    pinned.where((p) => p.type != PostType.video).toList(),
                 pinnedIds: pinnedIds,
               ),
               if (widget.isMe) const _SavedGrid(),
