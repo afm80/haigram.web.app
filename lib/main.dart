@@ -69,7 +69,7 @@ class _HaigramBootstrapState extends State<HaigramBootstrap> {
             darkTheme: buildTheme(Brightness.dark),
             themeMode: ThemeMode.dark,
             home: const Scaffold(
-              body: AppLoading(message: 'جارٍ تجهيز التطبيق...'),
+              body: Center(child: LamhaLogo(size: 96)),
             ),
           );
         }
@@ -230,7 +230,7 @@ class _LamhaAppState extends State<LamhaApp> {
           }
           if (snap.connectionState == ConnectionState.waiting) {
             return const Scaffold(
-              body: AppLoading(message: 'جارٍ تجهيز التطبيق...'),
+              body: Center(child: LamhaLogo(size: 96)),
             );
           }
           return AnimatedSwitcher(
