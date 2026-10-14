@@ -24,6 +24,11 @@ class Post {
   final String? mediaId; // وضع التجربة: الملف مخزّن في Firestore على قطع
   final String? soundPostId;
   final String? soundUsername;
+
+  /// تعديل غير مدمّر للقصص المنشورة من صفحة الصوت: تكبير وإزاحة (نسبة من الإطار).
+  final double? cropScale;
+  final double? cropDx;
+  final double? cropDy;
   final int chunks;
   final String mime;
   final int likes;
@@ -43,6 +48,9 @@ class Post {
     this.mediaId,
     this.soundPostId,
     this.soundUsername,
+    this.cropScale,
+    this.cropDx,
+    this.cropDy,
     this.chunks = 0,
     this.mime = 'video/mp4',
     required this.likes,
@@ -66,6 +74,9 @@ class Post {
       mediaId: m['mediaId'],
       soundPostId: m['soundPostId'] as String?,
       soundUsername: m['soundUsername'] as String?,
+      cropScale: (m['cropScale'] as num?)?.toDouble(),
+      cropDx: (m['cropDx'] as num?)?.toDouble(),
+      cropDy: (m['cropDy'] as num?)?.toDouble(),
       chunks: (m['chunks'] ?? 0) as int,
       mime: m['mime'] ?? 'video/mp4',
       likes: (m['likes'] ?? 0) as int,
@@ -325,7 +336,8 @@ class PostService {
       int chunks = 0,
       String? mime,
       String? soundPostId,
-      String? soundUsername}) {
+      String? soundUsername,
+      Map<String, dynamic> extra = const {}}) {
     final data = <String, dynamic>{
       'type': type.name,
       'uid': _user.uid,
@@ -345,6 +357,7 @@ class PostService {
       data['soundPostId'] = soundPostId;
       data['soundUsername'] = soundUsername;
     }
+    data.addAll(extra);
     return _db.collection('posts').add(data).then((_) => notifyStatsChanged());
   }
 
@@ -360,6 +373,7 @@ class PostService {
     required void Function(double) onProgress,
     String? soundPostId,
     String? soundUsername,
+    Map<String, dynamic> extra = const {},
   }) async {
     if (soundPostId != null &&
         type != PostType.video &&
@@ -371,7 +385,10 @@ class PostService {
       final url = await _upload(
           bytes, '$folder/${_user.uid}/${_stamp()}.$ext', mime, onProgress);
       await _create(type, caption, url,
-          mime: mime, soundPostId: soundPostId, soundUsername: soundUsername);
+          mime: mime,
+          soundPostId: soundPostId,
+          soundUsername: soundUsername,
+          extra: extra);
     } else {
       final id = await _storeInFirestore(bytes, onProgress);
       await _create(type, caption, null,
@@ -379,7 +396,8 @@ class PostService {
           chunks: (bytes.length / _chunkSize).ceil(),
           mime: mime,
           soundPostId: soundPostId,
-          soundUsername: soundUsername);
+          soundUsername: soundUsername,
+          extra: extra);
     }
   }
 
