@@ -1,5 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import '../services/post_service.dart';
 import '../services/user_service.dart';
@@ -48,6 +50,11 @@ class SettingsScreen extends StatelessWidget {
     // نغلق صفحة الإعدادات أولاً حتى لا تبقى فوق شاشة تسجيل الدخول.
     Navigator.of(context).pop();
     try {
+      if (!kIsWeb) {
+        try {
+          await GoogleSignIn().signOut();
+        } catch (_) {}
+      }
       await FirebaseAuth.instance.signOut();
       UserService.me = null;
       RouteStore.clear();
