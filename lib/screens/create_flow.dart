@@ -15,10 +15,18 @@ const maxVideoSeconds = 60;
 const maxSourceBytes =
     300 * 1024 * 1024; // أقصى حجم أصلي يمكن قصّه داخل المتصفح
 // في وضع التجربة (Firestore) الحدود أصغر حفاظاً على الحصة المجانية.
+// الفيديو بعد الضغط (720p) نحو 12MB للدقيقة، فـ 25MB هامش كافٍ (كان 40MB).
 int get maxVideoBytes =>
-    PostService.useStorage ? 40 * 1024 * 1024 : 15 * 1024 * 1024;
+    PostService.useRemoteMedia ? 25 * 1024 * 1024 : 15 * 1024 * 1024;
+// الصور تُصغَّر عند الاختيار (1080px وجودة 60%) فتبقى غالباً أقل من 500KB.
 int get maxPhotoBytes =>
-    PostService.useStorage ? 5 * 1024 * 1024 : 3 * 1024 * 1024;
+    PostService.useRemoteMedia ? 3 * 1024 * 1024 : 3 * 1024 * 1024;
+
+/// الفيديو الأكبر من هذا الحجم (أو الأطول من الحد) يُضغط قبل الرفع.
+const compressAboveBytes = 8 * 1024 * 1024;
+
+/// أقصى طول للضلع الأقصر بعد الضغط (720 = جودة 720p).
+const videoMaxShortSide = 720;
 
 String _kindTitle(CreateKind k) => switch (k) {
       CreateKind.post => 'منشور جديد',
@@ -101,13 +109,19 @@ class PickedMedia {
   final String name;
   final bool isVideo;
   final bool trimmed;
+  final bool compressed;
+
+  /// صورة JPEG مصغّرة للفيديو (للريلز فقط)، أو null.
+  final Uint8List? thumb;
   PickedMedia(
       {required this.bytes,
       required this.ext,
       required this.mime,
       required this.name,
       required this.isVideo,
-      this.trimmed = false});
+      this.trimmed = false,
+      this.compressed = false,
+      this.thumb});
 }
 
 class MediaError implements Exception {
@@ -135,6 +149,7 @@ Future<PickedMedia?> pickMedia(
   required ImageSource source,
   bool tall = false,
   void Function(bool)? onTrimming,
+  void Function(double)? onProgress,
 }) async {
   if (video) {
     final f = await picker.pickVideo(
@@ -149,17 +164,26 @@ Future<PickedMedia?> pickMedia(
           'الملف كبير جداً للمعالجة داخل المتصفح (الحد ${maxSourceBytes ~/ (1024 * 1024)}MB).');
     }
 
+    // الصورة المصغّرة تُولَّد من الملف الأصلي قبل الضغط (سريعة، بدون ffmpeg).
+    final thumb = await videoThumbnail(f.path);
+
     Uint8List bytes;
     var trimmed = false;
-    if (secs > maxVideoSeconds) {
-      // الفيديو أطول من دقيقة: نقصّه تلقائياً إلى أول 60 ثانية.
+    var compressed = false;
+    final sourceBytes = await f.length();
+    if (secs > maxVideoSeconds || sourceBytes > compressAboveBytes) {
+      // فيديو طويل أو كبير: نقصّه إلى 60 ثانية ونضغطه إلى 720p في خطوة واحدة.
       onTrimming?.call(true);
       try {
-        bytes = await trimVideo(f.path, ext, maxVideoSeconds);
+        bytes = await compressVideo(f.path, ext,
+            seconds: maxVideoSeconds,
+            maxShortSide: videoMaxShortSide,
+            onProgress: onProgress);
         ext = 'mp4';
-        trimmed = true;
+        trimmed = secs > maxVideoSeconds;
+        compressed = true;
       } catch (e) {
-        throw MediaError('تعذر قص الفيديو تلقائياً: $e');
+        throw MediaError('تعذر ضغط الفيديو تلقائياً: $e');
       } finally {
         onTrimming?.call(false);
       }
@@ -169,7 +193,7 @@ Future<PickedMedia?> pickMedia(
 
     if (bytes.length > maxVideoBytes) {
       throw MediaError(
-          'حجم الفيديو بعد المعالجة ${(bytes.length / (1024 * 1024)).toStringAsFixed(0)}MB والحد ${maxVideoBytes ~/ (1024 * 1024)}MB. صوّره بجودة أقل (مثل 720p).');
+          'حجم الفيديو بعد المعالجة ${(bytes.length / (1024 * 1024)).toStringAsFixed(0)}MB والحد ${maxVideoBytes ~/ (1024 * 1024)}MB. اختر فيديو أقصر.');
     }
     if (ext == 'mov') ext = 'quicktime';
     return PickedMedia(
@@ -178,7 +202,9 @@ Future<PickedMedia?> pickMedia(
         mime: 'video/$ext',
         name: f.name,
         isVideo: true,
-        trimmed: trimmed);
+        trimmed: trimmed,
+        compressed: compressed,
+        thumb: thumb);
   }
 
   // الصور تُضغط داخل المتصفح (تصغير الأبعاد + جودة 60%) قبل الرفع.
@@ -212,6 +238,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
   final _picker = ImagePicker();
   bool _storyVideo = false;
   bool _trimming = false;
+  double _compressProgress = 0;
   bool _busy = false;
   String? _error;
 
@@ -232,7 +259,15 @@ class _CaptureScreenState extends State<CaptureScreen> {
         source: source,
         tall: widget.kind == CreateKind.story,
         onTrimming: (b) {
-          if (mounted) setState(() => _trimming = b);
+          if (mounted) {
+            setState(() {
+              _trimming = b;
+              if (b) _compressProgress = 0;
+            });
+          }
+        },
+        onProgress: (p) {
+          if (mounted) setState(() => _compressProgress = p);
         },
       );
       if (media == null || !mounted) {
@@ -283,12 +318,19 @@ class _CaptureScreenState extends State<CaptureScreen> {
                     ? Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          CircularProgressIndicator(color: AppColors.accent),
+                          CircularProgressIndicator(
+                              value: _compressProgress > 0
+                                  ? _compressProgress
+                                  : null,
+                              color: AppColors.accent),
                           SizedBox(height: 12),
-                          Text('الفيديو أطول من دقيقة، جارٍ قصّه تلقائياً...',
+                          Text(
+                              _compressProgress > 0
+                                  ? 'جارٍ تجهيز الفيديو ${(_compressProgress * 100).round()}%'
+                                  : 'جارٍ تجهيز الفيديو (ضغط وقص)...',
                               textAlign: TextAlign.center,
                               style: TextStyle(color: colors.text)),
-                          Text('قد يستغرق ذلك لحظات',
+                          Text('قد يستغرق ذلك دقيقة أو أكثر للفيديوهات الطويلة',
                               style: TextStyle(
                                   color: colors.textDim,
                                   fontSize: 12)),
@@ -489,6 +531,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
             ext: m.ext,
             caption: caption,
             onProgress: onProgress,
+            thumb: widget.kind == CreateKind.reel ? m.thumb : null,
             soundPostId: widget.sound?.id,
             soundUsername: widget.sound?.username);
       }
@@ -575,11 +618,15 @@ class _ComposeScreenState extends State<ComposeScreen> {
             if (_busy && !_textOnly) ...[
               const SizedBox(height: 8),
               LinearProgressIndicator(
-                  value: _progress,
+                  // مع Cloudinary لا توجد نسبة تقدم فعلية، فنعرض شريطاً متحركاً.
+                  value: _progress > 0 ? _progress : null,
                   minHeight: 6,
                   borderRadius: BorderRadius.circular(3)),
               const SizedBox(height: 4),
-              Text('${(_progress * 100).toStringAsFixed(0)}%',
+              Text(
+                  _progress > 0
+                      ? '${(_progress * 100).toStringAsFixed(0)}%'
+                      : 'جارٍ الرفع...',
                   textAlign: TextAlign.center),
             ],
             const SizedBox(height: 16),

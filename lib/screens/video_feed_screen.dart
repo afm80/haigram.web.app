@@ -32,7 +32,13 @@ class VideoFeedScreen extends StatefulWidget {
 
 class _VideoFeedScreenState extends State<VideoFeedScreen> {
   bool _following = false;
-  Stream<List<Post>> _videos = PostService.stream(PostType.video);
+  // نحمّل 10 فيديوهات في كل مرة (كان 40) ونزيد 10 كلما اقترب المستخدم من النهاية.
+  static const _pageSize = 10;
+  static const _maxLimit = 40;
+  int _limit = _pageSize;
+  int _loaded = 0; // عدد الفيديوهات التي وصلت آخر مرة
+  Stream<List<Post>> _videos =
+      PostService.stream(PostType.video, limit: _pageSize);
   late final Stream<List<String>> _follow = PostService.followingIds();
   int _refreshCount = 0;
 
@@ -61,8 +67,19 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   void _refresh() {
     if (!mounted) return;
     setState(() {
-      _videos = PostService.stream(PostType.video);
+      _limit = _pageSize;
+      _loaded = 0;
+      _videos = PostService.stream(PostType.video, limit: _pageSize);
       _refreshCount++;
+    });
+  }
+
+  /// يزيد الدفعة بمقدار 10 إن كانت الدفعة الحالية ممتلئة (يوجد المزيد).
+  void _loadMore() {
+    if (!mounted || _loaded < _limit || _limit >= _maxLimit) return;
+    setState(() {
+      _limit += _pageSize;
+      _videos = PostService.stream(PostType.video, limit: _limit);
     });
   }
 
@@ -92,12 +109,20 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
                   child: Text('تعذر تحميل الفيديوهات\n${snap.error}',
                       textAlign: TextAlign.center));
             }
-            if (!snap.hasData || snap.connectionState == ConnectionState.waiting)
+            // لا نعرض شاشة التحميل عند طلب دفعة جديدة (تبقى القائمة الحالية).
+            if (!snap.hasData) {
               return const AppLoading(message: 'نحضّر لك الفيديوهات...');
+            }
             var posts = snap.data!;
+            _loaded = posts.length;
             if (_following) {
               final ids = followSnap.data ?? const <String>[];
               posts = posts.where((p) => ids.contains(p.uid)).toList();
+              // قليل من فيديوهات المتابَعين بين الأحدث: نحمّل دفعة إضافية.
+              if (posts.length < 3 && _loaded >= _limit && _limit < _maxLimit) {
+                WidgetsBinding.instance
+                    .addPostFrameCallback((_) => _loadMore());
+              }
             }
             if (posts.isEmpty) {
               return EmptyState(
@@ -113,7 +138,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
             return VideoPager(
                 key: ValueKey('$_following-$_refreshCount'),
                 posts: posts,
-                active: widget.active);
+                active: widget.active,
+                onNearEnd: _loadMore);
           },
         );
       },
@@ -694,12 +720,16 @@ class VideoPager extends StatefulWidget {
   final bool active;
   final int initialIndex;
   final double bottomBase;
+
+  /// تُستدعى حين يقترب المستخدم من آخر الفيديوهات المحمّلة (لتحميل دفعة أخرى).
+  final VoidCallback? onNearEnd;
   const VideoPager(
       {super.key,
       required this.posts,
       required this.active,
       this.initialIndex = 0,
-      this.bottomBase = 78});
+      this.bottomBase = 78,
+      this.onNearEnd});
 
   @override
   State<VideoPager> createState() => _VideoPagerState();
@@ -724,7 +754,10 @@ class _VideoPagerState extends State<VideoPager> {
       scrollDirection: Axis.vertical,
       // يبني الصفحة المجاورة مسبقاً لنحمّل الفيديو التالي قبل الوصول إليه.
       allowImplicitScrolling: true,
-      onPageChanged: (i) => setState(() => _page = i),
+      onPageChanged: (i) {
+        setState(() => _page = i);
+        if (i >= n - 3) widget.onNearEnd?.call();
+      },
       // itemCount غير محدد => تمرير لا نهائي يعيد الفيديوهات بالتناوب
       itemBuilder: (context, i) => _VideoPage(
         key: ValueKey('$i-${widget.posts[i % n].id}'),

@@ -499,19 +499,35 @@ class LikeBuilder extends StatefulWidget {
 
 class _LikeBuilderState extends State<LikeBuilder> {
   late final Stream<bool> _likedStream = PostService.isLiked(widget.post.id);
-  late final Stream<int> _countStream = PostService.likeCount(widget.post.id);
   bool? _override; // الحالة المتوقعة حتى يؤكدها الخادم
   bool _busy = false;
+
+  // العدد يأتي من المنشور نفسه (القائمة الأم تحدّثه)، بدل اشتراك حيّ إضافي
+  // على مستند كل فيديو. هذا التعديل المحلي يُصفَّر حين يصل عدد جديد من الخادم.
+  int _delta = 0;
+
+  @override
+  void didUpdateWidget(covariant LikeBuilder old) {
+    super.didUpdateWidget(old);
+    if (old.post.likes != widget.post.likes) _delta = 0;
+  }
 
   Future<void> _toggle(bool currentLiked) async {
     if (_busy) return;
     _busy = true;
-    setState(() => _override = !currentLiked);
+    final change = currentLiked ? -1 : 1;
+    setState(() {
+      _override = !currentLiked;
+      _delta += change;
+    });
     try {
       await PostService.toggleLike(widget.post.id, currentLiked);
     } catch (error) {
       if (mounted) {
-        setState(() => _override = null);
+        setState(() {
+          _override = null;
+          _delta -= change;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('تعذر تسجيل الإعجاب: $error')),
         );
@@ -535,20 +551,9 @@ class _LikeBuilderState extends State<LikeBuilder> {
           });
         }
         final liked = _override ?? serverLiked;
-        return StreamBuilder<int>(
-          stream: _countStream,
-          initialData: widget.post.likes,
-          builder: (context, countSnap) {
-            var count = countSnap.data ?? widget.post.likes;
-            // نعدّل العدد محلياً ما دام الخادم لم يؤكد الإعجاب بعد.
-            if (_override != null && _override != serverLiked) {
-              count += _override! ? 1 : -1;
-            }
-            if (count < 0) count = 0;
-            return widget.builder(
-                context, liked, count, () => _toggle(liked));
-          },
-        );
+        var count = widget.post.likes + _delta;
+        if (count < 0) count = 0;
+        return widget.builder(context, liked, count, () => _toggle(liked));
       },
     );
   }

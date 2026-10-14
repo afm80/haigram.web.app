@@ -47,7 +47,8 @@ class _VideoThumbnailState extends State<VideoThumbnail> {
   @override
   void initState() {
     super.initState();
-    _load();
+    // إن وُجدت صورة مصغّرة محفوظة فلا حاجة لتحميل الفيديو إطلاقاً.
+    if (widget.post.thumb == null) _load();
   }
 
   Future<void> _load() async {
@@ -77,6 +78,11 @@ class _VideoThumbnailState extends State<VideoThumbnail> {
 
   @override
   Widget build(BuildContext context) {
+    final thumb = widget.post.thumb;
+    if (thumb != null) {
+      return Image.memory(thumb,
+          fit: BoxFit.cover, gaplessPlayback: true, filterQuality: FilterQuality.low);
+    }
     final controller = _controller;
     if (_failed) {
       return const ColoredBox(

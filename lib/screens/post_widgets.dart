@@ -360,7 +360,7 @@ class PostImage extends StatelessWidget {
     );
     if (post.mediaUrl != null) {
       return CachedNetworkImage(
-        imageUrl: post.mediaUrl!,
+        imageUrl: PostService.optimizedImageUrl(post.mediaUrl!, decodeWidth),
         width: double.infinity,
         height: height,
         fit: fit,

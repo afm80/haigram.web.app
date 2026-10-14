@@ -76,11 +76,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
     controller = StreamController<List<Post>>(
       onListen: () {
-        subs.add(PostService.stream(PostType.photo).listen((v) {
+        subs.add(PostService.stream(PostType.photo, limit: 15).listen((v) {
           photos = v;
           emit();
         }, onError: controller.addError));
-        subs.add(PostService.stream(PostType.text).listen((v) {
+        subs.add(PostService.stream(PostType.text, limit: 15).listen((v) {
           texts = v;
           emit();
         }, onError: controller.addError));
