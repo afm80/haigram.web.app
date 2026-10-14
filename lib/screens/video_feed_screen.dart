@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
@@ -18,7 +19,11 @@ const _shadow = [Shadow(blurRadius: 6, color: Colors.black54)];
 class VideoFeedScreen extends StatefulWidget {
   final bool active;
   final VoidCallback? onSearch;
-  const VideoFeedScreen({super.key, required this.active, this.onSearch});
+
+  /// يُزاد عند النقر على تبويب الرئيسية وأنت فيه: يحدّث الفيديوهات.
+  final ValueListenable<int>? refreshRequest;
+  const VideoFeedScreen(
+      {super.key, required this.active, this.onSearch, this.refreshRequest});
 
   @override
   State<VideoFeedScreen> createState() => _VideoFeedScreenState();
@@ -26,8 +31,39 @@ class VideoFeedScreen extends StatefulWidget {
 
 class _VideoFeedScreenState extends State<VideoFeedScreen> {
   bool _following = false;
-  late final Stream<List<Post>> _videos = PostService.stream(PostType.video);
+  Stream<List<Post>> _videos = PostService.stream(PostType.video);
   late final Stream<List<String>> _follow = PostService.followingIds();
+  int _refreshCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.refreshRequest?.addListener(_refresh);
+  }
+
+  @override
+  void didUpdateWidget(covariant VideoFeedScreen old) {
+    super.didUpdateWidget(old);
+    if (old.refreshRequest != widget.refreshRequest) {
+      old.refreshRequest?.removeListener(_refresh);
+      widget.refreshRequest?.addListener(_refresh);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.refreshRequest?.removeListener(_refresh);
+    super.dispose();
+  }
+
+  /// تحديث: اشتراك جديد بالفيديوهات وإعادة بناء المشغّل من أول فيديو.
+  void _refresh() {
+    if (!mounted) return;
+    setState(() {
+      _videos = PostService.stream(PostType.video);
+      _refreshCount++;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,7 +91,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
                   child: Text('تعذر تحميل الفيديوهات\n${snap.error}',
                       textAlign: TextAlign.center));
             }
-            if (!snap.hasData)
+            if (!snap.hasData || snap.connectionState == ConnectionState.waiting)
               return const AppLoading(message: 'نحضّر لك الفيديوهات...');
             var posts = snap.data!;
             if (_following) {
@@ -74,7 +110,9 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
               );
             }
             return VideoPager(
-                key: ValueKey(_following), posts: posts, active: widget.active);
+                key: ValueKey('$_following-$_refreshCount'),
+                posts: posts,
+                active: widget.active);
           },
         );
       },
