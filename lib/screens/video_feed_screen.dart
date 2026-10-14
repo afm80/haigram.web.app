@@ -171,8 +171,27 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       child: Container(
         width: 48,
         alignment: Alignment.center,
-        child: const Icon(Icons.live_tv_rounded,
-            size: 26, color: Colors.white, shadows: _shadow),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(5),
+            border: Border.all(color: Colors.white, width: 1.8),
+            boxShadow: const [
+              BoxShadow(blurRadius: 6, color: Colors.black54),
+            ],
+          ),
+          child: const Text(
+            'LIVE',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              height: 1.1,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.4,
+              shadows: _shadow,
+            ),
+          ),
+        ),
       ),
     );
   }
