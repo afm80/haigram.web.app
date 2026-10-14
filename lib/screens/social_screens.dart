@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:image_picker/image_picker.dart';
@@ -627,15 +628,24 @@ class _ChatScreenState extends State<ChatScreen> {
   final _picker = ImagePicker();
   late final Stream<ChatBlockState> _blockState;
   bool _sending = false;
+  Set<String> _hidden = const {};
+  StreamSubscription<Set<String>>? _hiddenSub;
 
   @override
   void initState() {
     super.initState();
     _blockState = SocialService.blockState(widget.otherUid);
+    _hiddenSub = SocialService.hiddenMessageIds(widget.conversationId).listen(
+      (ids) {
+        if (mounted) setState(() => _hidden = ids);
+      },
+      onError: (_) {},
+    );
   }
 
   @override
   void dispose() {
+    _hiddenSub?.cancel();
     _text.dispose();
     super.dispose();
   }
@@ -780,27 +790,55 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _showMessageActions(ChatMessage message) async {
+  Future<void> _showMessageActions(ChatMessage message, bool mine) async {
+    Future<void> run(Future<void> Function() action, String failure) async {
+      try {
+        await action();
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('$failure: $error')),
+          );
+        }
+      }
+    }
+
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: context.appColors.surface,
       builder: (sheetContext) => SafeArea(
-        child: ListTile(
-          leading: const Icon(Icons.delete_outline_rounded, color: Colors.red),
-          title: const Text('حذف الرسالة'),
-          onTap: () async {
-            Navigator.pop(sheetContext);
-            try {
-              await SocialService.deleteMessage(
-                  widget.conversationId, message.id);
-            } catch (error) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('تعذر حذف الرسالة: $error')),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (mine)
+              ListTile(
+                leading: const Icon(Icons.delete_forever_rounded,
+                    color: Colors.red),
+                title: const Text('حذف لدى الجميع'),
+                subtitle: const Text('تُحذف الرسالة من المحادثة عند الطرفين'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  run(
+                    () => SocialService.deleteMessage(
+                        widget.conversationId, message.id),
+                    'تعذر حذف الرسالة',
+                  );
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline_rounded),
+              title: const Text('حذف لدي فقط'),
+              subtitle: const Text('تبقى الرسالة ظاهرة للطرف الآخر'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                run(
+                  () => SocialService.hideMessageForMe(
+                      widget.conversationId, message.id),
+                  'تعذر حذف الرسالة',
                 );
-              }
-            }
-          },
+              },
+            ),
+          ],
         ),
       ),
     );
@@ -920,7 +958,9 @@ class _ChatScreenState extends State<ChatScreen> {
                     if (!snapshot.hasData) {
                       return const Center(child: CircularProgressIndicator());
                     }
-                    final messages = snapshot.data!;
+                    final messages = snapshot.data!
+                        .where((m) => !_hidden.contains(m.id))
+                        .toList();
                     if (messages.isEmpty) {
                       return const _MessageState(
                         message: 'أرسل أول رسالة لبدء المحادثة',
@@ -943,9 +983,8 @@ class _ChatScreenState extends State<ChatScreen> {
                               : AlignmentDirectional.centerStart,
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
-                            onLongPress: mine
-                                ? () => _showMessageActions(message)
-                                : null,
+                            onLongPress: () =>
+                                _showMessageActions(message, mine),
                             child: Container(
                             constraints: BoxConstraints(
                                 maxWidth:
