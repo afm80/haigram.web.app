@@ -13,6 +13,8 @@ import { pathToFileURL } from 'node:url';
 const GRACE_HOURS = 24; // لا نحذف ملفاً أحدث من هذا (قد يكون منشوره قيد الإنشاء)
 const STORY_HOURS = 24; // عمر القصة
 const BATCH = 100; // أقصى عدد ملفات في طلب حذف واحد
+// الصور التجريبية التي تضعها Cloudinary في أي حساب جديد: نتجاهلها ولا نحذفها.
+const DEMO_ASSET = /^(samples\/|sample$|cld-sample(-\d+)?$|main-sample$)/;
 
 /** يستخرج النوع والمعرّف العام من رابط Cloudinary، أو null إن لم يُفهم الرابط. */
 export function parseCloudinaryUrl(url) {
@@ -32,6 +34,7 @@ export function findOrphans(assets, referenced, now, graceHours = GRACE_HOURS) {
   const cutoff = now - graceHours * 3600 * 1000;
   return assets.filter(
     (a) =>
+      !DEMO_ASSET.test(a.publicId) &&
       !referenced.has(`${a.type}:${a.publicId}`) &&
       new Date(a.createdAt).getTime() < cutoff
   );
