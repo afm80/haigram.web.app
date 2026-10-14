@@ -9,6 +9,7 @@ import '../theme.dart';
 import 'common_widgets.dart';
 import 'profile_screen.dart';
 import 'share_sheet.dart';
+import 'video_thumbnail.dart';
 import '../route_state.dart';
 
 const _shadow = [Shadow(blurRadius: 6, color: Colors.black54)];
@@ -188,169 +189,245 @@ class VideoViewerScreen extends StatelessWidget {
   }
 }
 
+/// صفحة الصوت (بأسلوب تيك توك): صاحب الصوت + عدد الاستخدامات + حفظ،
+/// شبكة الفيديوهات، وبالأسفل «نشر إلى قصة» و«استخدام الصوت».
 class SoundScreen extends StatelessWidget {
   final Post sound;
 
   const SoundScreen({super.key, required this.sound});
 
+  void _useSound(BuildContext context, CreateKind kind) =>
+      startCreate(context, kind, sound: sound);
+
+  Future<void> _toggleSaved(BuildContext context, bool saved) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await PostService.setSoundSaved(sound, !saved);
+      messenger.showSnackBar(SnackBar(
+          content: Text(saved ? 'تمت إزالة الصوت من المحفوظات' : 'تم حفظ الصوت')));
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text('تعذر حفظ الصوت: $error')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.appColors;
     return Scaffold(
-      appBar: AppBar(title: const Text('الصوت')),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-            child: Row(
-              children: [
-                Container(
-                  width: 58,
-                  height: 58,
-                  decoration: BoxDecoration(
-                    color: AppColors.accent2,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Icon(
-                    Icons.music_note_rounded,
-                    color: Colors.white,
-                    size: 32,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'الصوت الأصلي',
-                        style: TextStyle(
-                            fontSize: 17, fontWeight: FontWeight.w800),
+      backgroundColor: colors.bg,
+      appBar: AppBar(
+        backgroundColor: colors.bg,
+        elevation: 0,
+        title: const Text('الصوت'),
+      ),
+      body: StreamBuilder<List<Post>>(
+        stream: PostService.videosWithSound(sound),
+        builder: (context, snapshot) {
+          final videos = snapshot.data ?? const <Post>[];
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // صورة صاحب الصوت
+                    UserAvatar(
+                      uid: sound.uid,
+                      fallbackName: sound.username,
+                      radius: 46,
+                      onTap: () => openProfile(context, sound.uid),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'الصوت الأصلي',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 19, fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 3),
+                          GestureDetector(
+                            onTap: () => openProfile(context, sound.uid),
+                            child: Text(
+                              '@${sound.username}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style:
+                                  TextStyle(color: colors.textDim, fontSize: 14),
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            snapshot.hasData
+                                ? '${videos.length} منشور'
+                                : '... منشور',
+                            style:
+                                TextStyle(color: colors.textDim, fontSize: 13),
+                          ),
+                          const SizedBox(height: 10),
+                          StreamBuilder<bool>(
+                            stream: PostService.isSoundSaved(sound.id),
+                            builder: (context, savedSnap) {
+                              final saved = savedSnap.data ?? false;
+                              return OutlinedButton.icon(
+                                onPressed: savedSnap.hasData
+                                    ? () => _toggleSaved(context, saved)
+                                    : null,
+                                icon: Icon(
+                                  saved
+                                      ? Icons.bookmark_rounded
+                                      : Icons.bookmark_border_rounded,
+                                  size: 18,
+                                ),
+                                label: Text(saved ? 'تم الحفظ' : 'حفظ'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: colors.text,
+                                  minimumSize: const Size(0, 34),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8)),
+                                  side: BorderSide(
+                                      color: colors.text.withOpacity(0.25)),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
                       ),
-                      Text(
-                        '@${sound.username}',
-                        style: TextStyle(color: colors.textDim),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: () =>
-                    startCreate(context, CreateKind.reel, sound: sound),
-                icon: const Icon(Icons.video_call_rounded),
-                label: const Text('استخدام هذا الصوت'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.brandRed,
-                  foregroundColor: Colors.white,
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          const Divider(height: 1),
-          Expanded(
-            child: StreamBuilder<List<Post>>(
-              stream: PostService.videosWithSound(sound),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Text(
-                      'تعذر تحميل الفيديوهات\n${snapshot.error}',
-                      textAlign: TextAlign.center,
+              const Divider(height: 1),
+              Expanded(
+                child: Builder(builder: (context) {
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Text(
+                        'تعذر تحميل الفيديوهات\n${snapshot.error}',
+                        textAlign: TextAlign.center,
+                      ),
+                    );
+                  }
+                  if (!snapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (videos.isEmpty) {
+                    return Center(
+                      child: Text(
+                        'لا توجد فيديوهات بهذا الصوت بعد.',
+                        style: TextStyle(color: colors.textDim),
+                      ),
+                    );
+                  }
+                  return GridView.builder(
+                    padding: const EdgeInsets.all(2),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 3,
+                      crossAxisSpacing: 2,
+                      mainAxisSpacing: 2,
+                      childAspectRatio: 0.62,
                     ),
-                  );
-                }
-                if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final videos = snapshot.data!;
-                if (videos.isEmpty) {
-                  return Center(
-                    child: Text(
-                      'لا توجد فيديوهات بهذا الصوت بعد.',
-                      style: TextStyle(color: colors.textDim),
-                    ),
-                  );
-                }
-                return GridView.builder(
-                  padding: const EdgeInsets.all(12),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 10,
-                    mainAxisSpacing: 10,
-                    childAspectRatio: 0.78,
-                  ),
-                  itemCount: videos.length,
-                  itemBuilder: (context, index) {
-                    final video = videos[index];
-                    return Material(
-                      color: colors.surfaceHigh,
-                      borderRadius: BorderRadius.circular(14),
-                      clipBehavior: Clip.antiAlias,
-                      child: InkWell(
+                    itemCount: videos.length,
+                    itemBuilder: (context, index) {
+                      final video = videos[index];
+                      return GestureDetector(
                         onTap: () => Navigator.of(context).push(
                           appRoute(
                             'video',
-                            {'id': videos[index].id},
+                            {'id': video.id},
                             (_) => VideoViewerScreen(
                               posts: videos,
                               initialIndex: index,
                             ),
                           ),
                         ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: Center(
-                                  child: Icon(
-                                    Icons.play_circle_outline_rounded,
-                                    color: colors.textDim,
-                                    size: 44,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            ColoredBox(
+                              color: colors.surfaceHigh,
+                              child: VideoThumbnail(post: video),
+                            ),
+                            Positioned(
+                              left: 6,
+                              bottom: 5,
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.play_arrow_outlined,
+                                      size: 16, color: Colors.white),
+                                  Text(
+                                    '${video.views}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      shadows: [
+                                        Shadow(
+                                            blurRadius: 4,
+                                            color: Colors.black54),
+                                      ],
+                                    ),
                                   ),
-                                ),
+                                ],
                               ),
-                              Text(
-                                video.caption.isEmpty
-                                    ? 'فيديو @${video.username}'
-                                    : video.caption,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: colors.text,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '@${video.username}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: colors.textDim,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
+                      );
+                    },
+                  );
+                }),
+              ),
+            ],
+          );
+        },
+      ),
+      // زرّان بالأسفل كما في تيك توك.
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () => _useSound(context, CreateKind.story),
+                  icon: const Icon(Icons.add_circle_outline_rounded),
+                  label: const Text('نشر إلى قصة'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: colors.surfaceHigh,
+                    foregroundColor: colors.text,
+                    minimumSize: const Size.fromHeight(48),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () => _useSound(context, CreateKind.reel),
+                  icon: const Icon(Icons.videocam_rounded),
+                  label: const Text('استخدام الصوت'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.brandRed,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(48),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -805,7 +882,6 @@ class _VideoPageState extends State<_VideoPage>
 
   Future<void> _openSound() async {
     final soundId = widget.post.soundPostId;
-    final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     try {
       final sound =
@@ -816,7 +892,8 @@ class _VideoPageState extends State<_VideoPage>
       if (!mounted) return;
       _vc?.pause();
       _soundVc?.pause();
-      await navigator.push<void>(
+      // فوق الشريط السفلي (Navigator الجذر) كما في تيك توك.
+      await Navigator.of(context, rootNavigator: true).push<void>(
         appRoute<void>(
             'sound', {'id': sound.id}, (_) => SoundScreen(sound: sound)),
       );
@@ -1124,10 +1201,11 @@ class _VideoPageState extends State<_VideoPage>
 
   Widget _avatarWithPlus(Post p) {
     final isMine = p.uid == PostService.uidOrEmpty;
-    return StreamBuilder<bool>(
-      stream: PostService.isFollowing(p.uid),
+    return StreamBuilder<FollowState>(
+      stream: PostService.followState(p.uid),
       builder: (context, s) {
-        final following = s.data ?? false;
+        // يُخفى زر + إذا كنت أتابعه أو أرسلت له طلباً معلّقاً.
+        final following = (s.data ?? FollowState.none) != FollowState.none;
         return SizedBox(
           width: 52,
           height: 62,
@@ -1151,7 +1229,20 @@ class _VideoPageState extends State<_VideoPage>
                 Positioned(
                   bottom: 0,
                   child: GestureDetector(
-                    onTap: () => PostService.toggleFollow(p.uid, false),
+                    onTap: () async {
+                      final messenger = ScaffoldMessenger.of(context);
+                      try {
+                        final r = await PostService.follow(p.uid);
+                        if (r == FollowState.requested) {
+                          messenger.showSnackBar(const SnackBar(
+                              content: Text(
+                                  'تم إرسال طلب المتابعة، بانتظار الموافقة')));
+                        }
+                      } catch (e) {
+                        messenger.showSnackBar(
+                            SnackBar(content: Text('تعذر المتابعة: $e')));
+                      }
+                    },
                     child: Container(
                       width: 22,
                       height: 22,
