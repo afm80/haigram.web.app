@@ -1,7 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
+import '../firebase_options.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
 
@@ -42,7 +44,8 @@ class _AuthScreenState extends State<AuthScreen> {
     } on FirebaseAuthException catch (e) {
       setState(() => _error = _msg(e.code));
     } catch (e) {
-      setState(() => _error = 'حدث خطأ غير متوقع');
+      debugPrint('Auth error: $e');
+      setState(() => _error = 'تعذر تسجيل الدخول: $e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -62,6 +65,10 @@ class _AuthScreenState extends State<AuthScreen> {
         return 'كلمة المرور ضعيفة (6 أحرف على الأقل)';
       case 'popup-closed-by-user':
         return 'تم إغلاق نافذة تسجيل الدخول';
+      case 'account-exists-with-different-credential':
+        return 'هذا البريد مسجّل بطريقة دخول أخرى';
+      case 'network-request-failed':
+        return 'تحقق من اتصال الإنترنت';
       default:
         return 'تعذر تسجيل الدخول ($code)';
     }
@@ -98,13 +105,31 @@ class _AuthScreenState extends State<AuthScreen> {
       });
 
   Future<void> _google() => _run(() async {
-        // على الويب يعمل popup مباشرة عبر Firebase Auth دون إعداد إضافي.
         final auth = FirebaseAuth.instance;
         if (kIsWeb) {
+          // على الويب يعمل popup مباشرة عبر Firebase Auth.
           await auth.setPersistence(
               _rememberMe ? Persistence.LOCAL : Persistence.SESSION);
+          await auth.signInWithPopup(GoogleAuthProvider());
+          return;
         }
-        await auth.signInWithPopup(GoogleAuthProvider());
+        // على أندرويد: نافذة اختيار حساب Google الأصلية ثم تبادل الرمز مع Firebase.
+        final googleSignIn = GoogleSignIn(
+          scopes: const ['email'],
+          serverClientId: DefaultFirebaseOptions.googleServerClientId.isEmpty
+              ? null
+              : DefaultFirebaseOptions.googleServerClientId,
+        );
+        // نخرج من الجلسة السابقة ليظهر اختيار الحساب في كل مرة.
+        await googleSignIn.signOut();
+        final googleUser = await googleSignIn.signIn();
+        if (googleUser == null) return; // ألغى المستخدم العملية
+        final googleAuth = await googleUser.authentication;
+        final credential = GoogleAuthProvider.credential(
+          accessToken: googleAuth.accessToken,
+          idToken: googleAuth.idToken,
+        );
+        await auth.signInWithCredential(credential);
       });
 
   @override
