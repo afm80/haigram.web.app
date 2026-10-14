@@ -471,11 +471,38 @@ class _StoryMedia extends StatefulWidget {
 
 class _StoryMediaState extends State<_StoryMedia> {
   VideoPlayerController? _vc;
+  VideoPlayerController? _soundVc;
   bool _failed = false;
+
+  /// قصة منشورة مع «صوت أصلي» لفيديو آخر: يُشغَّل صوته خلف القصة.
+  Future<void> _initSound(String soundPostId) async {
+    VideoPlayerController? controller;
+    try {
+      final source = await PostService.postById(soundPostId);
+      if (source == null || source.type != PostType.video) return;
+      final url = await PostService.videoUrl(source);
+      controller = VideoPlayerController.networkUrl(Uri.parse(url));
+      await controller.initialize();
+      await controller.setLooping(true);
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+      _soundVc = controller;
+      // صوت الصوت الأصلي يحل محل صوت فيديو القصة.
+      await _vc?.setVolume(0);
+      if (!widget.paused) await controller.play();
+      setState(() {});
+    } catch (_) {
+      await controller?.dispose();
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    final soundId = widget.story.soundPostId;
+    if (soundId != null) _initSound(soundId);
     if (widget.story.isVideoMedia) {
       _initVideo();
     } else {
@@ -494,6 +521,7 @@ class _StoryMediaState extends State<_StoryMedia> {
         return;
       }
       await vc.setLooping(false);
+      if (_soundVc != null) await vc.setVolume(0);
       if (!widget.paused) await vc.play();
       setState(() => _vc = vc);
       var d = vc.value.duration;
@@ -511,14 +539,17 @@ class _StoryMediaState extends State<_StoryMedia> {
   void didUpdateWidget(covariant _StoryMedia old) {
     super.didUpdateWidget(old);
     final vc = _vc;
-    if (vc != null && old.paused != widget.paused) {
-      widget.paused ? vc.pause() : vc.play();
+    if (old.paused != widget.paused) {
+      if (vc != null) widget.paused ? vc.pause() : vc.play();
+      final sound = _soundVc;
+      if (sound != null) widget.paused ? sound.pause() : sound.play();
     }
   }
 
   @override
   void dispose() {
     _vc?.dispose();
+    _soundVc?.dispose();
     super.dispose();
   }
 
@@ -541,6 +572,39 @@ class _StoryMediaState extends State<_StoryMedia> {
     } else {
       body = Center(child: PostImage(post: widget.story, fit: BoxFit.contain));
     }
-    return ColoredBox(color: Colors.black, child: body);
+    final soundUser = widget.story.soundUsername;
+    return ColoredBox(
+      color: Colors.black,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          body,
+          if (widget.story.soundPostId != null && soundUser != null)
+            Positioned(
+              left: 14,
+              bottom: 70,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.music_note_rounded,
+                        size: 14, color: Colors.white),
+                    const SizedBox(width: 4),
+                    Text('الصوت الأصلي · @$soundUser',
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 12)),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
