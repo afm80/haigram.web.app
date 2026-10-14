@@ -83,7 +83,12 @@ service cloud.firestore {
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
-          && request.resource.data.text.size() <= 500;
+          && request.resource.data.text.size() <= 500
+          && request.resource.data.get('kind', 'text') in ['text', 'sticker', 'image']
+          && (!('image' in request.resource.data)
+            || (request.resource.data.kind == 'image'
+              && request.resource.data.image is bytes
+              && request.resource.data.image.size() <= 716800));
         allow update: if request.auth != null
           && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['likedBy'])
