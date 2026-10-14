@@ -90,6 +90,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   final _routeObservers = List.generate(5, (tab) => TabRouteObserver(tab));
   // يُزاد لطلب فتح حقل البحث في تبويب الاستكشاف.
   final _searchRequest = ValueNotifier<int>(0);
+  // يُزاد عند النقر على «الرئيسية» وأنت فيها لتحديث الفيديوهات.
+  final _homeRefresh = ValueNotifier<int>(0);
   late final Stream<int> _unreadNotificationCount =
       SocialService.unreadNotificationCount();
 
@@ -116,6 +118,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     _updatePresence(false);
     _selectedTab.dispose();
     _searchRequest.dispose();
+    _homeRefresh.dispose();
     super.dispose();
   }
 
@@ -389,6 +392,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   Widget _tabPage(int tab, int selectedTab) => switch (tab) {
         0 => VideoFeedScreen(
             active: selectedTab == 0,
+            refreshRequest: _homeRefresh,
             onSearch: () {
               _selectTab(1);
               _searchRequest.value++;
@@ -406,6 +410,12 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
 
   void _selectTab(int tab, {bool fromBack = false}) {
     if (!fromBack) {
+      // النقر على «الرئيسية» وأنت في صفحتها الرئيسية: تحديث الفيديوهات.
+      if (tab == 0 &&
+          _index == 0 &&
+          !(_tabNavigators[0].currentState?.canPop() ?? false)) {
+        _homeRefresh.value++;
+      }
       // كل ضغطة على تبويب تفتح صفحته الرئيسية: نُغلق أي صفحات فرعية
       // (ملف مستخدم آخر، منشور...) بقيت مفتوحة داخل التبويب سابقاً.
       final navigator = _tabNavigators[tab].currentState;
