@@ -282,6 +282,23 @@ service cloud.firestore {
         allow delete: if isChatParticipant()
           && resource.data.senderUid == request.auth.uid;
       }
+
+      // رسائل «حذف لديّ فقط»: مستند لكل مستخدم يخص نفسه فقط.
+      match /hiddenMessages/{uid} {
+        function isParticipantHere() {
+          return request.auth != null
+            && request.auth.uid in
+              get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        }
+        allow read: if isParticipantHere() && request.auth.uid == uid;
+        allow create, update: if isParticipantHere()
+          && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['ids', 'updatedAt'])
+          && request.resource.data.ids is list
+          && request.resource.data.ids.size() <= 500
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if false;
+      }
     }
 
     match /userBlocks/{uid}/blocked/{otherUid} {
