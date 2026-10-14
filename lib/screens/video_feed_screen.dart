@@ -1010,18 +1010,40 @@ class _VideoPageState extends State<_VideoPage>
           const ColoredBox(color: Colors.black),
           if (_ready)
             LayoutBuilder(
-              builder: (context, _) {
+              builder: (context, constraints) {
                 final aspectRatio = _vc!.value.aspectRatio;
                 if (!aspectRatio.isFinite || aspectRatio <= 0) {
                   return const SizedBox.shrink();
                 }
+                // على غرار تيك توك: الفيديو الطولي يملأ الشاشة عمودياً (قص بسيط
+                // من الجوانب)، أما الأفقي أو المربّع أو إن كان القص سيكون كبيراً
+                // (مثل شاشات الحاسوب) فيُعرض كاملاً بدون قص.
+                final boxW = constraints.maxWidth;
+                final boxH = constraints.maxHeight;
+                var fit = BoxFit.contain;
+                if (boxW.isFinite &&
+                    boxH.isFinite &&
+                    boxW > 0 &&
+                    boxH > 0 &&
+                    aspectRatio < 1 &&
+                    boxH > boxW) {
+                  final screenAspect = boxW / boxH;
+                  final ratio = screenAspect < aspectRatio
+                      ? screenAspect / aspectRatio
+                      : aspectRatio / screenAspect;
+                  if (ratio >= 0.7) fit = BoxFit.cover;
+                }
                 return ClipRect(
-                  child: Center(
+                  child: SizedBox.expand(
                     child: Directionality(
                       textDirection: TextDirection.ltr,
-                      child: AspectRatio(
-                        aspectRatio: aspectRatio,
-                        child: IgnorePointer(child: VideoPlayer(_vc!)),
+                      child: FittedBox(
+                        fit: fit,
+                        child: SizedBox(
+                          width: 1000 * aspectRatio,
+                          height: 1000,
+                          child: IgnorePointer(child: VideoPlayer(_vc!)),
+                        ),
                       ),
                     ),
                   ),
