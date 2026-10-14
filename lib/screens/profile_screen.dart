@@ -17,8 +17,6 @@ import 'post_widgets.dart';
 import 'settings_screen.dart';
 import 'social_screens.dart' show ChatScreen;
 import 'story_widgets.dart' show StoryViewer;
-import 'video_feed_screen.dart';
-import 'video_thumbnail.dart';
 import '../route_state.dart';
 
 /// تبويب الملف الشخصي للمستخدم الحالي.
@@ -198,11 +196,10 @@ class _ProfileViewState extends State<ProfileView> {
       );
     }
 
-    // مقاطع الفيديو (الافتراضي)، المنشورات، المحفوظات (لصاحب الحساب فقط)، الإعجابات
+    // المنشورات (الافتراضي)، المحفوظات (لصاحب الحساب فقط)، الإعجابات
     // (تُخفى عن الآخرين إذا فعّل صاحب الحساب «إخفاء الإعجابات»).
     final showLikes = widget.isMe || !user.hideLikes;
     final tabs = <Tab>[
-      const Tab(icon: Icon(Icons.video_library_outlined)),
       const Tab(icon: Icon(Icons.photo_library_outlined)),
       if (widget.isMe) const Tab(icon: Icon(Icons.bookmark_border_rounded)),
       if (showLikes) const Tab(icon: Icon(Icons.favorite_border_rounded)),
@@ -231,18 +228,10 @@ class _ProfileViewState extends State<ProfileView> {
           ],
           body: TabBarView(
             children: [
-              _VideoGrid(
-                uid: widget.uid,
-                isMe: widget.isMe,
-                pinned:
-                    pinned.where((p) => p.type == PostType.video).toList(),
-                pinnedIds: pinnedIds,
-              ),
               _PostsTab(
                 uid: widget.uid,
                 isMe: widget.isMe,
-                pinned:
-                    pinned.where((p) => p.type != PostType.video).toList(),
+                pinned: pinned,
                 pinnedIds: pinnedIds,
               ),
               if (widget.isMe) const _SavedGrid(),
@@ -600,11 +589,11 @@ class _Header extends StatelessWidget {
                       shape: BoxShape.circle,
                       gradient: LinearGradient(
                         colors: [
-                          Color(0xFFFEDA75),
-                          Color(0xFFFA7E1E),
-                          Color(0xFFD62976),
-                          Color(0xFF962FBF),
-                          Color(0xFF4F5BD5),
+                          Color(0xFFE9D5FF),
+                          Color(0xFFC084FC),
+                          Color(0xFFA855F7),
+                          Color(0xFF7C3AED),
+                          Color(0xFF5B21B6),
                         ],
                         begin: Alignment.topRight,
                         end: Alignment.bottomLeft,
@@ -796,7 +785,7 @@ class FollowActionButton extends StatelessWidget {
           minimumSize: const Size.fromHeight(42),
           padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 14),
           backgroundColor:
-              neutral ? context.appColors.surfaceHigh : AppColors.brandRed,
+              neutral ? context.appColors.surfaceHigh : AppColors.brandPurple,
           foregroundColor: neutral ? context.appColors.text : Colors.white,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -1724,7 +1713,7 @@ class _CreateButton extends StatelessWidget {
       icon: const Icon(Icons.add_rounded, size: 20),
       label: Text(label),
       style: FilledButton.styleFrom(
-        backgroundColor: AppColors.brandRed,
+        backgroundColor: AppColors.brandPurple,
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -1863,51 +1852,7 @@ class _PostsTabState extends State<_PostsTab> {
   }
 }
 
-/// تبويب مقاطع ريلز: فيديوهات الحساب.
-class _VideoGrid extends StatelessWidget {
-  final String uid;
-  final bool isMe;
-  final List<Post> pinned;
-  final Set<String> pinnedIds;
-  const _VideoGrid({
-    required this.uid,
-    required this.isMe,
-    this.pinned = const [],
-    this.pinnedIds = const <String>{},
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<List<Post>>(
-      stream: PostService.stream(PostType.video, uid: uid),
-      builder: (context, snap) {
-        if (snap.hasError) {
-          return Center(
-              child: Text('تعذر التحميل\n${snap.error}',
-                  textAlign: TextAlign.center));
-        }
-        if (!snap.hasData) return const AppLoading();
-        final list = _pinnedFirst(pinned, snap.data!);
-        if (list.isEmpty) {
-          return EmptyState(
-            icon: Icons.video_library_outlined,
-            title: isMe ? 'ابدأ بأول مقطع' : 'لا توجد مقاطع ريلز بعد',
-            message: isMe
-                ? 'صوّر مقطعاً قصيراً أو ارفع واحداً، وسيظهر هنا لمتابعيك.'
-                : 'ستظهر مقاطع ريلز هذا الحساب هنا.',
-            action: isMe
-                ? const _CreateButton(
-                    label: 'أنشئ أول مقطع', kind: CreateKind.reel)
-                : null,
-          );
-        }
-        return _VideoGridView(list: list, pinnedIds: pinnedIds, canPin: isMe);
-      },
-    );
-  }
-}
-
-/// تبويب الإعجابات: المقاطع التي أعجب بها صاحب الحساب.
+/// تبويب الإعجابات: المنشورات التي أعجب بها صاحب الحساب.
 class _LikedGrid extends StatelessWidget {
   final String uid;
   final bool isMe;
@@ -1916,7 +1861,7 @@ class _LikedGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<Post>>(
-      stream: PostService.likedVideos(uid),
+      stream: PostService.likedPosts(uid),
       builder: (context, snap) {
         if (snap.hasError) {
           return Center(
@@ -1930,60 +1875,11 @@ class _LikedGrid extends StatelessWidget {
               icon: Icons.favorite_border_rounded,
               title: 'لا توجد إعجابات بعد',
               message: isMe
-                  ? 'ستظهر هنا المقاطع التي تعجبك.'
-                  : 'ستظهر هنا المقاطع التي أعجب بها هذا الحساب.');
+                  ? 'ستظهر هنا المنشورات التي تعجبك.'
+                  : 'ستظهر هنا المنشورات التي أعجب بها هذا الحساب.');
         }
-        return _VideoGridView(list: list);
+        return _PostGrid(list: list);
       },
-    );
-  }
-}
-
-class _VideoGridView extends StatelessWidget {
-  final List<Post> list;
-  final Set<String> pinnedIds;
-  final bool canPin;
-  const _VideoGridView({
-    required this.list,
-    this.pinnedIds = const <String>{},
-    this.canPin = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) => GridView.builder(
-        padding: const EdgeInsets.all(2),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: _profileGridColumns(constraints.maxWidth),
-          mainAxisSpacing: 2,
-          crossAxisSpacing: 2,
-          childAspectRatio: 9 / 14,
-        ),
-        itemCount: list.length,
-        itemBuilder: (_, i) => GestureDetector(
-          onTap: () => Navigator.of(context).push(appRoute(
-              'video',
-              {'id': list[i].id},
-              (_) => VideoViewerScreen(posts: list, initialIndex: i))),
-          onLongPress: canPin
-              ? () => _showPinSheet(
-                  context, list[i], pinnedIds.contains(list[i].id))
-              : null,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              VideoThumbnail(post: list[i]),
-              const Center(
-                child: Icon(Icons.play_circle_outline_rounded,
-                    size: 34, color: Colors.white70),
-              ),
-              if (pinnedIds.contains(list[i].id)) const _PinBadge(),
-              _CardStats(post: list[i], showViews: true),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }
@@ -2000,7 +1896,6 @@ class _PostGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final videos = list.where((post) => post.type == PostType.video).toList();
     return LayoutBuilder(
       builder: (context, constraints) => GridView.builder(
         padding: const EdgeInsets.all(2),
@@ -2014,16 +1909,6 @@ class _PostGrid extends StatelessWidget {
           final post = list[i];
           return GestureDetector(
             onTap: () {
-              if (post.type == PostType.video) {
-                final videoIndex =
-                    videos.indexWhere((video) => video.id == post.id);
-                Navigator.of(context).push(appRoute(
-                    'video',
-                    {'id': post.id},
-                    (_) => VideoViewerScreen(
-                        posts: videos, initialIndex: videoIndex)));
-                return;
-              }
               Navigator.of(context).push(appRoute('post', {'id': post.id},
                   (_) => PostDetailScreen(post: post)));
             },
@@ -2036,16 +1921,6 @@ class _PostGrid extends StatelessWidget {
               children: [
                 switch (post.type) {
                   PostType.photo => PostImage(post: post),
-                  PostType.video => Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        VideoThumbnail(post: post),
-                        const Center(
-                          child: Icon(Icons.play_circle_outline_rounded,
-                              size: 34, color: Colors.white70),
-                        ),
-                      ],
-                    ),
                   _ => Container(
                       color: context.appColors.surfaceHigh,
                       padding: const EdgeInsets.all(8),
@@ -2056,8 +1931,7 @@ class _PostGrid extends StatelessWidget {
                     ),
                 },
                 if (pinnedIds.contains(post.id)) const _PinBadge(),
-                _CardStats(
-                    post: post, showViews: post.type == PostType.video),
+                _CardStats(post: post),
               ],
             ),
           );
