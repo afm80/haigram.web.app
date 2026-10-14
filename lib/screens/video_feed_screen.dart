@@ -171,27 +171,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       child: Container(
         width: 48,
         alignment: Alignment.center,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(5),
-            border: Border.all(color: Colors.white, width: 1.8),
-            boxShadow: const [
-              BoxShadow(blurRadius: 6, color: Colors.black54),
-            ],
-          ),
-          child: const Text(
-            'LIVE',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              height: 1.1,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.4,
-              shadows: _shadow,
-            ),
-          ),
-        ),
+        child: const _LiveTvIcon(),
       ),
     );
   }
@@ -269,6 +249,77 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       ),
     );
   }
+}
+
+/// أيقونة تلفزيون (شاشة بحواف دائرية مع هوائي) وبداخلها كلمة LIVE.
+class _LiveTvIcon extends StatelessWidget {
+  const _LiveTvIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 40,
+      height: 34,
+      child: Stack(
+        children: [
+          Positioned.fill(child: CustomPaint(painter: _LiveTvPainter())),
+          const Positioned(
+            left: 0,
+            right: 0,
+            top: 7,
+            height: 25,
+            child: Center(
+              child: Text(
+                'LIVE',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  height: 1,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.3,
+                  shadows: _shadow,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LiveTvPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final screen = RRect.fromRectAndRadius(
+        Rect.fromLTWH(2, 7, size.width - 4, size.height - 9),
+        const Radius.circular(7));
+    final antenna = Path()
+      ..moveTo(size.width / 2, 7)
+      ..lineTo(size.width / 2 - 7, 1)
+      ..moveTo(size.width / 2, 7)
+      ..lineTo(size.width / 2 + 7, 1);
+
+    final shadowPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.round
+      ..color = Colors.black54
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.round
+      ..color = Colors.white;
+
+    canvas.drawRRect(screen, shadowPaint);
+    canvas.drawPath(antenna, shadowPaint);
+    canvas.drawRRect(screen, paint);
+    canvas.drawPath(antenna, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// عارض فيديوهات بملء الشاشة يبدأ من فيديو محدد (عند الضغط على فيديو في ملف شخصي).
