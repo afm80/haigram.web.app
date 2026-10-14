@@ -12,6 +12,9 @@ class AppUser {
   final String name;
   final String username;
   final String bio;
+
+  /// رابط اختياري يظهر تحت النبذة (http/https).
+  final String website;
   final String? photoUrl;
 
   /// صورة شخصية مرفوعة (JPEG مصغّر بصيغة base64) محفوظة في مستند المستخدم.
@@ -31,6 +34,7 @@ class AppUser {
     required this.name,
     required this.username,
     this.bio = '',
+    this.website = '',
     this.photoUrl,
     this.photoB64,
     this.isPrivate = false,
@@ -48,6 +52,7 @@ class AppUser {
         name: name,
         username: username,
         bio: bio,
+        website: website,
         photoUrl: photoUrl,
         photoB64: photoB64,
         isPrivate: isPrivate ?? this.isPrivate,
@@ -77,6 +82,7 @@ class AppUser {
       name: (m['name'] ?? '') as String,
       username: (m['username'] ?? '') as String,
       bio: (m['bio'] ?? '') as String,
+      website: (m['website'] ?? '') as String,
       photoUrl: m['photoUrl'] as String?,
       photoB64: m['photoB64'] as String?,
       isPrivate: m['isPrivate'] == true,
@@ -130,6 +136,21 @@ class UserService {
     return null;
   }
 
+  /// يطبّع رابط البايو: يضيف https:// عند غيابها. يعيد '' للفارغ، وnull إذا كان غير صالح.
+  static String? normalizeWebsite(String input) {
+    var v = input.trim();
+    if (v.isEmpty) return '';
+    if (!RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]*://').hasMatch(v)) v = 'https://$v';
+    final uri = Uri.tryParse(v);
+    if (uri == null ||
+        (uri.scheme != 'http' && uri.scheme != 'https') ||
+        !uri.host.contains('.') ||
+        v.length > 100) {
+      return null;
+    }
+    return v;
+  }
+
   /// رابط الملف الشخصي (يفتح التطبيق على ملف هذا المستخدم).
   static String linkFor(String username) => '${Uri.base.origin}/?u=$username';
   static String shortLinkFor(String username) => linkFor(username).replaceFirst(RegExp(r'^https?://'), '');
@@ -145,6 +166,7 @@ class UserService {
     required String username,
     required String name,
     required String bio,
+    String? website,
     String? photoUrl,
     String? photoB64,
     String? oldUsername,
@@ -166,6 +188,7 @@ class UserService {
           'nameLower': name.trim().toLowerCase(),
           'username': username,
           'bio': bio,
+          if (website != null) 'website': website,
           'photoUrl': photoUrl,
           'photoB64': photoB64,
         },
@@ -220,17 +243,19 @@ class UserService {
     required String name,
     required String username,
     required String bio,
+    String website = '',
     String? photoB64,
   }) async {
     final u = FirebaseAuth.instance.currentUser!;
     final old = me?.username;
-    await _save(uid: u.uid, username: username, name: name, bio: bio, photoUrl: me?.photoUrl ?? u.photoURL, photoB64: photoB64, oldUsername: old);
+    await _save(uid: u.uid, username: username, name: name, bio: bio, website: website, photoUrl: me?.photoUrl ?? u.photoURL, photoB64: photoB64, oldUsername: old);
     await u.updateDisplayName(name.isNotEmpty ? name : username);
     final fresh = AppUser(
       uid: u.uid,
       name: name,
       username: username,
       bio: bio,
+      website: website,
       photoUrl: me?.photoUrl ?? u.photoURL,
       photoB64: photoB64,
       isPrivate: me?.isPrivate ?? false,
