@@ -628,6 +628,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _picker = ImagePicker();
   late final Stream<ChatBlockState> _blockState;
   bool _sending = false;
+  Uint8List? _pendingImage; // صورة مرفقة بانتظار الإرسال اليدوي
   Set<String> _hidden = const {};
   StreamSubscription<Set<String>>? _hiddenSub;
 
@@ -650,49 +651,37 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-  Future<void> _send() async {
-    if (_sending) return;
+  void _showError(String what, Object error) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$what: $error')),
+      );
+    }
+  }
+
+  /// يرسل ما في خانة الكتابة (نص/ملصق) والصورة المرفقة عند ضغط زر الإرسال فقط.
+  void _send() {
     final text = _text.text.trim();
-    if (text.isEmpty) return;
-    setState(() => _sending = true);
-    try {
-      await SocialService.sendMessage(widget.conversationId, text);
-      _text.clear();
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر إرسال الرسالة: $error')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _sending = false);
+    final image = _pendingImage;
+    if (text.isEmpty && image == null) return;
+    _text.clear();
+    setState(() => _pendingImage = null);
+    if (image != null) {
+      SocialService.sendImage(widget.conversationId, image)
+          .catchError((Object e) => _showError('تعذر إرسال الصورة', e));
+    }
+    if (text.isNotEmpty) {
+      final sending = isSingleSticker(text)
+          ? SocialService.sendSticker(widget.conversationId, text)
+          : SocialService.sendMessage(widget.conversationId, text);
+      sending.catchError((Object e) {
+        if (mounted && _text.text.isEmpty) _text.text = text;
+        _showError('تعذر إرسال الرسالة', e);
+      });
     }
   }
 
-  void _openImage(Uint8List bytes) {
-    rootNavigatorOf(context).push(
-      MaterialPageRoute<void>(
-        fullscreenDialog: true,
-        builder: (_) => _ChatImageViewer(bytes: bytes),
-      ),
-    );
-  }
-
-  Future<void> _sendSticker(String sticker) async {
-    if (_sending) return;
-    setState(() => _sending = true);
-    try {
-      await SocialService.sendSticker(widget.conversationId, sticker);
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر إرسال الملصق: $error')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _sending = false);
-    }
-  }
+  void _openImage(Uint8List bytes) => openFullScreenImage(context, bytes);
 
   Future<void> _pickImage(ImageSource source) async {
     if (_sending) return;
@@ -706,16 +695,17 @@ class _ChatScreenState extends State<ChatScreen> {
       if (image == null) return;
       final bytes = await image.readAsBytes();
       if (!mounted) return;
-      setState(() => _sending = true);
-      await SocialService.sendImage(widget.conversationId, bytes);
+      if (bytes.length > 700 * 1024) {
+        _showError('تعذر إرفاق الصورة', 'حجم الصورة يجب ألا يتجاوز 700 كيلوبايت');
+        return;
+      }
+      setState(() => _pendingImage = bytes);
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر إرسال الصورة: $error')),
+          SnackBar(content: Text('تعذر إرفاق الصورة: $error')),
         );
       }
-    } finally {
-      if (mounted) setState(() => _sending = false);
     }
   }
 
@@ -1085,6 +1075,11 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
               if (!blockState.blocked) ...[
+                if (_pendingImage != null)
+                  PendingImagePreview(
+                    bytes: _pendingImage!,
+                    onRemove: () => setState(() => _pendingImage = null),
+                  ),
                 SafeArea(
                   top: false,
                   child: Padding(
@@ -1099,15 +1094,14 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                         IconButton(
                           tooltip: 'الملصقات والرموز التعبيرية',
-                          onPressed: _sending
-                              ? null
-                              : () {
-                                  FocusScope.of(context).unfocus();
-                                  showStickerSheet(
-                                    context,
-                                    onPick: _sendSticker,
-                                  );
-                                },
+                          onPressed: () {
+                            FocusScope.of(context).unfocus();
+                            showStickerSheet(
+                              context,
+                              onPick: (sticker) =>
+                                  insertAtCursor(_text, sticker),
+                            );
+                          },
                           icon: const Icon(Icons.emoji_emotions_outlined),
                         ),
                         Expanded(
@@ -1346,41 +1340,4 @@ class _MessageState extends StatelessWidget {
           ),
         ),
       );
-}
-
-/// عارض الصورة بملء الشاشة: تكبير بالقرص، وإغلاق بالنقر أو زر الإغلاق.
-class _ChatImageViewer extends StatelessWidget {
-  final Uint8List bytes;
-  const _ChatImageViewer({required this.bytes});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          tooltip: 'إغلاق',
-          icon: const Icon(Icons.close_rounded),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ),
-      body: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => Navigator.of(context).pop(),
-        child: SizedBox.expand(
-          child: InteractiveViewer(
-            minScale: 1,
-            maxScale: 5,
-            child: Center(
-              child: Image.memory(bytes, fit: BoxFit.contain),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
