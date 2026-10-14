@@ -17,6 +17,7 @@ dependencies:
   firebase_storage: ^12.3.4
   video_player: ^2.9.1
   image_picker: ^1.1.2
+  image: ^4.2.0
   cached_network_image: ^3.4.1
   shared_preferences: ^2.3.2
   intl: any
