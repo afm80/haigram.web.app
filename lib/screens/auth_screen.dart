@@ -24,6 +24,7 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _busy = false;
   bool _rememberMe = true;
   String? _error;
+  String? _info;
 
   @override
   void dispose() {
@@ -38,6 +39,7 @@ class _AuthScreenState extends State<AuthScreen> {
     setState(() {
       _busy = true;
       _error = null;
+      _info = null;
     });
     try {
       await action();
@@ -69,6 +71,10 @@ class _AuthScreenState extends State<AuthScreen> {
         return 'هذا البريد مسجّل بطريقة دخول أخرى';
       case 'network-request-failed':
         return 'تحقق من اتصال الإنترنت';
+      case 'too-many-requests':
+        return 'محاولات كثيرة، حاول مرة أخرى بعد قليل';
+      case 'missing-email':
+        return 'اكتب بريدك الإلكتروني أولاً';
       default:
         return 'تعذر تسجيل الدخول ($code)';
     }
@@ -102,6 +108,30 @@ class _AuthScreenState extends State<AuthScreen> {
           await auth.signInWithEmailAndPassword(
               email: _email.text.trim(), password: _pass.text);
         }
+      });
+
+  /// إرسال رابط إعادة تعيين كلمة المرور إلى البريد.
+  Future<void> _forgotPassword() => _run(() async {
+        final email = _email.text.trim();
+        if (email.isEmpty) {
+          setState(() =>
+              _error = 'اكتب بريدك الإلكتروني أولاً ثم اضغط «نسيت كلمة المرور»');
+          return;
+        }
+        if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+          setState(() => _error = 'البريد الإلكتروني غير صحيح');
+          return;
+        }
+        final auth = FirebaseAuth.instance;
+        await auth.setLanguageCode('ar'); // لتصل الرسالة بالعربية
+        try {
+          await auth.sendPasswordResetEmail(email: email);
+        } on FirebaseAuthException catch (e) {
+          // لا نكشف هل البريد مسجّل أم لا.
+          if (e.code != 'user-not-found') rethrow;
+        }
+        setState(() => _info =
+            'إن كان هذا البريد مسجّلاً لدينا فقد أرسلنا إليه رابط إعادة تعيين كلمة المرور. تحقق من صندوق الوارد ومن البريد غير الهام (Spam).');
       });
 
   Future<void> _google() => _run(() async {
@@ -240,6 +270,14 @@ class _AuthScreenState extends State<AuthScreen> {
                                   ),
                                   onSubmitted: (_) => _emailAuth(),
                                 ),
+                                if (!_register)
+                                  Align(
+                                    alignment: AlignmentDirectional.centerStart,
+                                    child: TextButton(
+                                      onPressed: _busy ? null : _forgotPassword,
+                                      child: const Text('نسيت كلمة المرور؟'),
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
@@ -263,6 +301,25 @@ class _AuthScreenState extends State<AuthScreen> {
                                   child: const Text('تذكرني على هذا الجهاز'),
                                 ),
                               ],
+                            ),
+                          ],
+                          if (_info != null) ...[
+                            const SizedBox(height: 14),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                  color: const Color(0xFF31C75A)
+                                      .withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(14)),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.mark_email_read_outlined,
+                                      color: Color(0xFF31C75A), size: 20),
+                                  const SizedBox(width: 8),
+                                  Expanded(child: Text(_info!)),
+                                ],
+                              ),
                             ),
                           ],
                           if (_error != null) ...[
