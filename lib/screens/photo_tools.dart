@@ -171,18 +171,38 @@ class _CropScreenState extends State<_CropScreen> {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      final boundary =
-          _boundary.currentContext!.findRenderObject() as RenderRepaintBoundary;
-      final captured = await boundary.toImage(pixelRatio: _outputSize / box);
-      final data =
-          await captured.toByteData(format: ui.ImageByteFormat.rawRgba);
-      if (data == null) throw StateError('تعذر معالجة الصورة');
-      final rgba = img.Image.fromBytes(
-        width: captured.width,
-        height: captured.height,
-        bytes: data.buffer,
-        numChannels: 4,
-      );
+      // القص يتم حسابياً من موضع الصورة وتكبيرها، دون التقاط الشاشة،
+      // لأن التقاط الشاشة (toImage) لا يعمل في متصفح الجوال/الآيباد.
+      final size = _imageSize;
+      if (size == null) throw StateError('الصورة لم تُحمّل بعد');
+      final decoded = img.decodeImage(_bytes);
+      if (decoded == null) throw StateError('صيغة غير مدعومة');
+      final baked = img.bakeOrientation(decoded);
+      final scale0 =
+          box / (size.width < size.height ? size.width : size.height);
+      final childW = size.width * scale0;
+      final childH = size.height * scale0;
+      final m = _controller.value;
+      final s = m.getMaxScaleOnAxis();
+      final tx = m.storage[12];
+      final ty = m.storage[13];
+      final fx = (-tx / s) / childW;
+      final fy = (-ty / s) / childH;
+      final fw = (box / s) / childW;
+      final fh = (box / s) / childH;
+      var cw = (fw * baked.width).round().clamp(1, baked.width);
+      var ch = (fh * baked.height).round().clamp(1, baked.height);
+      final side = cw < ch ? cw : ch;
+      cw = side;
+      ch = side;
+      final cx = (fx * baked.width).round().clamp(0, baked.width - cw);
+      final cy = (fy * baked.height).round().clamp(0, baked.height - ch);
+      final cropped =
+          img.copyCrop(baked, x: cx, y: cy, width: cw, height: ch);
+      final rgba = img.copyResize(cropped,
+          width: _outputSize,
+          height: _outputSize,
+          interpolation: img.Interpolation.average);
       var quality = 88;
       late Uint8List out;
       do {
