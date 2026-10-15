@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -421,7 +422,52 @@ class YoutubeInline extends StatefulWidget {
 }
 
 class _YoutubeInlineState extends State<YoutubeInline> {
+  /// المشغّل الوحيد النشط حالياً: تشغيل فيديو جديد يغلق السابق.
+  static final ValueNotifier<Object?> _active = ValueNotifier<Object?>(null);
+
   late bool _playing = widget.autoPlay;
+  Timer? _watch;
+
+  @override
+  void initState() {
+    super.initState();
+    _active.addListener(_onActiveChanged);
+    if (_playing) _claim();
+  }
+
+  void _claim() {
+    _active.value = this;
+    // أثناء التشغيل: إذا خرج الفيديو من الشاشة (تمرير) يُغلق ويتوقف صوته.
+    _watch?.cancel();
+    _watch = Timer.periodic(const Duration(milliseconds: 300), (_) {
+      if (!mounted || !_playing) return;
+      final box = context.findRenderObject();
+      if (box is! RenderBox || !box.attached) return;
+      final top = box.localToGlobal(Offset.zero).dy;
+      final bottom = top + box.size.height;
+      final screenH = MediaQuery.of(context).size.height;
+      final visible = (bottom.clamp(0, screenH) - top.clamp(0, screenH));
+      if (visible < box.size.height * 0.3) _stop();
+    });
+  }
+
+  void _stop() {
+    _watch?.cancel();
+    _watch = null;
+    if (_playing && mounted) setState(() => _playing = false);
+  }
+
+  void _onActiveChanged() {
+    if (_active.value != this) _stop();
+  }
+
+  @override
+  void dispose() {
+    _watch?.cancel();
+    _active.removeListener(_onActiveChanged);
+    if (_active.value == this) _active.value = null;
+    super.dispose();
+  }
 
   /// يحدّ ارتفاع الفيديو (16:9) بنحو 55% من ارتفاع الشاشة، فلا يملأ الشاشة
   /// على الكمبيوتر ويبقى ما تحته قابلاً للتمرير.
@@ -446,7 +492,10 @@ class _YoutubeInlineState extends State<YoutubeInline> {
   Widget _thumb(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => setState(() => _playing = true),
+      onTap: () {
+        setState(() => _playing = true);
+        _claim();
+      },
       child: AspectRatio(
         aspectRatio: 16 / 9,
         child: Stack(
