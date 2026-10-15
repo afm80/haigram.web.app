@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/post_service.dart';
 import '../theme.dart';
@@ -50,7 +51,6 @@ class _PostCardState extends State<PostCard> {
     final p = widget.post;
     final isText = p.type == PostType.text;
     final colors = context.appColors;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final textPostForeground = colors.text;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -65,19 +65,21 @@ class _PostCardState extends State<PostCard> {
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  if (isText)
+                  if (p.hasVideo)
+                    _videoBlock(p)
+                  else if (isText)
                     Container(
                       width: double.infinity,
                       constraints: const BoxConstraints(minHeight: 160),
                       padding: const EdgeInsets.all(24),
                       alignment: Alignment.center,
+                      // الخلفية تتبع الوضع: داكنة في الداكن وفاتحة في الفاتح.
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                            colors: isDark
-                                ? const [Color(0xFF4F1566), Color(0xFF2A0B3D)]
-                                : const [Color(0xFFF6E3FB), Color(0xFFFCF1FF)],
-                            begin: Alignment.topRight,
-                            end: Alignment.bottomLeft),
+                        color: colors.surface,
+                        border: Border.symmetric(
+                          horizontal: BorderSide(
+                              color: colors.text.withOpacity(0.08)),
+                        ),
                       ),
                       child: Text.rich(
                           _captionSpans(
@@ -139,7 +141,7 @@ class _PostCardState extends State<PostCard> {
                 )
               : const SizedBox.shrink(),
         ),
-        if (!isText && p.caption.isNotEmpty)
+        if ((!isText || p.hasVideo) && p.caption.isNotEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
             child: Text.rich(
@@ -175,6 +177,55 @@ class _PostCardState extends State<PostCard> {
               style: TextStyle(color: context.appColors.textDim, fontSize: 11)),
         ),
       ],
+    );
+  }
+
+  /// بطاقة فيديو يوتيوب: صورة مصغّرة + زر تشغيل، والضغط يفتح الفيديو في يوتيوب.
+  Widget _videoBlock(Post p) {
+    final id = p.videoId!;
+    return GestureDetector(
+      onTap: () => launchUrl(Uri.parse(PostService.youtubeWatchUrl(id)),
+          mode: LaunchMode.externalApplication),
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Container(color: Colors.black),
+            CachedNetworkImage(
+              imageUrl: p.videoThumb!,
+              fit: BoxFit.cover,
+              errorWidget: (_, __, ___) => const SizedBox.shrink(),
+            ),
+            Center(
+              child: Container(
+                width: 64,
+                height: 64,
+                decoration: const BoxDecoration(
+                    color: Color(0xCCFF0000), shape: BoxShape.circle),
+                child: const Icon(Icons.play_arrow_rounded,
+                    color: Colors.white, size: 44),
+              ),
+            ),
+            PositionedDirectional(
+              start: 10,
+              bottom: 8,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(6)),
+                child: const Text('YouTube',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

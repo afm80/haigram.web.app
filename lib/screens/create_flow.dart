@@ -256,7 +256,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                     ),
                   ),
                   kind == CreateKind.post
-                      ? _sideButton(Icons.edit_note_rounded, 'نص فقط', () {
+                      ? _sideButton(Icons.edit_note_rounded, 'نص / فيديو', () {
                           Navigator.of(context).pushReplacement(
                               MaterialPageRoute(
                                   builder: (_) => ComposeScreen(kind: kind)));
@@ -313,11 +313,22 @@ class ComposeScreen extends StatefulWidget {
 
 class _ComposeScreenState extends State<ComposeScreen> {
   final _caption = TextEditingController();
+  final _videoLink = TextEditingController();
   double _progress = 0;
   bool _busy = false;
   String? _error;
 
   bool get _textOnly => widget.media == null;
+
+  // رابط يوتيوب متاح في المنشور النصي فقط (نص، أو فيديو، أو الاثنان معاً).
+  bool get _allowVideo => _textOnly && widget.kind == CreateKind.post;
+
+  @override
+  void dispose() {
+    _caption.dispose();
+    _videoLink.dispose();
+    super.dispose();
+  }
 
   String get _hint => switch (widget.kind) {
         CreateKind.post =>
@@ -327,8 +338,17 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
   Future<void> _publish() async {
     final caption = _caption.text.trim();
-    if (_textOnly && caption.isEmpty) {
-      setState(() => _error = 'اكتب شيئاً أولاً');
+    final link = _allowVideo ? _videoLink.text.trim() : '';
+    String? videoId;
+    if (link.isNotEmpty) {
+      videoId = PostService.youtubeId(link);
+      if (videoId == null) {
+        setState(() => _error = 'رابط يوتيوب غير صالح');
+        return;
+      }
+    }
+    if (_textOnly && caption.isEmpty && videoId == null) {
+      setState(() => _error = 'اكتب شيئاً أو أضف رابط فيديو أولاً');
       return;
     }
     setState(() {
@@ -345,7 +365,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
       final m = widget.media;
       if (m == null) {
-        await PostService.publishText(caption);
+        await PostService.publishText(caption, videoId: videoId);
       } else {
         final type = switch (widget.kind) {
           CreateKind.post => PostType.photo,
@@ -404,6 +424,18 @@ class _ComposeScreenState extends State<ComposeScreen> {
                 ),
               ),
             const SizedBox(height: 16),
+            if (_allowVideo) ...[
+              TextField(
+                controller: _videoLink,
+                keyboardType: TextInputType.url,
+                textDirection: TextDirection.ltr,
+                decoration: const InputDecoration(
+                  hintText: 'رابط فيديو يوتيوب (اختياري)',
+                  prefixIcon: Icon(Icons.play_circle_outline_rounded),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             TextField(
               controller: _caption,
               minLines: _textOnly ? 6 : 3,

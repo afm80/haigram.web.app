@@ -194,7 +194,7 @@ class _PostShareSheetState extends State<_PostShareSheet> {
     );
     controller.dispose();
     if (result == null || result == _post.caption) return;
-    if (isText && result.isEmpty) {
+    if (isText && !_post.hasVideo && result.isEmpty) {
       _toast('لا يمكن ترك المنشور فارغاً');
       return;
     }

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1902,6 +1903,21 @@ class _PostGrid extends StatelessWidget {
               children: [
                 switch (post.type) {
                   PostType.photo => PostImage(post: post),
+                  _ when post.hasVideo => Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        CachedNetworkImage(
+                          imageUrl: post.videoThumb!,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) =>
+                              Container(color: Colors.black),
+                        ),
+                        const Center(
+                          child: Icon(Icons.play_circle_fill_rounded,
+                              color: Colors.white, size: 36),
+                        ),
+                      ],
+                    ),
                   _ => Container(
                       color: context.appColors.surfaceHigh,
                       padding: const EdgeInsets.all(8),
