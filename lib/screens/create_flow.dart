@@ -38,7 +38,7 @@ void showCreateSheet(BuildContext context) {
     shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
     builder: (ctx) {
-      Widget tile(IconData icon, String title, CreateKind kind) => Expanded(
+      Widget tile(String title, CreateKind kind) => Expanded(
             child: InkWell(
               borderRadius: BorderRadius.circular(14),
               onTap: () {
@@ -53,28 +53,19 @@ void showCreateSheet(BuildContext context) {
                   ),
                 );
               },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                          color: colors.surfaceHigh,
-                          borderRadius: BorderRadius.circular(16)),
-                      child: Icon(icon, size: 28, color: colors.text),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      title,
-                      style: TextStyle(
-                          fontSize: 14,
-                          color: colors.text,
-                          fontWeight: FontWeight.w600),
-                    ),
-                  ],
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                    color: colors.surfaceHigh,
+                    borderRadius: BorderRadius.circular(14)),
+                child: Text(
+                  title,
+                  style: TextStyle(
+                      fontSize: 15,
+                      color: colors.text,
+                      fontWeight: FontWeight.w600),
                 ),
               ),
             ),
@@ -104,11 +95,9 @@ void showCreateSheet(BuildContext context) {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Row(
                 children: [
-                  tile(Icons.grid_on_rounded, 'منشور', CreateKind.post),
-                  tile(Icons.add_circle_outline_rounded, 'قصة',
-                      CreateKind.story),
-                  tile(Icons.play_circle_outline_rounded, 'فيديو',
-                      CreateKind.video),
+                  tile('منشور', CreateKind.post),
+                  tile('قصة', CreateKind.story),
+                  tile('فيديو', CreateKind.video),
                 ],
               ),
             ),
