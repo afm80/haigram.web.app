@@ -512,7 +512,7 @@ class _PostShareSheetState extends State<_PostShareSheet> {
             label: saved ? 'إزالة الحفظ' : 'حفظ',
             icon: _icon(
               saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-              saved ? const Color(0xFFFFB300) : null,
+              saved ? context.appColors.reaction : null,
             ),
             onTap: () => _runAndClose(
               () => PostService.toggleSave(_post.id, saved),

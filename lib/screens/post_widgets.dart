@@ -115,7 +115,11 @@ class _PostCardState extends State<PostCard> {
                       opacity: _heart ? 1 : 0,
                       duration: const Duration(milliseconds: 200),
                       child: const Icon(Icons.favorite_rounded,
-                          size: 100, color: Colors.white),
+                          size: 100,
+                          color: AppColors.brandOrange,
+                          shadows: [
+                            Shadow(blurRadius: 24, color: Color(0x66000000))
+                          ]),
                     ),
                   ),
                 ],
@@ -227,7 +231,7 @@ class _PostCardState extends State<PostCard> {
                   liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                   size: 28,
                   color: liked
-                      ? AppColors.postLike
+                      ? context.appColors.reaction
                       : Theme.of(context).brightness == Brightness.dark
                           ? Colors.white
                           : Colors.black,
@@ -266,7 +270,9 @@ class _PostCardState extends State<PostCard> {
                       ? Icons.bookmark_rounded
                       : Icons.bookmark_border_rounded,
                   size: 28,
-                  color: context.appColors.text,
+                  color: saved
+                      ? context.appColors.reaction
+                      : context.appColors.text,
                 ),
               );
             },

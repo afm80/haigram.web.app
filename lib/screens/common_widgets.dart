@@ -387,7 +387,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                               : Icons.favorite_border_rounded,
                                           size: 18,
                                           color: c.likedBy.contains(me)
-                                              ? AppColors.likeAccent
+                                              ? context.appColors.reaction
                                               : context.appColors.textDim,
                                         ),
                                       ),

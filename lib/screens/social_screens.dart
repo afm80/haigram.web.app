@@ -1311,8 +1311,7 @@ class _NotificationTile extends StatelessWidget {
               ? _FollowRequestActions(requesterUid: notification.actorUid)
               : notification.read
                   ? null
-                  : const Icon(Icons.circle,
-                      color: AppColors.accent, size: 9)),
+                  : Icon(Icons.circle, color: colors.reaction, size: 9)),
       tileColor: notification.read ? null : colors.surface.withOpacity(0.7),
     );
   }
