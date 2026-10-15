@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -786,12 +788,27 @@ class _StoryMediaState extends State<_StoryMedia> {
 
   @override
   Widget build(BuildContext context) {
-    // تعبئة كاملة لمساحة القصة (cover) كما في إنستغرام.
+    // الصورة كاملة بدون قص (contain) مع خلفية مموّهة من الصورة نفسها.
     return LayoutBuilder(
       builder: (_, c) => ColoredBox(
         color: const Color(0xFF111111),
-        child: PostImage(
-            post: widget.story, fit: BoxFit.cover, height: c.maxHeight),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ImageFiltered(
+              imageFilter: ui.ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+              child: PostImage(
+                  post: widget.story, fit: BoxFit.cover, height: c.maxHeight),
+            ),
+            const ColoredBox(color: Color(0x66000000)),
+            Center(
+              child: PostImage(
+                  post: widget.story,
+                  fit: BoxFit.contain,
+                  height: c.maxHeight),
+            ),
+          ],
+        ),
       ),
     );
   }
