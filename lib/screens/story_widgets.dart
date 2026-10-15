@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'package:cached_network_image/cached_network_image.dart';
+
 import '../services/post_service.dart';
+import '../services/social_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
 import 'create_flow.dart';
@@ -179,7 +182,11 @@ class _StoriesBarState extends State<StoriesBar> {
   }
 }
 
-/// عارض القصص بملء الشاشة: أشرطة تقدّم، نقر للتنقل، ضغط مطوّل للإيقاف، سحب للأسفل للإغلاق.
+/// عارض القصص بملء الشاشة على طريقة إنستغرام:
+/// - أشرطة تقدّم، نقر على الثلث الأول للرجوع وعلى الباقي للتالي.
+/// - ضغط مطوّل للإيقاف مع إخفاء الواجهة، سحب للأسفل للإغلاق.
+/// - سحب أفقي للانتقال بين أصحاب القصص بتأثير مكعّب ثلاثي الأبعاد.
+/// - شريط سفلي: ردّ على القصة (رسالة خاصة) + قلب إعجاب.
 class StoryViewer extends StatefulWidget {
   final List<StoryGroup> groups;
   final int initial;
@@ -193,9 +200,14 @@ class _StoryViewerState extends State<StoryViewer>
     with SingleTickerProviderStateMixin {
   late int _g = widget.initial;
   late int _s;
-  bool _paused = false;
   bool _ready = false;
+  bool _hideUi = false; // أثناء الضغط المطوّل
+  double _dragDy = 0; // سحب للأسفل للإغلاق
+  final Set<String> _pauseReasons = {};
   late final AnimationController _t;
+  late final PageController _pc = PageController(initialPage: widget.initial);
+  final TextEditingController _reply = TextEditingController();
+  final FocusNode _replyFocus = FocusNode();
 
   @override
   void initState() {
@@ -205,12 +217,17 @@ class _StoryViewerState extends State<StoryViewer>
       ..addStatusListener((st) {
         if (st == AnimationStatus.completed) _next();
       });
+    _replyFocus.addListener(() => _setPause('typing', _replyFocus.hasFocus));
     StoryViewed.mark(_story.id);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _precacheNext());
   }
 
   @override
   void dispose() {
     _t.dispose();
+    _pc.dispose();
+    _reply.dispose();
+    _replyFocus.dispose();
     super.dispose();
   }
 
@@ -221,6 +238,38 @@ class _StoryViewerState extends State<StoryViewer>
 
   StoryGroup get _group => widget.groups[_g];
   Post get _story => _group.stories[_s];
+  bool get _paused => _pauseReasons.isNotEmpty;
+
+  // ---- الإيقاف المؤقت بأسباب متعددة (ضغط مطوّل، كتابة، سحب، نافذة...) ----
+  void _setPause(String reason, bool on) {
+    if (!mounted) return;
+    final before = _paused;
+    on ? _pauseReasons.add(reason) : _pauseReasons.remove(reason);
+    if (before == _paused) return;
+    if (_paused) {
+      _t.stop();
+    } else if (_ready) {
+      _t.forward();
+    }
+    setState(() {});
+  }
+
+  void _precacheNext() {
+    if (!mounted) return;
+    Post? next;
+    if (_s < _group.stories.length - 1) {
+      next = _group.stories[_s + 1];
+    } else if (_g < widget.groups.length - 1) {
+      final ng = widget.groups[_g + 1];
+      next = ng.stories[_firstUnseen(ng)];
+    }
+    final url = next?.mediaUrl;
+    if (url == null) return;
+    precacheImage(
+            CachedNetworkImageProvider(PostService.optimizedImageUrl(url, 1080)),
+            context)
+        .catchError((_) {});
+  }
 
   void _go(int g, int s) {
     _t.stop();
@@ -231,6 +280,7 @@ class _StoryViewerState extends State<StoryViewer>
       _s = s;
     });
     StoryViewed.mark(_story.id);
+    _precacheNext();
   }
 
   void _next() {
@@ -238,7 +288,8 @@ class _StoryViewerState extends State<StoryViewer>
     if (_s < _group.stories.length - 1) {
       _go(_g, _s + 1);
     } else if (_g < widget.groups.length - 1) {
-      _go(_g + 1, 0);
+      _pc.nextPage(
+          duration: const Duration(milliseconds: 350), curve: Curves.easeOut);
     } else {
       Navigator.of(context).pop();
     }
@@ -248,10 +299,16 @@ class _StoryViewerState extends State<StoryViewer>
     if (_s > 0) {
       _go(_g, _s - 1);
     } else if (_g > 0) {
-      _go(_g - 1, 0);
+      _pc.previousPage(
+          duration: const Duration(milliseconds: 350), curve: Curves.easeOut);
     } else {
       _t.forward(from: 0);
     }
+  }
+
+  void _onPageChanged(int i) {
+    if (i == _g) return;
+    _go(i, _firstUnseen(widget.groups[i]));
   }
 
   void _onReady(Duration d) {
@@ -265,25 +322,15 @@ class _StoryViewerState extends State<StoryViewer>
     }
   }
 
-  void _pause() {
-    _t.stop();
-    setState(() => _paused = true);
-  }
-
-  void _resume() {
-    setState(() => _paused = false);
-    if (_ready) _t.forward();
-  }
-
   Future<void> _openAuthor() async {
-    _pause();
+    _setPause('nav', true);
     await Navigator.of(context).push(appRoute('user', {'uid': _group.uid},
         (_) => UserProfileScreen(uid: _group.uid)));
-    if (mounted) _resume();
+    _setPause('nav', false);
   }
 
   Future<void> _delete() async {
-    _pause();
+    _setPause('dialog', true);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -301,144 +348,340 @@ class _StoryViewerState extends State<StoryViewer>
     if (ok == true) {
       await PostService.deletePost(_story);
       if (mounted) Navigator.of(context).pop();
-    } else if (mounted) {
-      _resume();
+    } else {
+      _setPause('dialog', false);
     }
+  }
+
+  Future<void> _sendReply() async {
+    final text = _reply.text.trim();
+    if (text.isEmpty) return;
+    final messenger = ScaffoldMessenger.of(context);
+    _reply.clear();
+    _replyFocus.unfocus();
+    try {
+      final id = await SocialService.startConversation(_group.uid);
+      await SocialService.sendMessage(id, 'ردّ على القصة: $text');
+      messenger.showSnackBar(const SnackBar(
+          content: Text('تم إرسال ردّك'), duration: Duration(seconds: 2)));
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(
+          content: Text('تعذّر إرسال الردّ'), duration: Duration(seconds: 2)));
+    }
+  }
+
+  // ---- تأثير المكعّب بين الصفحات ----
+  Widget _cube(int i, Widget child) {
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    return AnimatedBuilder(
+      animation: _pc,
+      child: child,
+      builder: (ctx, c) {
+        var page = _g.toDouble();
+        if (_pc.hasClients && _pc.position.haveDimensions) {
+          page = _pc.page ?? page;
+        }
+        final d = (i - page).clamp(-1.0, 1.0).toDouble();
+        final angle = (rtl ? -1 : 1) * d * 1.5707963;
+        final fwdIsLeftPivot = (d > 0) == !rtl;
+        return Transform(
+          alignment:
+              fwdIsLeftPivot ? Alignment.centerLeft : Alignment.centerRight,
+          transform: Matrix4.identity()
+            ..setEntry(3, 2, 0.001)
+            ..rotateY(angle),
+          child: c,
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final story = _story;
-    final mine = _group.uid == PostService.uidOrEmpty;
+    final scale = (1 - (_dragDy / 1200)).clamp(0.85, 1.0).toDouble();
     return Scaffold(
       backgroundColor: Colors.black,
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTapUp: (d) {
+          if (_replyFocus.hasFocus) {
+            _replyFocus.unfocus();
+            return;
+          }
           final w = MediaQuery.of(context).size.width;
           final rtl = Directionality.of(context) == TextDirection.rtl;
-          final left = d.localPosition.dx < w / 2;
-          (rtl ? left : !left) ? _next() : _prev();
+          final inPrevZone =
+              rtl ? d.localPosition.dx > w * 2 / 3 : d.localPosition.dx < w / 3;
+          inPrevZone ? _prev() : _next();
         },
-        onLongPressStart: (_) => _pause(),
-        onLongPressEnd: (_) => _resume(),
+        onLongPressStart: (_) {
+          _hideUi = true;
+          _setPause('hold', true);
+        },
+        onLongPressEnd: (_) {
+          _hideUi = false;
+          _setPause('hold', false);
+        },
+        onVerticalDragStart: (_) => _setPause('drag', true),
+        onVerticalDragUpdate: (d) {
+          setState(() => _dragDy = (_dragDy + d.delta.dy).clamp(0.0, 600.0));
+        },
         onVerticalDragEnd: (d) {
-          if ((d.primaryVelocity ?? 0) > 300) Navigator.of(context).pop();
+          if (_dragDy > 120 || (d.primaryVelocity ?? 0) > 700) {
+            Navigator.of(context).pop();
+          } else {
+            setState(() => _dragDy = 0);
+            _setPause('drag', false);
+          }
         },
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            _StoryMedia(
-                key: ValueKey(story.id),
-                story: story,
-                paused: _paused,
-                onReady: _onReady),
-            const Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              height: 140,
-              child: IgnorePointer(
-                child: DecoratedBox(
-                    decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [Color(0x99000000), Colors.transparent]))),
-              ),
+        child: Transform.translate(
+          offset: Offset(0, _dragDy),
+          child: Transform.scale(
+            scale: scale,
+            child: PageView.builder(
+              controller: _pc,
+              itemCount: widget.groups.length,
+              onPageChanged: _onPageChanged,
+              itemBuilder: (_, i) => _cube(i, _page(i)),
             ),
-            SafeArea(
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-                    child: AnimatedBuilder(
-                      animation: _t,
-                      builder: (_, __) => Row(
-                        children: [
-                          for (var i = 0; i < _group.stories.length; i++)
-                            Expanded(
-                              child: Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 2),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(2),
-                                  child: LinearProgressIndicator(
-                                    value:
-                                        i < _s ? 1 : (i == _s ? _t.value : 0),
-                                    minHeight: 2.5,
-                                    backgroundColor: Colors.white30,
-                                    valueColor: const AlwaysStoppedAnimation(
-                                        Colors.white),
-                                  ),
-                                ),
-                              ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _page(int gi) {
+    final group = widget.groups[gi];
+    final active = gi == _g;
+    final si = active ? _s : _firstUnseen(group);
+    final story = group.stories[si];
+    final mine = group.uid == PostService.uidOrEmpty;
+    return ColoredBox(
+      color: Colors.black,
+      child: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(0, 4, 0, 0),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _StoryMedia(
+                          key: ValueKey(story.id),
+                          story: story,
+                          onReady: active ? _onReady : (_) {}),
+                      IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: const [
+                                Color(0x99000000),
+                                Colors.transparent,
+                                Colors.transparent,
+                                Color(0x88000000),
+                              ],
+                              stops: const [0, 0.22, 0.75, 1],
                             ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
-                    child: Row(
-                      children: [
-                        GestureDetector(
-                          onTap: _openAuthor,
-                          behavior: HitTestBehavior.opaque,
-                          child: Row(
-                            children: [
-                              UserAvatar(
-                                  uid: _group.uid,
-                                  fallbackName: _group.username,
-                                  radius: 17),
-                              const SizedBox(width: 10),
-                              Text(_group.username,
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w700)),
-                              const SizedBox(width: 8),
-                              Text(timeAgo(story.createdAt),
-                                  style: const TextStyle(
-                                      color: Colors.white70, fontSize: 12)),
-                            ],
                           ),
                         ),
-                        const Spacer(),
-                        if (mine)
-                          IconButton(
-                              onPressed: _delete,
-                              icon: const Icon(Icons.delete_outline_rounded,
-                                  color: Colors.white)),
-                        IconButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            icon: const Icon(Icons.close_rounded,
-                                color: Colors.white)),
-                      ],
-                    ),
-                  ),
-                  const Spacer(),
-                  if (story.caption.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 10),
-                        decoration: BoxDecoration(
-                            color: const Color(0x99000000),
-                            borderRadius: BorderRadius.circular(14)),
-                        child: Text(story.caption,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 17,
-                                height: 1.4)),
                       ),
-                    ),
-                ],
+                      AnimatedOpacity(
+                        duration: const Duration(milliseconds: 150),
+                        opacity: (_hideUi && active) ? 0 : 1,
+                        child: Column(
+                          children: [
+                            _progress(group, si, active),
+                            _header(group, story, mine),
+                            const Spacer(),
+                            if (story.caption.isNotEmpty) _caption(story),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
+            ),
+            AnimatedOpacity(
+              duration: const Duration(milliseconds: 150),
+              opacity: (_hideUi && active) ? 0 : 1,
+              child: _bottomBar(story, mine),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _progress(StoryGroup group, int si, bool active) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+      child: AnimatedBuilder(
+        animation: _t,
+        builder: (_, __) => Row(
+          children: [
+            for (var i = 0; i < group.stories.length; i++)
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: LinearProgressIndicator(
+                      value: i < si ? 1 : (i == si && active ? _t.value : 0),
+                      minHeight: 2.5,
+                      backgroundColor: Colors.white30,
+                      valueColor: const AlwaysStoppedAnimation(Colors.white),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _header(StoryGroup group, Post story, bool mine) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: _openAuthor,
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              children: [
+                UserAvatar(
+                    uid: group.uid, fallbackName: group.username, radius: 17),
+                const SizedBox(width: 10),
+                Text(group.username,
+                    style: const TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w700)),
+                const SizedBox(width: 8),
+                Text(timeAgo(story.createdAt),
+                    style:
+                        const TextStyle(color: Colors.white70, fontSize: 12)),
+              ],
+            ),
+          ),
+          const Spacer(),
+          if (mine)
+            IconButton(
+                onPressed: _delete,
+                icon: const Icon(Icons.delete_outline_rounded,
+                    color: Colors.white)),
+          IconButton(
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.close_rounded, color: Colors.white)),
+        ],
+      ),
+    );
+  }
+
+  Widget _caption(Post story) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+            color: const Color(0x99000000),
+            borderRadius: BorderRadius.circular(14)),
+        child: Text(story.caption,
+            textAlign: TextAlign.center,
+            style:
+                const TextStyle(color: Colors.white, fontSize: 17, height: 1.4)),
+      ),
+    );
+  }
+
+  /// الشريط السفلي: لصاحب القصة عدد الإعجابات، ولغيره حقل ردّ + قلب.
+  Widget _bottomBar(Post story, bool mine) {
+    if (mine) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+        child: StreamBuilder<int>(
+          stream: PostService.likeCount(story.id),
+          builder: (_, snap) => Row(
+            children: [
+              const Icon(Icons.favorite_rounded,
+                  color: Color(0xFFFF3B5C), size: 22),
+              const SizedBox(width: 8),
+              Text('${snap.data ?? story.likes}',
+                  style: const TextStyle(color: Colors.white, fontSize: 15)),
+            ],
+          ),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              height: 46,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                  border: Border.all(color: Colors.white60),
+                  borderRadius: BorderRadius.circular(26)),
+              child: TextField(
+                controller: _reply,
+                focusNode: _replyFocus,
+                style: const TextStyle(color: Colors.white),
+                cursorColor: Colors.white,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => _sendReply(),
+                decoration: const InputDecoration(
+                  isCollapsed: true,
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  filled: false,
+                  hintText: 'إرسال رسالة...',
+                  hintStyle: TextStyle(color: Colors.white70),
+                ),
+                maxLength: 500,
+                buildCounter: (_,
+                        {required currentLength,
+                        required isFocused,
+                        maxLength}) =>
+                    null,
+              ),
+            ),
+          ),
+          StreamBuilder<bool>(
+            stream: PostService.isLiked(story.id),
+            builder: (_, snap) {
+              final liked = snap.data ?? false;
+              return IconButton(
+                onPressed: () =>
+                    PostService.toggleLike(story.id, liked).catchError((_) {}),
+                icon: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  transitionBuilder: (c, a) =>
+                      ScaleTransition(scale: a, child: c),
+                  child: Icon(
+                    liked
+                        ? Icons.favorite_rounded
+                        : Icons.favorite_border_rounded,
+                    key: ValueKey(liked),
+                    color: liked ? const Color(0xFFFF3B5C) : Colors.white,
+                    size: 28,
+                  ),
+                ),
+              );
+            },
+          ),
+          IconButton(
+            onPressed: _sendReply,
+            icon: const Icon(Icons.send_rounded, color: Colors.white, size: 26),
+          ),
+        ],
       ),
     );
   }
@@ -446,13 +689,8 @@ class _StoryViewerState extends State<StoryViewer>
 
 class _StoryMedia extends StatefulWidget {
   final Post story;
-  final bool paused;
   final void Function(Duration) onReady;
-  const _StoryMedia(
-      {super.key,
-      required this.story,
-      required this.paused,
-      required this.onReady});
+  const _StoryMedia({super.key, required this.story, required this.onReady});
 
   @override
   State<_StoryMedia> createState() => _StoryMediaState();
@@ -468,9 +706,13 @@ class _StoryMediaState extends State<_StoryMedia> {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: Colors.black,
-      child: Center(child: PostImage(post: widget.story, fit: BoxFit.contain)),
+    // تعبئة كاملة لمساحة القصة (cover) كما في إنستغرام.
+    return LayoutBuilder(
+      builder: (_, c) => ColoredBox(
+        color: const Color(0xFF111111),
+        child: PostImage(
+            post: widget.story, fit: BoxFit.cover, height: c.maxHeight),
+      ),
     );
   }
 }
