@@ -1,4 +1,4 @@
-name: lamha
+name: haigram_main
 description: Haigram - تطبيق اجتماعي للصور والمنشورات والقصص (PWA)
 publish_to: "none"
 version: 1.0.0+1
@@ -29,6 +29,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.13.1
 
 flutter:
   uses-material-design: true
@@ -36,3 +37,9 @@ flutter:
     - assets/haigram-mark.png
     - assets/haigram-mark-dark.png
     - assets/haigram-mark-light.png
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/haigram-mark.png"
+  remove_alpha_ios: true
