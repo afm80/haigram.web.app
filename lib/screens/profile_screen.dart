@@ -197,13 +197,11 @@ class _ProfileViewState extends State<ProfileView> {
       );
     }
 
-    // المنشورات (الافتراضي)، المحفوظات (لصاحب الحساب فقط)، الإعجابات
-    // (تُخفى عن الآخرين إذا فعّل صاحب الحساب «إخفاء الإعجابات»).
-    final showLikes = widget.isMe || !user.hideLikes;
+    // الصور، المنشورات (نصوص وفيديو)، والمحفوظات (لصاحب الحساب فقط).
     final tabs = <Tab>[
       const Tab(icon: Icon(Icons.photo_library_outlined)),
+      const Tab(icon: Icon(Icons.article_outlined)),
       if (widget.isMe) const Tab(icon: Icon(Icons.bookmark_border_rounded)),
-      if (showLikes) const Tab(icon: Icon(Icons.favorite_border_rounded)),
     ];
     final pinnedIds = user.pinnedPostIds.toSet();
     return DefaultTabController(
@@ -232,11 +230,18 @@ class _ProfileViewState extends State<ProfileView> {
               _PostsTab(
                 uid: widget.uid,
                 isMe: widget.isMe,
+                type: PostType.photo,
+                pinned: pinned,
+                pinnedIds: pinnedIds,
+              ),
+              _PostsTab(
+                uid: widget.uid,
+                isMe: widget.isMe,
+                type: PostType.text,
                 pinned: pinned,
                 pinnedIds: pinnedIds,
               ),
               if (widget.isMe) const _SavedGrid(),
-              if (showLikes) _LikedGrid(uid: widget.uid, isMe: widget.isMe),
             ],
           ),
         ),
@@ -435,12 +440,6 @@ class _Header extends StatelessWidget {
                         label: 'أتابعه',
                         load: () => PostService.countFollowing(uid),
                         onTap: () => _showFollowSheet(context, uid, 1),
-                      ),
-                    ),
-                    Expanded(
-                      child: _LiveStat(
-                        label: 'إعجابات',
-                        load: () => PostService.totalLikes(uid),
                       ),
                     ),
                   ],
@@ -1771,15 +1770,17 @@ List<Post> _pinnedFirst(List<Post> pinned, List<Post> rest) {
   return [...pinned, ...rest.where((p) => !ids.contains(p.id))];
 }
 
-/// تبويب المنشورات: الصور والمنشورات النصية (بدون الفيديو).
+/// تبويب في الملف الشخصي: إمّا الصور (photo) أو المنشورات النصية/الفيديو (text).
 class _PostsTab extends StatefulWidget {
   final String uid;
   final bool isMe;
+  final PostType type;
   final List<Post> pinned;
   final Set<String> pinnedIds;
   const _PostsTab({
     required this.uid,
     required this.isMe,
+    required this.type,
     this.pinned = const [],
     this.pinnedIds = const <String>{},
   });
@@ -1789,61 +1790,15 @@ class _PostsTab extends StatefulWidget {
 }
 
 class _PostsTabState extends State<_PostsTab> {
-  late final Stream<List<Post>> _photos =
-      PostService.stream(PostType.photo, uid: widget.uid);
-  late final Stream<List<Post>> _texts =
-      PostService.stream(PostType.text, uid: widget.uid);
+  late final Stream<List<Post>> _stream =
+      PostService.stream(widget.type, uid: widget.uid);
+
+  bool get _isPhotos => widget.type == PostType.photo;
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<Post>>(
-      stream: _photos,
-      builder: (context, photoSnap) => StreamBuilder<List<Post>>(
-        stream: _texts,
-        builder: (context, textSnap) {
-          final error = photoSnap.error ?? textSnap.error;
-          if (error != null) {
-            return Center(
-                child: Text('تعذر التحميل\n$error',
-                    textAlign: TextAlign.center));
-          }
-          if (!photoSnap.hasData || !textSnap.hasData) {
-            return const AppLoading();
-          }
-          final recent = [...photoSnap.data!, ...textSnap.data!]
-            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-          final list = _pinnedFirst(widget.pinned, recent);
-          if (list.isEmpty) {
-            return EmptyState(
-              icon: Icons.photo_library_outlined,
-              title: widget.isMe ? 'ابدأ بأول منشور' : 'لا توجد منشورات بعد',
-              message: widget.isMe
-                  ? 'شارك صورة أو فكرة وستظهر هنا في ملفك.'
-                  : 'ستظهر منشورات هذا الحساب هنا.',
-              action: widget.isMe
-                  ? const _CreateButton(
-                      label: 'أنشئ أول منشور', kind: CreateKind.post)
-                  : null,
-            );
-          }
-          return _PostGrid(
-              list: list, pinnedIds: widget.pinnedIds, canPin: widget.isMe);
-        },
-      ),
-    );
-  }
-}
-
-/// تبويب الإعجابات: المنشورات التي أعجب بها صاحب الحساب.
-class _LikedGrid extends StatelessWidget {
-  final String uid;
-  final bool isMe;
-  const _LikedGrid({required this.uid, required this.isMe});
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<List<Post>>(
-      stream: PostService.likedPosts(uid),
+      stream: _stream,
       builder: (context, snap) {
         if (snap.hasError) {
           return Center(
@@ -1851,16 +1806,33 @@ class _LikedGrid extends StatelessWidget {
                   textAlign: TextAlign.center));
         }
         if (!snap.hasData) return const AppLoading();
-        final list = snap.data!;
+        // المثبّت يظهر أولاً في التبويب الذي ينتمي إليه فقط.
+        final pinned = widget.pinned.where((p) => p.type == widget.type).toList();
+        final list = _pinnedFirst(pinned, snap.data!);
         if (list.isEmpty) {
           return EmptyState(
-              icon: Icons.favorite_border_rounded,
-              title: 'لا توجد إعجابات بعد',
-              message: isMe
-                  ? 'ستظهر هنا المنشورات التي تعجبك.'
-                  : 'ستظهر هنا المنشورات التي أعجب بها هذا الحساب.');
+            icon: _isPhotos
+                ? Icons.photo_library_outlined
+                : Icons.article_outlined,
+            title: widget.isMe
+                ? (_isPhotos ? 'ابدأ بأول صورة' : 'ابدأ بأول منشور')
+                : (_isPhotos ? 'لا توجد صور بعد' : 'لا توجد منشورات بعد'),
+            message: widget.isMe
+                ? (_isPhotos
+                    ? 'شارك صورة وستظهر هنا في ملفك.'
+                    : 'شارك فكرة أو فيديو وسيظهر هنا في ملفك.')
+                : (_isPhotos
+                    ? 'ستظهر صور هذا الحساب هنا.'
+                    : 'ستظهر منشورات هذا الحساب هنا.'),
+            action: widget.isMe
+                ? _CreateButton(
+                    label: _isPhotos ? 'أضف أول صورة' : 'أنشئ أول منشور',
+                    kind: CreateKind.post)
+                : null,
+          );
         }
-        return _PostGrid(list: list);
+        return _PostGrid(
+            list: list, pinnedIds: widget.pinnedIds, canPin: widget.isMe);
       },
     );
   }
