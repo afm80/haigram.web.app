@@ -423,9 +423,27 @@ class YoutubeInline extends StatefulWidget {
 class _YoutubeInlineState extends State<YoutubeInline> {
   late bool _playing = widget.autoPlay;
 
+  /// يحدّ ارتفاع الفيديو (16:9) بنحو 55% من ارتفاع الشاشة، فلا يملأ الشاشة
+  /// على الكمبيوتر ويبقى ما تحته قابلاً للتمرير.
+  Widget _limit(BuildContext context, Widget child) {
+    final maxH = MediaQuery.of(context).size.height * 0.55;
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxH * 16 / 9),
+        child: child,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_playing) return buildYoutubeEmbed(widget.videoId);
+    if (_playing) {
+      return _limit(context, buildYoutubeEmbed(widget.videoId));
+    }
+    return _limit(context, _thumb(context));
+  }
+
+  Widget _thumb(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => setState(() => _playing = true),
