@@ -483,7 +483,8 @@ class _StoryViewerState extends State<StoryViewer>
         },
         onVerticalDragStart: (_) => _setPause('drag', true),
         onVerticalDragUpdate: (d) {
-          setState(() => _dragDy = (_dragDy + d.delta.dy).clamp(0.0, 600.0));
+          setState(() =>
+              _dragDy = (_dragDy + d.delta.dy).clamp(0.0, 600.0).toDouble());
         },
         onVerticalDragEnd: (d) {
           if (_dragDy > 120 || (d.primaryVelocity ?? 0) > 700) {
