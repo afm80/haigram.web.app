@@ -384,16 +384,7 @@ class _Header extends StatelessWidget {
                 return Tooltip(
                   message: 'الإعدادات',
                   child: Material(
-                    color: isDark
-                        ? Colors.white.withOpacity(0.12)
-                        : Colors.black.withOpacity(0.06),
-                    shape: CircleBorder(
-                      side: BorderSide(
-                        color: isDark
-                            ? Colors.white.withOpacity(0.25)
-                            : Colors.black.withOpacity(0.18),
-                      ),
-                    ),
+                    type: MaterialType.transparency,
                     child: InkWell(
                       customBorder: const CircleBorder(),
                       onTap: () => _openSettings(context),
