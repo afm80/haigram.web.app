@@ -197,10 +197,12 @@ class _ProfileViewState extends State<ProfileView> {
       );
     }
 
-    // الصور، المنشورات (نصوص وفيديو)، والمحفوظات (لصاحب الحساب فقط).
+    // الصور، المنشورات النصية، الفيديو، والمحفوظات (لصاحب الحساب فقط).
+    // لون أيقونات التبويبات يتبع الوضع (داكن/فاتح) عبر labelColor و unselectedLabelColor.
     final tabs = <Tab>[
       const Tab(icon: Icon(Icons.photo_library_outlined)),
       const Tab(icon: Icon(Icons.article_outlined)),
+      const Tab(icon: Icon(Icons.play_circle_outline_rounded)),
       if (widget.isMe) const Tab(icon: Icon(Icons.bookmark_border_rounded)),
     ];
     final pinnedIds = user.pinnedPostIds.toSet();
@@ -238,6 +240,15 @@ class _ProfileViewState extends State<ProfileView> {
                 uid: widget.uid,
                 isMe: widget.isMe,
                 type: PostType.text,
+                video: false,
+                pinned: pinned,
+                pinnedIds: pinnedIds,
+              ),
+              _PostsTab(
+                uid: widget.uid,
+                isMe: widget.isMe,
+                type: PostType.text,
+                video: true,
                 pinned: pinned,
                 pinnedIds: pinnedIds,
               ),
@@ -1770,17 +1781,20 @@ List<Post> _pinnedFirst(List<Post> pinned, List<Post> rest) {
   return [...pinned, ...rest.where((p) => !ids.contains(p.id))];
 }
 
-/// تبويب في الملف الشخصي: إمّا الصور (photo) أو المنشورات النصية/الفيديو (text).
+/// تبويب في الملف الشخصي: الصور (photo) أو المنشورات النصية (text بدون فيديو)
+/// أو الفيديو (text فيه رابط يوتيوب). [video]: null = بلا تصفية.
 class _PostsTab extends StatefulWidget {
   final String uid;
   final bool isMe;
   final PostType type;
+  final bool? video;
   final List<Post> pinned;
   final Set<String> pinnedIds;
   const _PostsTab({
     required this.uid,
     required this.isMe,
     required this.type,
+    this.video,
     this.pinned = const [],
     this.pinnedIds = const <String>{},
   });
@@ -1794,6 +1808,11 @@ class _PostsTabState extends State<_PostsTab> {
       PostService.stream(widget.type, uid: widget.uid);
 
   bool get _isPhotos => widget.type == PostType.photo;
+  bool get _isVideos => widget.video == true;
+
+  bool _keep(Post p) =>
+      p.type == widget.type &&
+      (widget.video == null || p.hasVideo == widget.video);
 
   @override
   Widget build(BuildContext context) {
@@ -1807,27 +1826,40 @@ class _PostsTabState extends State<_PostsTab> {
         }
         if (!snap.hasData) return const AppLoading();
         // المثبّت يظهر أولاً في التبويب الذي ينتمي إليه فقط.
-        final pinned = widget.pinned.where((p) => p.type == widget.type).toList();
-        final list = _pinnedFirst(pinned, snap.data!);
+        final pinned = widget.pinned.where(_keep).toList();
+        final list = _pinnedFirst(pinned, snap.data!.where(_keep).toList());
         if (list.isEmpty) {
+          final me = widget.isMe;
           return EmptyState(
             icon: _isPhotos
                 ? Icons.photo_library_outlined
-                : Icons.article_outlined,
-            title: widget.isMe
-                ? (_isPhotos ? 'ابدأ بأول صورة' : 'ابدأ بأول منشور')
-                : (_isPhotos ? 'لا توجد صور بعد' : 'لا توجد منشورات بعد'),
-            message: widget.isMe
-                ? (_isPhotos
+                : _isVideos
+                    ? Icons.play_circle_outline_rounded
+                    : Icons.article_outlined,
+            title: _isPhotos
+                ? (me ? 'ابدأ بأول صورة' : 'لا توجد صور بعد')
+                : _isVideos
+                    ? (me ? 'ابدأ بأول فيديو' : 'لا توجد فيديوهات بعد')
+                    : (me ? 'ابدأ بأول منشور' : 'لا توجد منشورات بعد'),
+            message: _isPhotos
+                ? (me
                     ? 'شارك صورة وستظهر هنا في ملفك.'
-                    : 'شارك فكرة أو فيديو وسيظهر هنا في ملفك.')
-                : (_isPhotos
-                    ? 'ستظهر صور هذا الحساب هنا.'
-                    : 'ستظهر منشورات هذا الحساب هنا.'),
-            action: widget.isMe
+                    : 'ستظهر صور هذا الحساب هنا.')
+                : _isVideos
+                    ? (me
+                        ? 'شارك رابط فيديو من يوتيوب وسيظهر هنا في ملفك.'
+                        : 'ستظهر فيديوهات هذا الحساب هنا.')
+                    : (me
+                        ? 'شارك فكرة أو خاطرة وستظهر هنا في ملفك.'
+                        : 'ستظهر منشورات هذا الحساب هنا.'),
+            action: me
                 ? _CreateButton(
-                    label: _isPhotos ? 'أضف أول صورة' : 'أنشئ أول منشور',
-                    kind: CreateKind.post)
+                    label: _isPhotos
+                        ? 'أضف أول صورة'
+                        : _isVideos
+                            ? 'أضف أول فيديو'
+                            : 'أنشئ أول منشور',
+                    kind: _isVideos ? CreateKind.video : CreateKind.post)
                 : null,
           );
         }
