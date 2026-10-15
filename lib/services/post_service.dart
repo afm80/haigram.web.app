@@ -373,6 +373,32 @@ class PostService {
       .snapshots()
       .map((s) => ((s.data()?['likes'] ?? 0) as num).toInt());
 
+  // ---- مشاهدات القصص ----
+  /// يسجّل أن المستخدم الحالي شاهد القصة (مرة واحدة لكل مستخدم). لا يسجّل لصاحبها.
+  static Future<void> recordStoryView(Post story) async {
+    if (story.uid == _user.uid) return;
+    await _db
+        .collection('posts')
+        .doc(story.id)
+        .collection('views')
+        .doc(_user.uid)
+        .set({'at': FieldValue.serverTimestamp()});
+  }
+
+  /// من شاهدوا قصتي (الأحدث أولاً). يقرؤها صاحب القصة فقط.
+  static Stream<List<StoryViewEntry>> storyViewers(String postId) => _db
+      .collection('posts')
+      .doc(postId)
+      .collection('views')
+      .orderBy('at', descending: true)
+      .limit(200)
+      .snapshots()
+      .map((s) => [
+            for (final d in s.docs)
+              if (d.data()['at'] is Timestamp)
+                StoryViewEntry(d.id, (d.data()['at'] as Timestamp).toDate()),
+          ]);
+
   static Future<void> toggleLike(String postId, bool liked) async {
     final batch = _db.batch();
     final post = _db.collection('posts').doc(postId);
@@ -918,6 +944,12 @@ class Comment {
 }
 
 /// قصص مستخدم واحد (الأقدم أولاً).
+class StoryViewEntry {
+  final String uid;
+  final DateTime at;
+  StoryViewEntry(this.uid, this.at);
+}
+
 class StoryGroup {
   final String uid;
   final String username;
