@@ -83,10 +83,7 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
                 );
               }
               if (posts == null) {
-                return const Padding(
-                  padding: EdgeInsets.only(top: 60),
-                  child: AppLoading(message: 'جارٍ تحميل المنشورات...'),
-                );
+                return const SizedBox.shrink();
               }
               return const EmptyState(
                 icon: Icons.photo_library_outlined,
