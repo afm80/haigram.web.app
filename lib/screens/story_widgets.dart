@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../services/post_service.dart';
 import '../services/social_service.dart';
+import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
 import 'create_flow.dart';
@@ -15,6 +16,13 @@ import '../route_state.dart';
 class StoryViewed {
   static final Set<String> _seen = {};
   static void mark(String id) => _seen.add(id);
+
+  /// يعلّم القصة كمشاهدة ويسجّل المشاهدة في الخادم (مرة واحدة في الجلسة).
+  static void markAndRecord(Post story) {
+    if (_seen.add(story.id)) {
+      PostService.recordStoryView(story).catchError((_) {});
+    }
+  }
   static bool isSeen(String id) => _seen.contains(id);
   static bool allSeen(StoryGroup g) =>
       g.stories.every((s) => _seen.contains(s.id));
@@ -218,7 +226,7 @@ class _StoryViewerState extends State<StoryViewer>
         if (st == AnimationStatus.completed) _next();
       });
     _replyFocus.addListener(() => _setPause('typing', _replyFocus.hasFocus));
-    StoryViewed.mark(_story.id);
+    StoryViewed.markAndRecord(_story);
     WidgetsBinding.instance.addPostFrameCallback((_) => _precacheNext());
   }
 
@@ -279,7 +287,7 @@ class _StoryViewerState extends State<StoryViewer>
       _g = g;
       _s = s;
     });
-    StoryViewed.mark(_story.id);
+    StoryViewed.markAndRecord(_story);
     _precacheNext();
   }
 
@@ -351,6 +359,57 @@ class _StoryViewerState extends State<StoryViewer>
     } else {
       _setPause('dialog', false);
     }
+  }
+
+  Future<void> _showViewers(Post story) async {
+    _setPause('viewers', true);
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: context.appColors.bg,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SizedBox(
+        height: MediaQuery.of(ctx).size.height * 0.6,
+        child: Column(
+          children: [
+            const SizedBox(height: 10),
+            Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: Colors.grey, borderRadius: BorderRadius.circular(2))),
+            const Padding(
+              padding: EdgeInsets.all(14),
+              child: Text('المشاهدون',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            ),
+            Expanded(
+              child: StreamBuilder<List<StoryViewEntry>>(
+                stream: PostService.storyViewers(story.id),
+                builder: (_, snap) {
+                  final list = snap.data ?? const <StoryViewEntry>[];
+                  if (list.isEmpty) {
+                    return Center(
+                        child: Text(
+                            snap.connectionState == ConnectionState.waiting
+                                ? ''
+                                : 'لا توجد مشاهدات بعد',
+                            style:
+                                TextStyle(color: context.appColors.textDim)));
+                  }
+                  return ListView.builder(
+                    itemCount: list.length,
+                    itemBuilder: (_, i) => _ViewerTile(entry: list[i]),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    _setPause('viewers', false);
   }
 
   Future<void> _sendReply() async {
@@ -602,18 +661,38 @@ class _StoryViewerState extends State<StoryViewer>
   /// الشريط السفلي: لصاحب القصة عدد الإعجابات، ولغيره حقل ردّ + قلب.
   Widget _bottomBar(Post story, bool mine) {
     if (mine) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-        child: StreamBuilder<int>(
-          stream: PostService.likeCount(story.id),
-          builder: (_, snap) => Row(
-            children: [
-              const Icon(Icons.favorite_rounded,
-                  color: Color(0xFFFF3B5C), size: 22),
-              const SizedBox(width: 8),
-              Text('${snap.data ?? story.likes}',
-                  style: const TextStyle(color: Colors.white, fontSize: 15)),
-            ],
+      return InkWell(
+        onTap: () => _showViewers(story),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+          child: StreamBuilder<List<StoryViewEntry>>(
+            stream: PostService.storyViewers(story.id),
+            builder: (_, snap) => Row(
+              children: [
+                const Icon(Icons.keyboard_arrow_up_rounded,
+                    color: Colors.white, size: 22),
+                const SizedBox(width: 4),
+                const Icon(Icons.visibility_outlined,
+                    color: Colors.white, size: 20),
+                const SizedBox(width: 6),
+                Text('${snap.data?.length ?? 0}',
+                    style: const TextStyle(color: Colors.white, fontSize: 15)),
+                const Spacer(),
+                StreamBuilder<int>(
+                  stream: PostService.likeCount(story.id),
+                  builder: (_, ls) => Row(
+                    children: [
+                      const Icon(Icons.favorite_rounded,
+                          color: Color(0xFFFF3B5C), size: 20),
+                      const SizedBox(width: 6),
+                      Text('${ls.data ?? story.likes}',
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 15)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -713,6 +792,33 @@ class _StoryMediaState extends State<_StoryMedia> {
         child: PostImage(
             post: widget.story, fit: BoxFit.cover, height: c.maxHeight),
       ),
+    );
+  }
+}
+
+class _ViewerTile extends StatelessWidget {
+  final StoryViewEntry entry;
+  const _ViewerTile({required this.entry});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<AppUser?>(
+      stream: UserService.profileStream(entry.uid),
+      builder: (_, snap) {
+        final u = snap.data;
+        final name = u?.username ?? '';
+        return ListTile(
+          leading:
+              UserAvatar(uid: entry.uid, fallbackName: name, radius: 22, profile: u),
+          title: Text(name.isEmpty ? '...' : name,
+              style: const TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: Text(timeAgo(entry.at)),
+          onTap: () {
+            Navigator.of(context).push(appRoute('user', {'uid': entry.uid},
+                (_) => UserProfileScreen(uid: entry.uid)));
+          },
+        );
+      },
     );
   }
 }
