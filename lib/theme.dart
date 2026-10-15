@@ -254,8 +254,11 @@ class LamhaLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Image.asset(
-      'assets/haigram-mark.png',
+      isDark
+          ? 'assets/haigram-mark-dark.png'
+          : 'assets/haigram-mark-light.png',
       width: size,
       height: size,
       fit: BoxFit.contain,
