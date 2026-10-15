@@ -14,8 +14,6 @@ class AppColors {
   static const accent = brandPurple;
   static const accent2 = brandOrange;
   static const accent3 = brandPurpleDeep;
-  static const likeAccent = Color(0xFFD63DB0);
-  static const postLike = Color(0xFFE05CC8);
   static const success = Color(0xFF34D399);
 
   /// تدرّج حلقة القصص: برتقالي ← وردي ← بنفسجي غامق
@@ -71,6 +69,10 @@ class AppPalette {
   final Color textDim;
   final Color shadow;
 
+  /// لون التفاعلات (إعجاب، حفظ، إشعارات): برتقالي في الداكن وبنفسجي في الفاتح
+  final Color reaction;
+  final Color onReaction;
+
   const AppPalette({
     required this.bg,
     required this.bg2,
@@ -80,6 +82,8 @@ class AppPalette {
     required this.text,
     required this.textDim,
     required this.shadow,
+    required this.reaction,
+    required this.onReaction,
   });
 
   static const dark = AppPalette(
@@ -91,6 +95,8 @@ class AppPalette {
     text: Color(0xFFF3F5F9),
     textDim: Color(0xFF9AA2B5),
     shadow: Color(0x66000000),
+    reaction: AppColors.brandOrange,
+    onReaction: Color(0xFF1A0B24),
   );
 
   static const light = AppPalette(
@@ -102,6 +108,8 @@ class AppPalette {
     text: Color(0xFF1C1B22),
     textDim: Color(0xFF666574),
     shadow: Color(0x22000000),
+    reaction: AppColors.brandPurple,
+    onReaction: Colors.white,
   );
 }
 
