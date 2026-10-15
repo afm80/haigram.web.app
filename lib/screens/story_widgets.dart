@@ -162,17 +162,7 @@ class _StoriesBarState extends State<StoriesBar> {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         gradient: active && !seen
-            ? const LinearGradient(
-                colors: [
-                  Color(0xFFE9D5FF),
-                  Color(0xFFC084FC),
-                  Color(0xFFA855F7),
-                  Color(0xFF7C3AED),
-                  Color(0xFF5B21B6),
-                ],
-                begin: Alignment.topRight,
-                end: Alignment.bottomLeft,
-              )
+            ? AppColors.storyGradient
             : null,
         color: active && !seen
             ? null

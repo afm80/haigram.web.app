@@ -85,7 +85,7 @@ class UserAvatar extends StatelessWidget {
               gradient: LinearGradient(
                 colors: storySeen
                     ? [context.appColors.textDim, context.appColors.textDim]
-                    : [AppColors.brandPurple, AppColors.brandViolet],
+                    : [AppColors.brandPurple, AppColors.brandOrange],
                 begin: Alignment.topRight,
                 end: Alignment.bottomLeft,
               ),

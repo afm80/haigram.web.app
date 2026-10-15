@@ -587,17 +587,7 @@ class _Header extends StatelessWidget {
                     padding: const EdgeInsets.all(3),
                     decoration: const BoxDecoration(
                       shape: BoxShape.circle,
-                      gradient: LinearGradient(
-                        colors: [
-                          Color(0xFFE9D5FF),
-                          Color(0xFFC084FC),
-                          Color(0xFFA855F7),
-                          Color(0xFF7C3AED),
-                          Color(0xFF5B21B6),
-                        ],
-                        begin: Alignment.topRight,
-                        end: Alignment.bottomLeft,
-                      ),
+                      gradient: AppColors.storyGradient,
                     ),
                     child: DecoratedBox(
                       decoration: BoxDecoration(

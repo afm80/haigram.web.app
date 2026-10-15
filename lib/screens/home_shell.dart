@@ -500,8 +500,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
         height: 34,
         child: Stack(
           children: [
-            Positioned(left: 0, child: layer(const Color(0xFFA78BFA))),
-            Positioned(right: 0, child: layer(const Color(0xFF7C3AED))),
+            Positioned(left: 0, child: layer(AppColors.brandOrange)),
+            Positioned(right: 0, child: layer(AppColors.brandPurple)),
             Positioned(
               left: 4,
               child: Container(

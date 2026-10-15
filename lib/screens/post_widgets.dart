@@ -74,8 +74,8 @@ class _PostCardState extends State<PostCard> {
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                             colors: isDark
-                                ? const [Color(0xFF3B1D6B), Color(0xFF1E0F3D)]
-                                : const [Color(0xFFEDE4FF), Color(0xFFF5F0FF)],
+                                ? const [Color(0xFF4F1566), Color(0xFF2A0B3D)]
+                                : const [Color(0xFFF6E3FB), Color(0xFFFCF1FF)],
                             begin: Alignment.topRight,
                             end: Alignment.bottomLeft),
                       ),

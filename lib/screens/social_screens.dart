@@ -957,7 +957,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                 ? null
                                 : BoxDecoration(
                                     color: mine
-                                        ? const Color(0xFF7C3AED)
+                                        ? AppColors.brandPurple
                                         : colors.surfaceHigh,
                                     borderRadius: BorderRadiusDirectional.only(
                                       topStart: const Radius.circular(18),
