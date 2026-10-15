@@ -799,21 +799,6 @@ class PostService {
     await batch.commit();
   }
 
-  /// يسجّل مشاهدة واحدة لكل مستخدم لكل فيديو (مستند viewers يمنع التكرار).
-  /// لا يُحسب المالك. الأخطاء (مثل: سُجّلت من قبل) تُتجاهل.
-  static Future<void> registerView(Post post) async {
-    final uid = _user.uid;
-    if (post.uid == uid) return;
-    final postRef = _db.collection('posts').doc(post.id);
-    final batch = _db.batch();
-    batch.set(postRef.collection('viewers').doc(uid),
-        {'createdAt': FieldValue.serverTimestamp()});
-    batch.update(postRef, {'views': FieldValue.increment(1)});
-    try {
-      await batch.commit();
-    } catch (_) {}
-  }
-
   /// يزيد عدّاد المشاركات بمقدار 1 عند مشاركة المنشور.
   static Future<void> registerShare(String postId) async {
     try {
