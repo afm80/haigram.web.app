@@ -67,7 +67,7 @@ class _HaigramBootstrapState extends State<HaigramBootstrap> {
             debugShowCheckedModeBanner: false,
             theme: buildTheme(Brightness.light),
             darkTheme: buildTheme(Brightness.dark),
-            themeMode: ThemeMode.system,
+            themeMode: ThemeMode.dark,
             // لا نعرض الشعار هنا حتى لا يظهر شعاران متتاليان؛ يظهر مرة واحدة في الخطوة التالية.
             home: const Scaffold(body: SizedBox.shrink()),
           );
