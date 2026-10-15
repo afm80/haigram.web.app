@@ -635,13 +635,63 @@ class _StoryViewerState extends State<StoryViewer>
           const Spacer(),
           if (mine)
             IconButton(
-                onPressed: _delete,
-                icon: const Icon(Icons.delete_outline_rounded,
-                    color: Colors.white)),
+                onPressed: () => _showStoryMenu(story),
+                icon: const Icon(Icons.more_horiz, color: Colors.white)),
           IconButton(
               onPressed: () => Navigator.of(context).pop(),
               icon: const Icon(Icons.close_rounded, color: Colors.white)),
         ],
+      ),
+    );
+  }
+
+  void _showStoryMenu(Post story) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[600],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.white),
+              title: const Text('حذف القصة',
+                  style: TextStyle(color: Colors.white, fontSize: 16)),
+              onTap: () {
+                Navigator.pop(context);
+                _delete();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.visibility_outlined, color: Colors.white),
+              title: const Text('المشاهدون',
+                  style: TextStyle(color: Colors.white, fontSize: 16)),
+              onTap: () {
+                Navigator.pop(context);
+                _showViewers(story);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.close, color: Colors.white),
+              title: const Text('إلغاء',
+                  style: TextStyle(color: Colors.white, fontSize: 16)),
+              onTap: () => Navigator.pop(context),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }
@@ -702,20 +752,20 @@ class _StoryViewerState extends State<StoryViewer>
       );
     }
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 8, 10),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
       child: Row(
         children: [
           Expanded(
             child: Container(
-              height: 46,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              height: 44,
+              padding: const EdgeInsets.symmetric(horizontal: 18),
               decoration: BoxDecoration(
-                  border: Border.all(color: Colors.white60),
-                  borderRadius: BorderRadius.circular(26)),
+                  color: const Color(0x33FFFFFF),
+                  borderRadius: BorderRadius.circular(22)),
               child: TextField(
                 controller: _reply,
                 focusNode: _replyFocus,
-                style: const TextStyle(color: Colors.white),
+                style: const TextStyle(color: Colors.white, fontSize: 15),
                 cursorColor: Colors.white,
                 textInputAction: TextInputAction.send,
                 onSubmitted: (_) => _sendReply(),
@@ -726,7 +776,7 @@ class _StoryViewerState extends State<StoryViewer>
                   focusedBorder: InputBorder.none,
                   filled: false,
                   hintText: 'إرسال رسالة...',
-                  hintStyle: TextStyle(color: Colors.white70),
+                  hintStyle: TextStyle(color: Colors.white70, fontSize: 15),
                 ),
                 maxLength: 500,
                 buildCounter: (_,
@@ -737,14 +787,15 @@ class _StoryViewerState extends State<StoryViewer>
               ),
             ),
           ),
+          const SizedBox(width: 8),
           StreamBuilder<bool>(
             stream: PostService.isLiked(story.id),
             builder: (_, snap) {
               final liked = snap.data ?? false;
-              return IconButton(
-                onPressed: () =>
+              return GestureDetector(
+                onTap: () =>
                     PostService.toggleLike(story.id, liked).catchError((_) {}),
-                icon: AnimatedSwitcher(
+                child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 200),
                   transitionBuilder: (c, a) =>
                       ScaleTransition(scale: a, child: c),
@@ -754,15 +805,24 @@ class _StoryViewerState extends State<StoryViewer>
                         : Icons.favorite_border_rounded,
                     key: ValueKey(liked),
                     color: liked ? const Color(0xFFFF3B5C) : Colors.white,
-                    size: 28,
+                    size: 30,
                   ),
                 ),
               );
             },
           ),
-          IconButton(
-            onPressed: _sendReply,
-            icon: const Icon(Icons.send_rounded, color: Colors.white, size: 26),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: _sendReply,
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFF3385FF),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Icon(Icons.send_rounded, color: Colors.white, size: 22),
+            ),
           ),
         ],
       ),
