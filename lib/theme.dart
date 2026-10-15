@@ -267,6 +267,7 @@ class LamhaLogo extends StatelessWidget {
 }
 
 class AppLoading extends StatelessWidget {
+  // الرسالة تُتجاهل عمداً: يظهر الشعار فقط أثناء التحميل.
   final String? message;
   const AppLoading({super.key, this.message});
 
@@ -277,16 +278,6 @@ class AppLoading extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           const LamhaLogo(size: 52),
-          const SizedBox(height: 18),
-          const SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(strokeWidth: 2.4),
-          ),
-          if (message != null) ...[
-            const SizedBox(height: 12),
-            Text(message!, style: TextStyle(color: context.appColors.textDim)),
-          ],
         ],
       ),
     );
