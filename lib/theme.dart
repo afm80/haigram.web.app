@@ -267,21 +267,12 @@ class LamhaLogo extends StatelessWidget {
 }
 
 class AppLoading extends StatelessWidget {
-  // الرسالة تُتجاهل عمداً: يظهر الشعار فقط أثناء التحميل.
+  // لا يُعرض شيء هنا عمداً: يبقى شعار البداية الواحد فقط أثناء التحديث.
   final String? message;
   const AppLoading({super.key, this.message});
 
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const LamhaLogo(size: 52),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
 class EmptyState extends StatelessWidget {
