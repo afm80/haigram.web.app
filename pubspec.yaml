@@ -34,3 +34,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/haigram-mark.png
+    - assets/haigram-mark-dark.png
+    - assets/haigram-mark-light.png
