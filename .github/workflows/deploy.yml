@@ -27,7 +27,7 @@ jobs:
 
       - name: Build web (PWA)
         run: |
-          flutter build web --release \
+          flutter build web --release --web-renderer canvaskit \
             --dart-define=FB_API_KEY=${{ secrets.FB_API_KEY }} \
             --dart-define=FB_APP_ID=${{ secrets.FB_APP_ID }} \
             --dart-define=FB_SENDER_ID=${{ secrets.FB_SENDER_ID }} \
