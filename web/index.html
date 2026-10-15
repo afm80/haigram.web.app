@@ -154,6 +154,8 @@
           el.classList.add('skip');
         } else {
           sessionStorage.setItem('haigramSplashSeen', '1');
+          // فتح جديد للتطبيق (بعد الخروج النهائي): ننسى آخر صفحة ونبدأ من الرئيسية.
+          localStorage.removeItem('flutter.nav_state_v1');
         }
       } catch (e) {}
     })();
