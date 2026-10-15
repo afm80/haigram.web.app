@@ -332,7 +332,6 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
                   textAlign: TextAlign.center));
         if (!snap.hasData) return const AppLoading(message: 'جارٍ البحث...');
         final (users, posts) = snap.data!;
-        final otherPosts = posts;
         if (users.isEmpty && posts.isEmpty) {
           return const EmptyState(
             icon: Icons.search_off_rounded,
@@ -364,14 +363,14 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
                 ),
               Divider(color: context.appColors.text.withOpacity(0.12)),
             ],
-            if (otherPosts.isNotEmpty) ...[
+            if (posts.isNotEmpty) ...[
               const Padding(
                 padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
                 child: Text('المنشورات',
                     style:
                         TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               ),
-              for (final p in otherPosts) PostCard(post: p),
+              for (final p in posts) PostCard(post: p),
             ],
           ],
         );

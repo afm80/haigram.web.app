@@ -88,6 +88,9 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
       List.generate(5, (_) => GlobalKey<NavigatorState>());
   // يحفظ الصفحات المفتوحة في كل تبويب لاستعادتها بعد تحديث المتصفح.
   final _routeObservers = List.generate(5, (tab) => TabRouteObserver(tab));
+  // يلغي نافذة «اضغط مرة أخرى للخروج» عند فتح أي صفحة داخل تبويب.
+  late final _pushObservers =
+      List.generate(5, (_) => _PushObserver(_disarmExit));
   late final Stream<int> _unreadNotificationCount =
       SocialService.unreadNotificationCount();
 
@@ -114,6 +117,15 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     _updatePresence(false);
     _selectedTab.dispose();
     super.dispose();
+  }
+
+  void _disarmExit() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_exitArmed) return;
+      _exitTimer?.cancel();
+      _lastBackPress = null;
+      setState(() => _exitArmed = false);
+    });
   }
 
   @override
@@ -322,7 +334,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
           _tabNavigators.length,
           (tab) => Navigator(
             key: _tabNavigators[tab],
-            observers: [_routeObservers[tab]],
+            observers: [_routeObservers[tab], _pushObservers[tab]],
             onGenerateRoute: (_) => MaterialPageRoute<void>(
               builder: (_) => ValueListenableBuilder<int>(
                 valueListenable: _selectedTab,
@@ -399,7 +411,12 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
         if (_tabHistory.length > 10) _tabHistory.removeAt(0);
       }
     }
-    setState(() => _index = tab);
+    _exitTimer?.cancel();
+    _lastBackPress = null;
+    setState(() {
+      _index = tab;
+      _exitArmed = false;
+    });
     _selectedTab.value = tab;
     RouteStore.setTab(tab);
   }
@@ -519,4 +536,13 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
       ),
     );
   }
+}
+
+/// يبلغ عند فتح صفحة جديدة داخل Navigator التبويب.
+class _PushObserver extends NavigatorObserver {
+  final VoidCallback onPush;
+  _PushObserver(this.onPush);
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) => onPush();
 }
