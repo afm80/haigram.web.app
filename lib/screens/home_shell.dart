@@ -11,11 +11,11 @@ import '../services/user_service.dart';
 import '../theme.dart';
 import 'create_flow.dart';
 import 'explore_screen.dart';
+import 'home_feed_screen.dart';
 import 'social_screens.dart';
 import 'post_widgets.dart' show PostDetailScreen;
 import 'profile_screen.dart';
 import 'settings_screen.dart';
-import 'rooms_screen.dart';
 
 /// الغلاف الرئيسي: يجهّز ملف المستخدم أولاً ثم يعرض التبويبات.
 class HomeShell extends StatefulWidget {
@@ -344,8 +344,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
                 _navItem(
                     0, Icons.home_outlined, Icons.home_rounded, 'الرئيسية',
                     foreground: navForeground, inactive: navInactive),
-                _navItem(1, Icons.mic_none_rounded, Icons.mic_rounded,
-                    'غرف صوتية',
+                _navItem(1, Icons.explore_outlined, Icons.explore_rounded,
+                    'استكشف',
                     foreground: navForeground, inactive: navInactive),
                 Expanded(child: Center(child: _createButton())),
                 StreamBuilder<int>(
@@ -372,8 +372,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   }
 
   Widget _tabPage(int tab, int selectedTab) => switch (tab) {
-        0 => const ExploreScreen(),
-        1 => const RoomsScreen(),
+        0 => const HomeFeedScreen(),
+        1 => const ExploreScreen(),
         2 => const SizedBox.shrink(),
         3 => const InboxScreen(),
         4 => ProfileScreen(
