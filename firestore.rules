@@ -92,6 +92,18 @@ service cloud.firestore {
         allow write: if request.auth != null && request.auth.uid == uid;
       }
 
+      // مشاهدات القصص: كل مشاهد يسجّل نفسه فقط (وقت الخادم)، ويقرؤها صاحب القصة وحده.
+      match /views/{viewerUid} {
+        allow read: if request.auth != null
+          && get(/databases/$(database)/documents/posts/$(postId)).data.uid == request.auth.uid;
+        allow create, update: if request.auth != null
+          && request.auth.uid == viewerUid
+          && get(/databases/$(database)/documents/posts/$(postId)).data.uid != viewerUid
+          && request.resource.data.keys().hasOnly(['at'])
+          && request.resource.data.at == request.time;
+        allow delete: if false;
+      }
+
       // التعليقات: يكتبها أي مستخدم مسجّل، ويحذفها صاحبها أو صاحب المنشور
       match /comments/{commentId} {
         allow read: if request.auth != null;
