@@ -59,6 +59,7 @@
       transition: opacity 320ms ease, visibility 320ms ease;
     }
     #boot-splash > div { width: 100%; max-width: 360px; }
+    #boot-splash.skip { display: none; }
     #boot-splash.is-hidden { opacity: 0; visibility: hidden; pointer-events: none; }
     .boot-mark {
       width: 96px; height: 96px; display: grid; place-items: center;
@@ -147,6 +148,19 @@
       </div>
     </div>
   </div>
+  <script>
+    // الواجهة البنفسجية تظهر فقط عند فتح التطبيق؛ أما عند تحديث الصفحة داخل نفس الجلسة فتُخفى.
+    (function () {
+      try {
+        var el = document.getElementById('boot-splash');
+        if (sessionStorage.getItem('haigramSplashSeen') === '1') {
+          el.classList.add('skip');
+        } else {
+          sessionStorage.setItem('haigramSplashSeen', '1');
+        }
+      } catch (e) {}
+    })();
+  </script>
   <div id="install-banner">
     <div id="install-text"></div>
     <button id="install-yes">تثبيت</button>
@@ -211,6 +225,7 @@
       };
       setTimeout(function () {
         if (window.haigramAppReady) return;
+        if (splash) splash.classList.remove('skip');
         document.getElementById('boot-loader').style.display = 'none';
         document.getElementById('boot-error').hidden = false;
         if (window.haigramHideInstallBanner) {
