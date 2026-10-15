@@ -23,7 +23,9 @@ String timeAgo(DateTime t) {
 /// منشور بتصميم إنستغرام: رأس + وسائط + أزرار + إعجابات + وصف + تعليقات.
 class PostCard extends StatefulWidget {
   final Post post;
-  const PostCard({super.key, required this.post});
+  /// يبدأ فيديو يوتيوب تلقائياً (عند فتح المنشور من الملف الشخصي مثلاً).
+  final bool autoPlayVideo;
+  const PostCard({super.key, required this.post, this.autoPlayVideo = false});
 
   @override
   State<PostCard> createState() => _PostCardState();
@@ -175,8 +177,10 @@ class _PostCardState extends State<PostCard> {
   }
 
   /// فيديو يوتيوب يعمل داخل المنشور نفسه (صورة مصغّرة ثم تشغيل عند النقر).
-  Widget _videoBlock(Post p) =>
-      YoutubeInline(key: ValueKey('yt-${p.id}'), videoId: p.videoId!);
+  Widget _videoBlock(Post p) => YoutubeInline(
+      key: ValueKey('yt-${p.id}'),
+      videoId: p.videoId!,
+      autoPlay: widget.autoPlayVideo);
 
   Widget _header(Post p) {
     return Padding(
@@ -407,7 +411,8 @@ class _LinkTextState extends State<LinkText> {
 /// وعند النقر يُنشأ المشغّل ويبدأ الفيديو في مكانه دون الخروج من التطبيق.
 class YoutubeInline extends StatefulWidget {
   final String videoId;
-  const YoutubeInline({super.key, required this.videoId});
+  final bool autoPlay;
+  const YoutubeInline({super.key, required this.videoId, this.autoPlay = false});
 
   @override
   State<YoutubeInline> createState() => _YoutubeInlineState();
@@ -416,15 +421,19 @@ class YoutubeInline extends StatefulWidget {
 class _YoutubeInlineState extends State<YoutubeInline> {
   YoutubePlayerController? _controller;
 
-  void _play() {
-    setState(() {
-      _controller = YoutubePlayerController.fromVideoId(
+  YoutubePlayerController _create() => YoutubePlayerController.fromVideoId(
         videoId: widget.videoId,
         autoPlay: true,
         params: const YoutubePlayerParams(showFullscreenButton: true),
       );
-    });
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.autoPlay) _controller = _create();
   }
+
+  void _play() => setState(() => _controller = _create());
 
   @override
   void dispose() {
@@ -485,7 +494,8 @@ class PostDetailScreen extends StatelessWidget {
             final live = snap.data;
             if (live == null)
               return const Center(child: Text('هذا المنشور لم يعد متاحاً'));
-            return ListView(children: [PostCard(post: live)]);
+            return ListView(
+                children: [PostCard(post: live, autoPlayVideo: true)]);
           },
         ),
       ),
