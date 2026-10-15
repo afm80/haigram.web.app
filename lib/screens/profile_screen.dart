@@ -201,8 +201,8 @@ class _ProfileViewState extends State<ProfileView> {
     // لون أيقونات التبويبات يتبع الوضع (داكن/فاتح) عبر labelColor و unselectedLabelColor.
     final tabs = <Tab>[
       const Tab(icon: Icon(Icons.photo_library_outlined)),
-      const Tab(icon: Icon(Icons.article_outlined)),
       const Tab(icon: Icon(Icons.play_circle_outline_rounded)),
+      const Tab(icon: Icon(Icons.article_outlined)),
       if (widget.isMe) const Tab(icon: Icon(Icons.bookmark_border_rounded)),
     ];
     final pinnedIds = user.pinnedPostIds.toSet();
@@ -240,7 +240,7 @@ class _ProfileViewState extends State<ProfileView> {
                 uid: widget.uid,
                 isMe: widget.isMe,
                 type: PostType.text,
-                video: false,
+                video: true,
                 pinned: pinned,
                 pinnedIds: pinnedIds,
               ),
@@ -248,7 +248,7 @@ class _ProfileViewState extends State<ProfileView> {
                 uid: widget.uid,
                 isMe: widget.isMe,
                 type: PostType.text,
-                video: true,
+                video: false,
                 pinned: pinned,
                 pinnedIds: pinnedIds,
               ),
