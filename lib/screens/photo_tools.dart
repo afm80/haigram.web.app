@@ -107,6 +107,7 @@ class _CropScreen extends StatefulWidget {
 }
 
 class _CropScreenState extends State<_CropScreen> {
+  double _cropBoxSize = 300;
   static const _outputSize = 360;
   static const _maxBytes = 140 * 1024;
 
@@ -208,14 +209,30 @@ class _CropScreenState extends State<_CropScreen> {
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         title: const Text('تعديل الصورة'),
+        actions: [
+          Padding(
+            padding: const EdgeInsetsDirectional.only(end: 8),
+            child: TextButton(
+              onPressed: _busy || _imageSize == null
+                  ? null
+                  : () => _done(_cropBoxSize),
+              child: const Text('تم',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16)),
+            ),
+          ),
+        ],
       ),
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final box = (constraints.maxWidth < constraints.maxHeight - 170
+            final box = (constraints.maxWidth < constraints.maxHeight - 240
                     ? constraints.maxWidth
-                    : constraints.maxHeight - 170)
-                .clamp(200.0, 600.0);
+                    : constraints.maxHeight - 240)
+                .clamp(160.0, 600.0);
+            _cropBoxSize = box;
             final size = _imageSize;
             Widget cropArea;
             if (size == null) {
@@ -297,7 +314,7 @@ class _CropScreenState extends State<_CropScreen> {
                         style: const TextStyle(color: AppColors.accent2)),
                   ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
                   child: Row(
                     children: [
                       IconButton(
