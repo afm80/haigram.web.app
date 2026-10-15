@@ -74,7 +74,10 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.caption.size() <= 500
-        && request.resource.data.likes == 0;
+        && request.resource.data.likes == 0
+        && (!('videoId' in request.resource.data)
+            || (request.resource.data.videoId is string
+                && request.resource.data.videoId.matches('^[A-Za-z0-9_-]{11}$')));
       // المالك يعدّل/يحذف، وأي مستخدم مسجّل يستطيع فقط زيادة/إنقاص عدّاد الإعجاب أو التعليقات بمقدار 1
       allow update: if request.auth != null && (
         resource.data.uid == request.auth.uid ||
