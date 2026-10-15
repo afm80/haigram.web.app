@@ -6,7 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../services/post_service.dart';
 import '../theme.dart';
 
-enum CreateKind { post, story }
+enum CreateKind { post, story, video }
 
 /// حدود الرفع للحفاظ على مجانية الخدمة.
 // الصور تُصغَّر عند الاختيار (1080px وجودة 60%) فتبقى غالباً أقل من 500KB.
@@ -16,12 +16,16 @@ int get maxPhotoBytes =>
 String _kindTitle(CreateKind k) => switch (k) {
       CreateKind.post => 'منشور جديد',
       CreateKind.story => 'قصة جديدة',
+      CreateKind.video => 'فيديو جديد',
     };
 
 /// يفتح شاشة الإنشاء (كاميرا أو ملفات الجهاز) للنوع المطلوب.
 void startCreate(BuildContext context, CreateKind kind) {
   Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
-      fullscreenDialog: true, builder: (_) => CaptureScreen(kind: kind)));
+      fullscreenDialog: true,
+      builder: (_) => kind == CreateKind.video
+          ? ComposeScreen(kind: kind)
+          : CaptureScreen(kind: kind)));
 }
 
 /// الشريط السفلي الصغير: منشور / قصة (مثل إنستغرام).
@@ -34,25 +38,46 @@ void showCreateSheet(BuildContext context) {
     shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
     builder: (ctx) {
-      Widget tile(IconData icon, String title, CreateKind kind) => ListTile(
-            leading: Icon(icon, size: 26, color: colors.textDim),
-            title: Text(
-              title,
-              style: TextStyle(
-                  fontSize: 16,
-                  color: colors.text,
-                  fontWeight: FontWeight.w600),
-            ),
-            onTap: () {
-              final navigator = Navigator.of(ctx);
-              navigator.pop();
-              navigator.push<void>(
-                MaterialPageRoute(
-                  fullscreenDialog: true,
-                  builder: (_) => CaptureScreen(kind: kind),
+      Widget tile(IconData icon, String title, CreateKind kind) => Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () {
+                final navigator = Navigator.of(ctx);
+                navigator.pop();
+                navigator.push<void>(
+                  MaterialPageRoute(
+                    fullscreenDialog: true,
+                    builder: (_) => kind == CreateKind.video
+                        ? ComposeScreen(kind: kind)
+                        : CaptureScreen(kind: kind),
+                  ),
+                );
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                          color: colors.surfaceHigh,
+                          borderRadius: BorderRadius.circular(16)),
+                      child: Icon(icon, size: 28, color: colors.text),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      title,
+                      style: TextStyle(
+                          fontSize: 14,
+                          color: colors.text,
+                          fontWeight: FontWeight.w600),
+                    ),
+                  ],
                 ),
-              );
-            },
+              ),
+            ),
           );
       return SafeArea(
         child: Column(
@@ -74,9 +99,20 @@ void showCreateSheet(BuildContext context) {
                       fontWeight: FontWeight.w700)),
             ),
             Divider(height: 1, color: colors.text.withOpacity(0.12)),
-            tile(Icons.grid_on_rounded, 'منشور', CreateKind.post),
-            tile(Icons.add_circle_outline_rounded, 'قصة', CreateKind.story),
             const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  tile(Icons.grid_on_rounded, 'منشور', CreateKind.post),
+                  tile(Icons.add_circle_outline_rounded, 'قصة',
+                      CreateKind.story),
+                  tile(Icons.play_circle_outline_rounded, 'فيديو',
+                      CreateKind.video),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
           ],
         ),
       );
@@ -256,7 +292,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                     ),
                   ),
                   kind == CreateKind.post
-                      ? _sideButton(Icons.edit_note_rounded, 'نص / فيديو', () {
+                      ? _sideButton(Icons.edit_note_rounded, 'نص فقط', () {
                           Navigator.of(context).pushReplacement(
                               MaterialPageRoute(
                                   builder: (_) => ComposeScreen(kind: kind)));
@@ -321,7 +357,9 @@ class _ComposeScreenState extends State<ComposeScreen> {
   bool get _textOnly => widget.media == null;
 
   // رابط يوتيوب متاح في المنشور النصي فقط (نص، أو فيديو، أو الاثنان معاً).
-  bool get _allowVideo => _textOnly && widget.kind == CreateKind.post;
+  bool get _isVideoKind => widget.kind == CreateKind.video;
+  bool get _allowVideo =>
+      _textOnly && (widget.kind == CreateKind.post || _isVideoKind);
 
   @override
   void dispose() {
@@ -334,6 +372,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
         CreateKind.post =>
           _textOnly ? 'بماذا تفكر؟ أضف #هاشتاق' : 'اكتب وصفاً...',
         CreateKind.story => 'أضف نصاً للقصة (اختياري)',
+        CreateKind.video => 'أضف وصفاً للفيديو (اختياري)',
       };
 
   Future<void> _publish() async {
@@ -346,6 +385,10 @@ class _ComposeScreenState extends State<ComposeScreen> {
         setState(() => _error = 'رابط يوتيوب غير صالح');
         return;
       }
+    }
+    if (_isVideoKind && videoId == null) {
+      setState(() => _error = 'أضف رابط فيديو يوتيوب أولاً');
+      return;
     }
     if (_textOnly && caption.isEmpty && videoId == null) {
       setState(() => _error = 'اكتب شيئاً أو أضف رابط فيديو أولاً');
@@ -370,6 +413,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
         final type = switch (widget.kind) {
           CreateKind.post => PostType.photo,
           CreateKind.story => PostType.story,
+          CreateKind.video => PostType.photo,
         };
         await PostService.publishMedia(type, m.bytes,
             mime: m.mime,
@@ -427,11 +471,14 @@ class _ComposeScreenState extends State<ComposeScreen> {
             if (_allowVideo) ...[
               TextField(
                 controller: _videoLink,
+                autofocus: _isVideoKind,
                 keyboardType: TextInputType.url,
                 textDirection: TextDirection.ltr,
-                decoration: const InputDecoration(
-                  hintText: 'رابط فيديو يوتيوب (اختياري)',
-                  prefixIcon: Icon(Icons.play_circle_outline_rounded),
+                decoration: InputDecoration(
+                  hintText: _isVideoKind
+                      ? 'الصق رابط فيديو يوتيوب'
+                      : 'رابط فيديو يوتيوب (اختياري)',
+                  prefixIcon: const Icon(Icons.play_circle_outline_rounded),
                 ),
               ),
               const SizedBox(height: 12),
