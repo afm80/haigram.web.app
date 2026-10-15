@@ -62,9 +62,9 @@
     #boot-splash.skip { display: none; }
     #boot-splash.is-hidden { opacity: 0; visibility: hidden; pointer-events: none; }
     .boot-mark {
-      width: 96px; height: 96px; display: grid; place-items: center;
+      width: 112px; height: 112px; display: grid; place-items: center;
       margin-inline: auto;
-      background: url("icons/haigram-mark.png") center / contain no-repeat;
+      background: url("icons/splash-logo.png") center / contain no-repeat;
       filter: drop-shadow(0 0 18px rgba(255, 122, 26, .20)) drop-shadow(0 0 12px rgba(154, 31, 168, .26));
       animation: boot-enter .7s cubic-bezier(.22, 1, .36, 1) both, boot-breathe 1.8s ease-in-out .7s infinite;
     }
@@ -138,9 +138,6 @@
   <div id="boot-splash" role="status" aria-label="جارٍ تحميل Haigram">
     <div>
       <div class="boot-mark"></div>
-      <div class="boot-copy" aria-hidden="true">
-        <span class="boot-part boot-hai"><span class="brand-h">H</span>ai</span><span class="boot-part boot-der">der</span><span class="boot-part boot-gram"><span class="brand-violet">g</span>ram</span>
-      </div>
       <div id="boot-loader" class="boot-loader"></div>
       <div id="boot-error" class="boot-fallback" role="alert" dir="rtl" hidden>
         تعذر تشغيل التطبيق. تحقق من اتصال الإنترنت ثم حاول مرة أخرى.
