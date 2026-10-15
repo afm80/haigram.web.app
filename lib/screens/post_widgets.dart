@@ -3,6 +3,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
 import '../services/post_service.dart';
 import '../theme.dart';
@@ -173,54 +174,9 @@ class _PostCardState extends State<PostCard> {
     );
   }
 
-  /// بطاقة فيديو يوتيوب: صورة مصغّرة + زر تشغيل، والضغط يفتح الفيديو في يوتيوب.
-  Widget _videoBlock(Post p) {
-    final id = p.videoId!;
-    return GestureDetector(
-      onTap: () => launchUrl(Uri.parse(PostService.youtubeWatchUrl(id)),
-          mode: LaunchMode.externalApplication),
-      child: AspectRatio(
-        aspectRatio: 16 / 9,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Container(color: Colors.black),
-            CachedNetworkImage(
-              imageUrl: p.videoThumb!,
-              fit: BoxFit.cover,
-              errorWidget: (_, __, ___) => const SizedBox.shrink(),
-            ),
-            Center(
-              child: Container(
-                width: 64,
-                height: 64,
-                decoration: const BoxDecoration(
-                    color: Color(0xCCFF0000), shape: BoxShape.circle),
-                child: const Icon(Icons.play_arrow_rounded,
-                    color: Colors.white, size: 44),
-              ),
-            ),
-            PositionedDirectional(
-              start: 10,
-              bottom: 8,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(6)),
-                child: const Text('YouTube',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  /// فيديو يوتيوب يعمل داخل المنشور نفسه (صورة مصغّرة ثم تشغيل عند النقر).
+  Widget _videoBlock(Post p) =>
+      YoutubeInline(key: ValueKey('yt-${p.id}'), videoId: p.videoId!);
 
   Widget _header(Post p) {
     return Padding(
@@ -398,7 +354,10 @@ class _LinkTextState extends State<LinkText> {
   @override
   Widget build(BuildContext context) {
     _disposeRecognizers();
-    final linkColor = context.appColors.reaction;
+    // أزرق للروابط والهاشتاقات (أفتح قليلاً في الوضع الداكن ليُقرأ بوضوح).
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final linkColor =
+        isDark ? const Color(0xFF4DA3FF) : const Color(0xFF1A73E8);
     final text = widget.text;
     final spans = <InlineSpan>[];
     if (widget.leading != null) {
@@ -440,6 +399,71 @@ class _LinkTextState extends State<LinkText> {
     return Text.rich(
       TextSpan(style: widget.style, children: spans),
       textAlign: widget.textAlign,
+    );
+  }
+}
+
+/// مشغّل يوتيوب داخل التطبيق. نعرض الصورة المصغّرة أولاً (خفيف على الصفحة الرئيسية)
+/// وعند النقر يُنشأ المشغّل ويبدأ الفيديو في مكانه دون الخروج من التطبيق.
+class YoutubeInline extends StatefulWidget {
+  final String videoId;
+  const YoutubeInline({super.key, required this.videoId});
+
+  @override
+  State<YoutubeInline> createState() => _YoutubeInlineState();
+}
+
+class _YoutubeInlineState extends State<YoutubeInline> {
+  YoutubePlayerController? _controller;
+
+  void _play() {
+    setState(() {
+      _controller = YoutubePlayerController.fromVideoId(
+        videoId: widget.videoId,
+        autoPlay: true,
+        params: const YoutubePlayerParams(showFullscreenButton: true),
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller?.close();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _controller;
+    if (controller != null) {
+      return YoutubePlayer(controller: controller, aspectRatio: 16 / 9);
+    }
+    return GestureDetector(
+      onTap: _play,
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Container(color: Colors.black),
+            CachedNetworkImage(
+              imageUrl: 'https://img.youtube.com/vi/${widget.videoId}/hqdefault.jpg',
+              fit: BoxFit.cover,
+              errorWidget: (_, __, ___) => const SizedBox.shrink(),
+            ),
+            Center(
+              child: Container(
+                width: 64,
+                height: 64,
+                decoration: const BoxDecoration(
+                    color: Color(0xCCFF0000), shape: BoxShape.circle),
+                child: const Icon(Icons.play_arrow_rounded,
+                    color: Colors.white, size: 44),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
