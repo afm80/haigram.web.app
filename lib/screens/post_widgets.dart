@@ -3,7 +3,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
 import '../services/post_service.dart';
 import '../theme.dart';
@@ -11,6 +10,7 @@ import '../route_state.dart';
 import 'common_widgets.dart';
 import 'explore_screen.dart' show ExploreSearchScreen;
 import 'share_sheet.dart';
+import 'yt_embed_stub.dart' if (dart.library.html) 'yt_embed_web.dart';
 
 String timeAgo(DateTime t) {
   final d = DateTime.now().difference(t);
@@ -65,6 +65,8 @@ class _PostCardState extends State<PostCard> {
           stream: PostService.isLiked(p.id),
           builder: (context, s) {
             _liked = s.data ?? false;
+            // الفيديو بلا غلاف نقر مزدوج حتى لا يتعارض مع النقر على المشغّل.
+            if (p.hasVideo) return _videoBlock(p);
             return GestureDetector(
               onDoubleTap: _doubleTapLike,
               child: Stack(
@@ -408,7 +410,7 @@ class _LinkTextState extends State<LinkText> {
 }
 
 /// مشغّل يوتيوب داخل التطبيق. نعرض الصورة المصغّرة أولاً (خفيف على الصفحة الرئيسية)
-/// وعند النقر يُنشأ المشغّل ويبدأ الفيديو في مكانه دون الخروج من التطبيق.
+/// وعند النقر يبدأ الفيديو في مكانه دون الخروج من التطبيق.
 class YoutubeInline extends StatefulWidget {
   final String videoId;
   final bool autoPlay;
@@ -419,46 +421,27 @@ class YoutubeInline extends StatefulWidget {
 }
 
 class _YoutubeInlineState extends State<YoutubeInline> {
-  YoutubePlayerController? _controller;
-
-  YoutubePlayerController _create() => YoutubePlayerController.fromVideoId(
-        videoId: widget.videoId,
-        autoPlay: true,
-        params: const YoutubePlayerParams(showFullscreenButton: true),
-      );
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.autoPlay) _controller = _create();
-  }
-
-  void _play() => setState(() => _controller = _create());
-
-  @override
-  void dispose() {
-    _controller?.close();
-    super.dispose();
-  }
+  late bool _playing = widget.autoPlay;
 
   @override
   Widget build(BuildContext context) {
-    final controller = _controller;
-    if (controller != null) {
-      return YoutubePlayer(controller: controller, aspectRatio: 16 / 9);
-    }
+    if (_playing) return buildYoutubeEmbed(widget.videoId);
     return GestureDetector(
-      onTap: _play,
+      behavior: HitTestBehavior.opaque,
+      onTap: () => setState(() => _playing = true),
       child: AspectRatio(
         aspectRatio: 16 / 9,
         child: Stack(
           fit: StackFit.expand,
           children: [
             Container(color: Colors.black),
-            CachedNetworkImage(
-              imageUrl: 'https://img.youtube.com/vi/${widget.videoId}/hqdefault.jpg',
-              fit: BoxFit.cover,
-              errorWidget: (_, __, ___) => const SizedBox.shrink(),
+            IgnorePointer(
+              child: CachedNetworkImage(
+                imageUrl:
+                    'https://img.youtube.com/vi/${widget.videoId}/hqdefault.jpg',
+                fit: BoxFit.cover,
+                errorWidget: (_, __, ___) => const SizedBox.shrink(),
+              ),
             ),
             Center(
               child: Container(
