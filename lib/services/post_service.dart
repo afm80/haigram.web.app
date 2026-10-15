@@ -23,6 +23,7 @@ class Post {
   final String caption;
   final String? mediaUrl;
   final String? mediaId; // وضع التجربة: الملف مخزّن في Firestore على قطع
+  final String? videoId; // معرّف فيديو يوتيوب (11 حرفاً) إن وُجد
   final int chunks;
   final String mime;
   final int likes;
@@ -40,6 +41,7 @@ class Post {
     required this.caption,
     required this.mediaUrl,
     this.mediaId,
+    this.videoId,
     this.chunks = 0,
     this.mime = 'image/jpeg',
     required this.likes,
@@ -61,6 +63,7 @@ class Post {
       caption: m['caption'] ?? '',
       mediaUrl: m['mediaUrl'],
       mediaId: m['mediaId'],
+      videoId: m['videoId'] as String?,
       chunks: (m['chunks'] ?? 0) as int,
       mime: m['mime'] ?? 'image/jpeg',
       likes: (m['likes'] ?? 0) as int,
@@ -78,6 +81,12 @@ class Post {
     return m['type'] == 'video' ||
         (m['mime'] is String && (m['mime'] as String).startsWith('video/'));
   }
+
+  bool get hasVideo => videoId != null && videoId!.isNotEmpty;
+
+  /// صورة الفيديو المصغّرة من يوتيوب (لا تستهلك أي حصة من Firebase أو Cloudinary).
+  String? get videoThumb =>
+      hasVideo ? 'https://img.youtube.com/vi/$videoId/hqdefault.jpg' : null;
 
   List<String> get hashtags => RegExp(r'#[\p{L}\p{N}_]+', unicode: true)
       .allMatches(caption)
@@ -356,8 +365,38 @@ class PostService {
     }
   }
 
-  static Future<void> publishText(String text) =>
-      _create(PostType.text, text, null);
+  /// يستخرج معرّف الفيديو من أي صيغة رابط يوتيوب:
+  /// watch?v= ، youtu.be ، shorts ، live ، embed ، /v/ ، m. ، music. ، youtube-nocookie.
+  /// يعيد null إذا لم يكن الرابط يوتيوب صالحاً.
+  static String? youtubeId(String input) {
+    var text = input.trim();
+    if (text.isEmpty) return null;
+    if (!text.contains('://')) text = 'https://$text';
+    final uri = Uri.tryParse(text);
+    if (uri == null) return null;
+    final host = uri.host.toLowerCase().replaceFirst(RegExp(r'^(www\.|m\.|music\.)'), '');
+    final idRe = RegExp(r'^[A-Za-z0-9_-]{11}$');
+    String? id;
+    if (host == 'youtu.be') {
+      if (uri.pathSegments.isNotEmpty) id = uri.pathSegments.first;
+    } else if (host == 'youtube.com' || host == 'youtube-nocookie.com') {
+      final seg = uri.pathSegments;
+      if (seg.isNotEmpty && seg.first == 'watch') {
+        id = uri.queryParameters['v'];
+      } else if (seg.length >= 2 &&
+          const {'shorts', 'live', 'embed', 'v'}.contains(seg.first)) {
+        id = seg[1];
+      }
+    }
+    return (id != null && idRe.hasMatch(id)) ? id : null;
+  }
+
+  static String youtubeWatchUrl(String id) => 'https://www.youtube.com/watch?v=$id';
+
+  /// منشور نصي، وقد يرافقه (أو يحلّ محلّه) فيديو يوتيوب.
+  static Future<void> publishText(String text, {String? videoId}) => _create(
+      PostType.text, text, null,
+      extra: videoId == null ? const {} : {'videoId': videoId});
 
   // ---- الإعجاب والحفظ والمتابعة ----
   static DocumentReference<Map<String, dynamic>> _likeRef(String postId) =>
