@@ -48,7 +48,7 @@ class HaigramWordmark extends StatelessWidget {
     return Text.rich(
       TextSpan(
         children: [
-          TextSpan(text: 'H', style: style.copyWith(color: AppColors.brandPurple)),
+          TextSpan(text: 'H', style: style.copyWith(color: AppColors.brandOrange)),
           const TextSpan(text: 'ai'),
           TextSpan(
               text: 'g', style: style.copyWith(color: AppColors.brandOrange)),
