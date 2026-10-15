@@ -85,7 +85,7 @@ class InboxScreen extends StatelessWidget {
       return const [
         Padding(
           padding: EdgeInsets.all(40),
-          child: Center(child: CircularProgressIndicator()),
+          child: AppLoading(),
         ),
       ];
     }
@@ -540,7 +540,7 @@ class _FriendsScreenState extends State<_FriendsScreen> {
                 message: 'تعذر تحميل قائمة الأصدقاء\n${snapshot.error}');
           }
           if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+            return const AppLoading();
           }
           final friends = snapshot.data!;
           if (friends.isEmpty) {
@@ -918,7 +918,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           message: 'تعذر تحميل المحادثة\n${snapshot.error}');
                     }
                     if (!snapshot.hasData) {
-                      return const Center(child: CircularProgressIndicator());
+                      return const AppLoading();
                     }
                     final messages = snapshot.data!
                         .where((m) => !_hidden.contains(m.id))
@@ -1243,7 +1243,7 @@ class NotificationsScreen extends StatelessWidget {
                 message: 'تعذر تحميل الإشعارات\n${snapshot.error}');
           }
           if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+            return const AppLoading();
           }
           final notifications = type == null
               ? snapshot.data!
@@ -1378,7 +1378,7 @@ class ActivityScreen extends StatelessWidget {
                   message: 'تعذر تحميل الإشعارات\n${snapshot.error}');
             }
             if (!snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
+              return const AppLoading();
             }
             final all = snapshot.data!;
             final followers = all
@@ -1633,7 +1633,7 @@ class _SuggestedAccountsState extends State<_SuggestedAccounts> {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Padding(
             padding: EdgeInsets.all(24),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            child: AppLoading(),
           );
         }
         final items = (snapshot.data ?? const <_Suggestion>[])
@@ -1824,7 +1824,7 @@ class ProfileVisitsScreen extends StatelessWidget {
                           message: 'تعذر تحميل الزيارات\n${snapshot.error}');
                     }
                     if (!snapshot.hasData) {
-                      return const Center(child: CircularProgressIndicator());
+                      return const AppLoading();
                     }
                     final visits = snapshot.data!;
                     return ListView(

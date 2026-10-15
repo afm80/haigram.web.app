@@ -1129,7 +1129,7 @@ class _ProfileShareSheetState extends State<_ProfileShareSheet> {
                       );
                     }
                     if (!snapshot.hasData) {
-                      return const Center(child: CircularProgressIndicator());
+                      return const AppLoading();
                     }
                     final friends = snapshot.data!;
                     if (friends.isEmpty) {
@@ -1274,7 +1274,7 @@ class _UserListState extends State<_UserList> {
                     child: Text('تعذر التحميل\n${snap.error}',
                         textAlign: TextAlign.center));
               if (!snap.hasData)
-                return const Center(child: CircularProgressIndicator());
+                return const AppLoading();
               final list = snap.data!
                   .where((u) =>
                       u.username.contains(_q) ||
