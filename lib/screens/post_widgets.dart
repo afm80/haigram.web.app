@@ -6,7 +6,9 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/post_service.dart';
 import '../theme.dart';
+import '../route_state.dart';
 import 'common_widgets.dart';
+import 'explore_screen.dart' show ExploreSearchScreen;
 import 'share_sheet.dart';
 
 String timeAgo(DateTime t) {
@@ -81,16 +83,15 @@ class _PostCardState extends State<PostCard> {
                               color: colors.text.withOpacity(0.08)),
                         ),
                       ),
-                      child: Text.rich(
-                          _captionSpans(
-                              p.caption,
-                              TextStyle(
-                                  color: textPostForeground,
-                                  fontSize: 20,
-                                  height: 1.5,
-                                  fontWeight: FontWeight.w600)),
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: textPostForeground)),
+                      child: LinkText(
+                        text: p.caption,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            color: textPostForeground,
+                            fontSize: 20,
+                            height: 1.5,
+                            fontWeight: FontWeight.w600),
+                      ),
                     )
                   else
                     LayoutBuilder(
@@ -144,18 +145,10 @@ class _PostCardState extends State<PostCard> {
         if ((!isText || p.hasVideo) && p.caption.isNotEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
-            child: Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(
-                    text: '${p.username} ',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                    recognizer: TapGestureRecognizer()
-                      ..onTap = () => openProfile(context, p.uid),
-                  ),
-                  ..._captionSpans(p.caption, null).children!,
-                ],
-              ),
+            child: LinkText(
+              text: p.caption,
+              leading: '${p.username} ',
+              onLeadingTap: () => openProfile(context, p.uid),
               style: TextStyle(color: colors.text, height: 1.4),
             ),
           ),
@@ -334,19 +327,121 @@ class _PostCardState extends State<PostCard> {
   }
 }
 
-/// يميز الهاشتاقات داخل النص.
-TextSpan _captionSpans(String text, TextStyle? style) {
-  final spans = <InlineSpan>[];
-  var last = 0;
-  for (final m in RegExp(r'#[\p{L}\p{N}_]+', unicode: true).allMatches(text)) {
-    if (m.start > last)
-      spans.add(TextSpan(text: text.substring(last, m.start)));
-    spans.add(TextSpan(
-        text: m.group(0), style: const TextStyle(fontWeight: FontWeight.w600)));
-    last = m.end;
+/// نص منشور تُلوَّن فيه الهاشتاقات والروابط وتُفتح عند النقر:
+/// الهاشتاق يفتح البحث عنه، والرابط (http/https أو www) يفتح في المتصفح.
+class LinkText extends StatefulWidget {
+  final String text;
+  final TextStyle? style;
+  final TextAlign? textAlign;
+  final String? leading; // مثل اسم صاحب المنشور قبل الوصف
+  final VoidCallback? onLeadingTap;
+  const LinkText({
+    super.key,
+    required this.text,
+    this.style,
+    this.textAlign,
+    this.leading,
+    this.onLeadingTap,
+  });
+
+  @override
+  State<LinkText> createState() => _LinkTextState();
+}
+
+class _LinkTextState extends State<LinkText> {
+  static final _pattern = RegExp(
+      r'(https?://[^\s]+|www\.[^\s]+)|(#[\p{L}\p{N}_]+)',
+      unicode: true);
+  static const _trailing = '.,!?;:)]}\'"،؛؟';
+
+  final _recognizers = <TapGestureRecognizer>[];
+
+  void _disposeRecognizers() {
+    for (final r in _recognizers) {
+      r.dispose();
+    }
+    _recognizers.clear();
   }
-  if (last < text.length) spans.add(TextSpan(text: text.substring(last)));
-  return TextSpan(style: style, children: spans);
+
+  TapGestureRecognizer _tap(VoidCallback onTap) {
+    final r = TapGestureRecognizer()..onTap = onTap;
+    _recognizers.add(r);
+    return r;
+  }
+
+  @override
+  void dispose() {
+    _disposeRecognizers();
+    super.dispose();
+  }
+
+  void _openTag(String tag) {
+    rootNavigatorOf(context).push<void>(appRoute<void>(
+        'search', const {}, (_) => ExploreSearchScreen(initialQuery: tag)));
+  }
+
+  Future<void> _openUrl(String url) async {
+    final fixed = url.startsWith('www.') ? 'https://$url' : url;
+    final uri = Uri.tryParse(fixed);
+    if (uri == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok) {
+        messenger.showSnackBar(const SnackBar(content: Text('تعذر فتح الرابط')));
+      }
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(content: Text('تعذر فتح الرابط')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _disposeRecognizers();
+    final linkColor = context.appColors.reaction;
+    final text = widget.text;
+    final spans = <InlineSpan>[];
+    if (widget.leading != null) {
+      spans.add(TextSpan(
+        text: widget.leading,
+        style: const TextStyle(fontWeight: FontWeight.w700),
+        recognizer:
+            widget.onLeadingTap == null ? null : _tap(widget.onLeadingTap!),
+      ));
+    }
+    var last = 0;
+    for (final m in _pattern.allMatches(text)) {
+      if (m.start > last) spans.add(TextSpan(text: text.substring(last, m.start)));
+      var match = m.group(0)!;
+      if (m.group(1) != null) {
+        // نُبقي علامات الترقيم في نهاية الرابط خارجه.
+        var end = match.length;
+        while (end > 0 && _trailing.contains(match[end - 1])) {
+          end--;
+        }
+        final url = match.substring(0, end);
+        spans.add(TextSpan(
+          text: url,
+          style: TextStyle(
+              color: linkColor, decoration: TextDecoration.underline),
+          recognizer: _tap(() => _openUrl(url)),
+        ));
+        if (end < match.length) spans.add(TextSpan(text: match.substring(end)));
+      } else {
+        spans.add(TextSpan(
+          text: match,
+          style: TextStyle(color: linkColor, fontWeight: FontWeight.w600),
+          recognizer: _tap(() => _openTag(match)),
+        ));
+      }
+      last = m.end;
+    }
+    if (last < text.length) spans.add(TextSpan(text: text.substring(last)));
+    return Text.rich(
+      TextSpan(style: widget.style, children: spans),
+      textAlign: widget.textAlign,
+    );
+  }
 }
 
 /// شاشة منشور واحد (عند الضغط على صورة/نص في الملف الشخصي).
