@@ -462,6 +462,7 @@ class _StoryViewerState extends State<StoryViewer>
     final scale = (1 - (_dragDy / 1200)).clamp(0.85, 1.0).toDouble();
     return Scaffold(
       backgroundColor: Colors.black,
+      resizeToAvoidBottomInset: false,
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTapUp: (d) {
