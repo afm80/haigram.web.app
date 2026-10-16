@@ -113,7 +113,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     const Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        LamhaLogo(size: 44),
+                        HaigramLogo(size: 44),
                         SizedBox(height: 4),
                         HaigramWordmark(
                           style: TextStyle(
@@ -207,7 +207,7 @@ class _SlideView extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           if (slide.isBrand)
-            const LamhaLogo(size: 180)
+            const HaigramLogo(size: 180)
           else
             Container(
               width: 220,

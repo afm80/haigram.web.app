@@ -203,7 +203,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       ),
                       child: Column(
                         children: [
-                          const LamhaLogo(size: 76),
+                          const HaigramLogo(size: 76),
                           const SizedBox(height: 16),
                           const HaigramWordmark(
                               style: TextStyle(
