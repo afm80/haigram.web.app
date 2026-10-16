@@ -124,8 +124,8 @@ class UserAvatar extends StatelessWidget {
 }
 
 /// نافذة التعليقات السفلية.
-void showCommentsSheet(BuildContext context, Post post) {
-  showModalBottomSheet(
+Future<void> showCommentsSheet(BuildContext context, Post post) {
+  return showModalBottomSheet(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,

@@ -1058,6 +1058,96 @@ void showShortDialog(BuildContext context, Post post,
   ));
 }
 
+/// صف أزرار الشورتز: إعجاب + تعليق + مشاركة (+ أسهم تنقّل على الشاشات الصغيرة).
+class _ShortActionsBar extends StatefulWidget {
+  final Post post;
+  final bool showArrows;
+  final bool canUp;
+  final bool canDown;
+  final VoidCallback onUp;
+  final VoidCallback onDown;
+  final VoidCallback onComments;
+  final VoidCallback onShare;
+  const _ShortActionsBar({
+    super.key,
+    required this.post,
+    required this.showArrows,
+    required this.canUp,
+    required this.canDown,
+    required this.onUp,
+    required this.onDown,
+    required this.onComments,
+    required this.onShare,
+  });
+
+  @override
+  State<_ShortActionsBar> createState() => _ShortActionsBarState();
+}
+
+class _ShortActionsBarState extends State<_ShortActionsBar> {
+  // عدّاد التعليقات حيّ (القائمة الممرَّرة للعارض نسخة ثابتة).
+  late final Stream<Post?> _live = PostService.postStream(widget.post.id);
+
+  Widget _btn(IconData icon, String label, VoidCallback onTap,
+      {Color color = Colors.white, String? tooltip}) {
+    return TextButton.icon(
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        foregroundColor: Colors.white,
+        minimumSize: const Size(44, 44),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+      ),
+      icon: Icon(icon, size: 26, color: color),
+      label: Text(label, style: const TextStyle(fontSize: 13)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.post;
+    return Row(
+      children: [
+        LikeBuilder(
+          post: p,
+          builder: (context, liked, count, toggle) => _btn(
+            liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+            count > 0 ? '$count' : '',
+            toggle,
+            color: liked ? AppColors.likeRed : Colors.white,
+          ),
+        ),
+        StreamBuilder<Post?>(
+          stream: _live,
+          initialData: p,
+          builder: (context, s) {
+            final n = s.data?.comments ?? p.comments;
+            return _btn(Icons.mode_comment_outlined, n > 0 ? '$n' : '',
+                widget.onComments);
+          },
+        ),
+        _btn(Icons.send_outlined, '', widget.onShare),
+        const Spacer(),
+        if (widget.showArrows) ...[
+          IconButton(
+            tooltip: 'السابق',
+            onPressed: widget.canUp ? widget.onUp : null,
+            icon: const Icon(Icons.keyboard_arrow_up_rounded, size: 30),
+            color: Colors.white,
+            disabledColor: Colors.white24,
+          ),
+          IconButton(
+            tooltip: 'التالي',
+            onPressed: widget.canDown ? widget.onDown : null,
+            icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 30),
+            color: Colors.white,
+            disabledColor: Colors.white24,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class ShortsViewer extends StatefulWidget {
   final List<Post> shorts;
   final int initialIndex;
@@ -1099,10 +1189,31 @@ class _ShortsViewerState extends State<ShortsViewer> {
   }
 
   /// تمرير باللمس: سحب للأعلى = التالي، للأسفل = السابق.
+  /// يكفي سحب قصير (40 بكسل) أو حركة سريعة، فلا يلزم سحب سريع جداً.
+  double _dragDy = 0;
+  void _onDragStart(DragStartDetails _) => _dragDy = 0;
+  void _onDragUpdate(DragUpdateDetails d) => _dragDy += d.delta.dy;
   void _onDragEnd(DragEndDetails d) {
     final v = d.primaryVelocity ?? 0;
-    if (v < -150) _go(1);
-    if (v > 150) _go(-1);
+    if (v < -150 || _dragDy < -40) {
+      _go(1);
+    } else if (v > 150 || _dragDy > 40) {
+      _go(-1);
+    }
+    _dragDy = 0;
+  }
+
+  /// فتح التعليقات/المشاركة: نُزيل مشغّل يوتيوب أولاً (iframe يلتقط النقرات)،
+  /// ويعود الفيديو بعد إغلاق النافذة.
+  Future<void> _overlay(Future<void> Function() open) async {
+    setState(() => _menuOpen = true);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    try {
+      await open();
+    } finally {
+      if (mounted) setState(() => _menuOpen = false);
+    }
   }
 
   void _onMenu(String v, Post post) async {
@@ -1127,12 +1238,16 @@ class _ShortsViewerState extends State<ShortsViewer> {
     }
   }
 
-  Widget _page(Post post, bool active) {
+  Widget _page(Post post, bool active, int index) {
     return LayoutBuilder(builder: (context, c) {
-      const captionH = 64.0;
-      final h = (c.maxHeight - captionH - 8).clamp(120.0, 4000.0).toDouble();
+      const actionsH = 52.0;
+      const captionH = 56.0;
+      final h = (c.maxHeight - actionsH - captionH - 8)
+          .clamp(120.0, 4000.0)
+          .toDouble();
       final w = (h * 9 / 16).clamp(0.0, c.maxWidth).toDouble();
       final vh = w * 16 / 9;
+      final wide = c.maxWidth >= 700;
       return Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -1151,22 +1266,53 @@ class _ShortsViewerState extends State<ShortsViewer> {
                           Container(color: Colors.black)),
             ),
           ),
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onVerticalDragEnd: _onDragEnd,
-            child: SizedBox(
-            width: w,
-            height: captionH,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                '@${post.username}${post.caption.isNotEmpty ? '\n${post.caption}' : ''}',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white, fontSize: 13.5),
+          // المنطقة السفلية بعرض الشاشة كلها وخارج الـ iframe: الأزرار هنا
+          // تعمل، والسحب عليها (حتى 40 بكسل) ينقل بين الفيديوهات.
+          SizedBox(
+            width: c.maxWidth,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onVerticalDragStart: _onDragStart,
+              onVerticalDragUpdate: _onDragUpdate,
+              onVerticalDragEnd: _onDragEnd,
+              child: Column(
+                children: [
+                  SizedBox(
+                    width: w,
+                    height: actionsH,
+                    child: _ShortActionsBar(
+                      key: ValueKey('acts-${post.id}'),
+                      post: post,
+                      // على الشاشات العريضة توجد أسهم جانبية؛ هنا للصغيرة.
+                      showArrows: !wide,
+                      canUp: index > 0,
+                      canDown: index < widget.shorts.length - 1,
+                      onUp: () => _go(-1),
+                      onDown: () => _go(1),
+                      onComments: () =>
+                          _overlay(() => showCommentsSheet(context, post)),
+                      onShare: () => _overlay(() => showPostShareSheet(
+                          Navigator.of(context, rootNavigator: true).context,
+                          post)),
+                    ),
+                  ),
+                  SizedBox(
+                    width: w,
+                    height: captionH,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        '@${post.username}${post.caption.isNotEmpty ? '\n${post.caption}' : ''}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 13.5),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
           ),
         ],
       );
@@ -1192,6 +1338,8 @@ class _ShortsViewerState extends State<ShortsViewer> {
           width: stripWidth,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
+            onVerticalDragStart: _onDragStart,
+            onVerticalDragUpdate: _onDragUpdate,
             onVerticalDragEnd: _onDragEnd,
           ),
         );
@@ -1225,8 +1373,8 @@ class _ShortsViewerState extends State<ShortsViewer> {
                     scrollDirection: Axis.vertical,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: widget.shorts.length,
-                    itemBuilder: (_, i) =>
-                        _page(widget.shorts[i], i == _current && !_menuOpen),
+                    itemBuilder: (_, i) => _page(
+                        widget.shorts[i], i == _current && !_menuOpen, i),
                   ),
                 ),
                 strip(true),
