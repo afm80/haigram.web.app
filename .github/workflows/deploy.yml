@@ -62,3 +62,15 @@ jobs:
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$GOOGLE_APPLICATION_CREDENTIALS"
           npm install --global firebase-tools
           firebase deploy --only firestore:rules --project "$FB_PROJECT_ID" --non-interactive
+
+      # الفهارس في خطوة منفصلة: إن فشلت (صلاحية الحساب مثلاً) لا يتأثر النشر أعلاه.
+      - name: Deploy Firestore indexes
+        continue-on-error: true
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FB_PROJECT_ID: ${{ secrets.FB_PROJECT_ID }}
+        run: |
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
+          trap 'rm -f "$GOOGLE_APPLICATION_CREDENTIALS"' EXIT
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          firebase deploy --only firestore:indexes --project "$FB_PROJECT_ID" --non-interactive
