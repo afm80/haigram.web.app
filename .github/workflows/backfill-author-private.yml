@@ -1,0 +1,35 @@
+name: Backfill authorPrivate
+
+# يُشغَّل يدوياً. يضبط authorPrivate على المنشورات القديمة حسب خصوصية صاحبها.
+# الترتيب الآمن: (1) تجربة dry_run=true  (2) تنفيذ dry_run=false  (3) نشر التطبيق والقواعد
+# (4) إعادة التنفيذ مرة أخيرة لالتقاط ما نُشر أثناء الانتقال.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'true = تجربة فقط بدون تعديل، false = تعديل فعلي'
+        required: true
+        default: 'true'
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install firebase-admin
+        working-directory: scripts
+        run: |
+          npm init -y >/dev/null
+          npm install firebase-admin@12 --no-audit --no-fund
+
+      - name: Run backfill
+        working-directory: scripts
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: node backfill-author-private.mjs
