@@ -257,6 +257,39 @@ class PostService {
     );
   }
 
+  // ---- «غير مهتم»: منشورات أخفيتها عن نفسي (تُحفظ في حسابي) ----
+  static final hiddenIds = ValueNotifier<Set<String>>(<String>{});
+
+  static CollectionReference<Map<String, dynamic>> get _hiddenRef =>
+      _db.collection('users').doc(_user.uid).collection('hiddenPosts');
+
+  /// يحمّل المخفيّات من حسابي. أي فشل (مثل قواعد لم تُنشر بعد) يُتجاهل.
+  static Future<void> loadHiddenIds() async {
+    try {
+      final snap = await _hiddenRef.get();
+      hiddenIds.value = {...hiddenIds.value, ...snap.docs.map((d) => d.id)};
+    } catch (_) {}
+  }
+
+  static Future<void> hidePost(String postId) async {
+    hiddenIds.value = {...hiddenIds.value, postId};
+    try {
+      await _hiddenRef
+          .doc(postId)
+          .set({'at': FieldValue.serverTimestamp()});
+    } catch (_) {
+      hiddenIds.value = {...hiddenIds.value}..remove(postId);
+      rethrow;
+    }
+  }
+
+  static Future<void> unhidePost(String postId) async {
+    hiddenIds.value = {...hiddenIds.value}..remove(postId);
+    try {
+      await _hiddenRef.doc(postId).delete();
+    } catch (_) {}
+  }
+
   /// يحوّل المستندات إلى منشورات ويتجاهل الفيديوهات القديمة.
   static List<Post> _parse(
           Iterable<DocumentSnapshot<Map<String, dynamic>>> docs) =>

@@ -271,6 +271,28 @@ class SocialService {
     });
   }
 
+  /// يرسل بلاغاً عن منشور بعينه (نفس مجموعة reports مع type = post).
+  static Future<void> reportPost(String postId, String ownerUid, String reason,
+      {String details = ''}) async {
+    if (postId.isEmpty ||
+        ownerUid.isEmpty ||
+        ownerUid == _uid ||
+        !reportReasons.containsKey(reason)) {
+      throw ArgumentError('بلاغ غير صالح');
+    }
+    await _db.collection('reports').add({
+      'type': 'post',
+      'postId': postId,
+      'targetUid': ownerUid,
+      'reporterUid': _uid,
+      'reason': reason,
+      'details': details.trim().length > 300
+          ? details.trim().substring(0, 300)
+          : details.trim(),
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   static Stream<List<Conversation>> conversations() => _chats
           .where('participants', arrayContains: _uid)
           .snapshots()
