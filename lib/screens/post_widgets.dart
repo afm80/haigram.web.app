@@ -658,7 +658,7 @@ class ShortsRow extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            child: Text('شورتز',
+            child: Text('Shorts',
                 style: TextStyle(
                     color: colors.text,
                     fontSize: 15,
