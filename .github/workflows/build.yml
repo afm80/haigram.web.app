@@ -44,7 +44,7 @@ jobs:
             exit 1
           fi
           rm -rf android
-          flutter create . --platforms=android --project-name lamha --org com.haigram >/dev/null
+          flutter create . --platforms=android --project-name haigram --org com.haigram >/dev/null
 
           GRADLE=$(ls android/app/build.gradle android/app/build.gradle.kts 2>/dev/null | head -1)
           MANIFEST=android/app/src/main/AndroidManifest.xml
