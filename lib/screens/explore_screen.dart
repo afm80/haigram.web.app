@@ -91,7 +91,7 @@ Widget _postTile(BuildContext context, Post post, {bool root = false}) {
     onTap: () => (root ? rootNavigatorOf(context) : Navigator.of(context))
         .push(appRoute('post', {'id': post.id},
             (_) => PostDetailScreen(post: post))),
-    child: ClipRRect(borderRadius: BorderRadius.circular(6), child: child),
+    child: ClipRRect(borderRadius: BorderRadius.circular(10), child: child),
   );
 }
 
@@ -220,13 +220,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
               p
         ];
     }
-    final showShorts = _filter != _ExploreFilter.photos && shorts.isNotEmpty;
+    // الشورتز تظهر في تبويب «فيديوهات» فقط حتى لا تزدحم الصفحة الرئيسية.
+    final showShorts = _filter == _ExploreFilter.videos && shorts.isNotEmpty;
     final isEmpty = gridItems.isEmpty && !showShorts;
 
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        SliverToBoxAdapter(child: _tagsBar(PostService.tagsOf(posts))),
         SliverToBoxAdapter(child: _filterBar()),
         if (showShorts)
           SliverToBoxAdapter(
@@ -249,12 +249,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
           )
         else
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 80),
+            padding: const EdgeInsets.fromLTRB(14, 4, 14, 80),
             sliver: SliverGrid(
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: _gridColumns(context),
-                crossAxisSpacing: 4,
-                mainAxisSpacing: 4,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
               ),
               delegate: SliverChildBuilderDelegate(
                 (context, i) => _postTile(context, gridItems[i]),
@@ -263,26 +263,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
             ),
           ),
       ],
-    );
-  }
-
-  /// الهاشتاقات الرائجة كشرائح في شريط أفقي واحد (بدل قائمة عمودية طويلة).
-  Widget _tagsBar(Map<String, int> tagsMap) {
-    final tags = tagsMap.keys.toList();
-    if (tags.isEmpty) return const SizedBox.shrink();
-    return SizedBox(
-      height: 44,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        itemCount: tags.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (context, i) => ActionChip(
-          avatar: const Icon(Icons.local_fire_department_rounded, size: 16),
-          label: Text(tags[i]),
-          onPressed: () => _openSearch(query: tags[i]),
-        ),
-      ),
     );
   }
 
