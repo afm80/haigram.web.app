@@ -530,6 +530,19 @@ class SocialService {
     });
   }
 
+  /// من راسلتهم مؤخراً (الأحدث أولاً)، من سجل المحادثات. تُهمل المحادثات
+  /// الفارغة التي لم تُرسل فيها أي رسالة. لا يعلّم الرسائل كمُسلَّمة.
+  static Future<List<String>> recentChatPartnerIds() async {
+    final snapshot =
+        await _chats.where('participants', arrayContains: _uid).get();
+    final items = snapshot.docs.map(Conversation.fromDoc).toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return [
+      for (final c in items)
+        if (c.lastMessageId.isNotEmpty) c.otherParticipant(_uid),
+    ];
+  }
+
   static Future<List<String>> mutualFriendIds() async {
     final following =
         _db.collection('users').doc(_uid).collection('following').get();
