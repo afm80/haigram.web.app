@@ -20,6 +20,8 @@ class HomeFeedScreen extends StatefulWidget {
   State<HomeFeedScreen> createState() => _HomeFeedScreenState();
 }
 
+enum _FeedMode { all, following }
+
 class _HomeFeedScreenState extends State<HomeFeedScreen> {
   late Stream<List<Post>> _shortsFeed = _allShorts();
   final ScrollController _scroll = ScrollController();
@@ -33,6 +35,8 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
   bool _moreTexts = true;
   bool _loading = false;
   Object? _error;
+  _FeedMode _mode = _FeedMode.all;
+  List<String>? _followIds; // حسابات أتابعها (تُجلب عند أول فتح لتبويب المتابَعين)
   int _gen = 0; // يُلغي نتائج طلب قديم إذا بدأ تحديث جديد
 
   @override
@@ -69,6 +73,18 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
     _load(reset: true);
   }
 
+  void _setMode(_FeedMode m) {
+    if (m == _mode) return;
+    stopInlineVideos();
+    if (_scroll.hasClients) _scroll.jumpTo(0);
+    setState(() {
+      _mode = m;
+      _photos = null;
+      _texts = null;
+    });
+    _load(reset: true);
+  }
+
   /// يجلب الدفعة الأولى ([reset]) أو التالية، ويضيفها إلى القائمة.
   Future<void> _load({bool reset = false}) async {
     if (!reset && (_loading || !(_morePhotos || _moreTexts))) return;
@@ -78,12 +94,21 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
       _error = null;
     });
     try {
+      List<String>? uids;
+      if (_mode == _FeedMode.following) {
+        if (reset || _followIds == null) {
+          _followIds =
+              await PostService.followingIdsOnce(PostService.uidOrEmpty);
+        }
+        uids = _followIds;
+      }
       final photoPage = (reset || _morePhotos)
           ? PostService.page(PostType.photo,
-              after: reset ? null : _photoCursor)
+              after: reset ? null : _photoCursor, uids: uids)
           : Future<PostPage?>.value(null);
       final textPage = (reset || _moreTexts)
-          ? PostService.page(PostType.text, after: reset ? null : _textCursor)
+          ? PostService.page(PostType.text,
+              after: reset ? null : _textCursor, uids: uids)
           : Future<PostPage?>.value(null);
       final photos = await photoPage;
       final texts = await textPage;
@@ -128,7 +153,12 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
       child: StreamBuilder<List<Post>>(
         stream: _shortsFeed,
         builder: (context, shortsSnap) {
-          final shorts = shortsSnap.data ?? const <Post>[];
+          final following = _mode == _FeedMode.following;
+          final followSet = {...?_followIds};
+          final shorts = [
+            for (final p in shortsSnap.data ?? const <Post>[])
+              if (!following || followSet.contains(p.uid)) p
+          ];
           // شورتز تظهر في شريط أفقي، والبقية منشورات عادية.
           final loaded = _photos != null && _texts != null;
           final posts = !loaded
@@ -155,6 +185,7 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
                   Divider(
                       height: 1,
                       color: context.appColors.text.withOpacity(0.12)),
+                  _FeedModeBar(mode: _mode, onChanged: _setMode),
                 ]);
               }
               if (showFooter && i == count - 1) {
@@ -182,15 +213,67 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
               if (posts == null) {
                 return const SizedBox.shrink();
               }
-              return const EmptyState(
-                icon: Icons.photo_library_outlined,
-                title: 'لا توجد منشورات بعد',
-                message: 'شارك أول صورة أو خاطرة مع مجتمعنا.',
-              );
+              if (_loading) return const SizedBox.shrink();
+              return following
+                  ? const EmptyState(
+                      icon: Icons.people_outline_rounded,
+                      title: 'لا جديد من متابَعيك',
+                      message:
+                          'تابع حسابات لترى منشوراتها هنا. منشورات الحسابات الخاصة لا تظهر في هذا التبويب.',
+                    )
+                  : const EmptyState(
+                      icon: Icons.photo_library_outlined,
+                      title: 'لا توجد منشورات بعد',
+                      message: 'شارك أول صورة أو خاطرة مع مجتمعنا.',
+                    );
             },
           );
         },
       ),
     );
+  }
+}
+
+/// مفتاح بين "للجميع" و"المتابَعون" أعلى الرئيسية.
+class _FeedModeBar extends StatelessWidget {
+  final _FeedMode mode;
+  final ValueChanged<_FeedMode> onChanged;
+  const _FeedModeBar({required this.mode, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    Widget item(String label, _FeedMode m) {
+      final selected = mode == m;
+      return Expanded(
+        child: InkWell(
+          onTap: () => onChanged(m),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: selected ? colors.text : Colors.transparent,
+                  width: 2,
+                ),
+              ),
+            ),
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: selected ? colors.text : colors.textDim,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(children: [
+      item('للجميع', _FeedMode.all),
+      item('المتابَعون', _FeedMode.following),
+    ]);
   }
 }
