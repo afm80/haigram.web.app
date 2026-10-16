@@ -26,7 +26,13 @@ class PostCard extends StatefulWidget {
   final Post post;
   /// يبدأ فيديو يوتيوب تلقائياً (عند فتح المنشور من الملف الشخصي مثلاً).
   final bool autoPlayVideo;
-  const PostCard({super.key, required this.post, this.autoPlayVideo = false});
+  /// يعرض النص كاملاً بلا اقتطاع (شاشة المنشور المفرد).
+  final bool expandText;
+  const PostCard(
+      {super.key,
+      required this.post,
+      this.autoPlayVideo = false,
+      this.expandText = false});
 
   @override
   State<PostCard> createState() => _PostCardState();
@@ -92,6 +98,7 @@ class _PostCardState extends State<PostCard> {
                       ),
                       child: LinkText(
                         text: p.caption,
+                        collapsedLines: widget.expandText ? null : 6,
                         textAlign: TextAlign.center,
                         style: TextStyle(
                             color: textPostForeground,
@@ -154,6 +161,7 @@ class _PostCardState extends State<PostCard> {
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
             child: LinkText(
               text: p.caption,
+              collapsedLines: widget.expandText ? null : 2,
               leading: '${p.username} ',
               onLeadingTap: () => openProfile(context, p.uid),
               style: TextStyle(color: colors.text, height: 1.4),
@@ -393,6 +401,8 @@ class LinkText extends StatefulWidget {
   final TextAlign? textAlign;
   final String? leading; // مثل اسم صاحب المنشور قبل الوصف
   final VoidCallback? onLeadingTap;
+  /// عدد الأسطر قبل الاقتطاع مع زر «المزيد/أقل» (null = عرض النص كاملاً).
+  final int? collapsedLines;
   const LinkText({
     super.key,
     required this.text,
@@ -400,6 +410,7 @@ class LinkText extends StatefulWidget {
     this.textAlign,
     this.leading,
     this.onLeadingTap,
+    this.collapsedLines,
   });
 
   @override
@@ -413,6 +424,7 @@ class _LinkTextState extends State<LinkText> {
   static const _trailing = '.,!?;:)]}\'"،؛؟';
 
   final _recognizers = <TapGestureRecognizer>[];
+  bool _expanded = false;
 
   void _disposeRecognizers() {
     for (final r in _recognizers) {
@@ -498,10 +510,50 @@ class _LinkTextState extends State<LinkText> {
       last = m.end;
     }
     if (last < text.length) spans.add(TextSpan(text: text.substring(last)));
-    return Text.rich(
-      TextSpan(style: widget.style, children: spans),
-      textAlign: widget.textAlign,
-    );
+    final span = TextSpan(style: widget.style, children: spans);
+    final limit = widget.collapsedLines;
+    if (limit == null) return Text.rich(span, textAlign: widget.textAlign);
+    return LayoutBuilder(builder: (context, c) {
+      final painter = TextPainter(
+        text: TextSpan(
+            style: DefaultTextStyle.of(context).style.merge(widget.style),
+            children: spans),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+        maxLines: limit,
+      )..layout(maxWidth: c.maxWidth);
+      final overflows = painter.didExceedMaxLines;
+      painter.dispose();
+      if (!overflows) return Text.rich(span, textAlign: widget.textAlign);
+      final centered = widget.textAlign == TextAlign.center;
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment:
+            centered ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+        children: [
+          Text.rich(
+            span,
+            textAlign: widget.textAlign,
+            maxLines: _expanded ? null : limit,
+            overflow: _expanded ? TextOverflow.clip : TextOverflow.ellipsis,
+          ),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: 2),
+              child: Text(
+                _expanded ? 'أقل' : 'المزيد',
+                style: TextStyle(
+                    color: context.appColors.textDim,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+        ],
+      );
+    });
   }
 }
 
@@ -660,7 +712,9 @@ class PostDetailScreen extends StatelessWidget {
             if (live == null)
               return const Center(child: Text('هذا المنشور لم يعد متاحاً'));
             return ListView(
-                children: [PostCard(post: live, autoPlayVideo: true)]);
+                children: [
+                  PostCard(post: live, autoPlayVideo: true, expandText: true)
+                ]);
           },
         ),
       ),
