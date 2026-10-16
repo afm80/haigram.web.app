@@ -219,9 +219,16 @@ class PostService {
   /// دفعة واحدة من منشورات الحسابات العامة بالأحدث، للتحميل عند التمرير.
   /// مرّر [after] (مؤشر الدفعة السابقة) لجلب ما بعدها. تستخدم فهرس
   /// authorPrivate + type + createdAt الموجود، فلا حاجة لفهرس جديد.
+  /// مع [uids]: منشورات هذه الحسابات فقط (حتى 30، حد Firestore لـ whereIn).
+  /// الحسابات الخاصة مستبعدة لأن القواعد لا تسمح باستعلام متعدد الحسابات عليها.
   static Future<PostPage> page(PostType t,
-      {DocumentSnapshot<Map<String, dynamic>>? after, int limit = 15}) async {
-    var q = _byType(t).where('authorPrivate', isEqualTo: false).limit(limit);
+      {DocumentSnapshot<Map<String, dynamic>>? after,
+      int limit = 15,
+      List<String>? uids}) async {
+    if (uids != null && uids.isEmpty) return const PostPage([], null, false);
+    var q = _byType(t).where('authorPrivate', isEqualTo: false);
+    if (uids != null) q = q.where('uid', whereIn: uids.take(30).toList());
+    q = q.limit(limit);
     if (after != null) q = q.startAfterDocument(after);
     final snap = await q.get();
     return PostPage(
