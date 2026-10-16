@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/post_service.dart';
+import '../services/social_service.dart';
 import '../theme.dart';
 import '../route_state.dart';
 import 'common_widgets.dart';
@@ -50,6 +51,15 @@ class _PostCardState extends State<PostCard> {
     });
   }
 
+  Future<void> _hideNotInterested(Post p) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await PostService.hidePost(p.id);
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text('تعذر الإخفاء: $error')));
+    }
+  }
+
   Future<void> _copyPostLink() async {
     await Clipboard.setData(
         ClipboardData(text: PostService.postLink(widget.post)));
@@ -60,6 +70,15 @@ class _PostCardState extends State<PostCard> {
 
   @override
   Widget build(BuildContext context) {
+    return ValueListenableBuilder<Set<String>>(
+      valueListenable: PostService.hiddenIds,
+      builder: (context, ids, _) => ids.contains(widget.post.id)
+          ? _HiddenStrip(onUndo: () => PostService.unhidePost(widget.post.id))
+          : _cardBody(context),
+    );
+  }
+
+  Widget _cardBody(BuildContext context) {
     final p = widget.post;
     final isText = p.type == PostType.text;
     final colors = context.appColors;
@@ -264,6 +283,10 @@ class _PostCardState extends State<PostCard> {
                   editPostCaption(context, p);
                 case 'delete':
                   deletePostWithConfirm(context, p);
+                case 'hide':
+                  _hideNotInterested(p);
+                case 'report':
+                  reportPostSheet(context, p);
               }
             },
             itemBuilder: (_) => [
@@ -275,6 +298,25 @@ class _PostCardState extends State<PostCard> {
                   Text('نسخ رابط المنشور'),
                 ]),
               ),
+              if (p.uid != PostService.uidOrEmpty)
+                const PopupMenuItem(
+                  value: 'hide',
+                  child: Row(children: [
+                    Icon(Icons.visibility_off_outlined, size: 20),
+                    SizedBox(width: 10),
+                    Text('غير مهتم'),
+                  ]),
+                ),
+              if (p.uid != PostService.uidOrEmpty)
+                PopupMenuItem(
+                  value: 'report',
+                  child: Row(children: [
+                    Icon(Icons.flag_outlined,
+                        size: 20, color: AppColors.brandPurple),
+                    const SizedBox(width: 10),
+                    const Text('إبلاغ'),
+                  ]),
+                ),
               if (p.uid == PostService.uidOrEmpty)
                 const PopupMenuItem(
                   value: 'edit',
@@ -382,6 +424,91 @@ class _PostCardState extends State<PostCard> {
       ),
     );
   }
+}
+
+/// شريط يحلّ محل المنشور بعد «غير مهتم» أو الإبلاغ، مع تراجع.
+class _HiddenStrip extends StatelessWidget {
+  final VoidCallback onUndo;
+  const _HiddenStrip({required this.onUndo});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: colors.surface,
+      child: Row(
+        children: [
+          Icon(Icons.visibility_off_outlined, size: 20, color: colors.textDim),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text('تم إخفاء المنشور',
+                style: TextStyle(color: colors.textDim)),
+          ),
+          TextButton(onPressed: onUndo, child: const Text('تراجع')),
+        ],
+      ),
+    );
+  }
+}
+
+/// نافذة أسباب الإبلاغ عن منشور؛ بعد الإرسال يُخفى المنشور عن المُبلِّغ.
+void reportPostSheet(BuildContext context, Post post) {
+  final colors = context.appColors;
+  final messenger = ScaffoldMessenger.of(context);
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: colors.surface,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (sheetContext) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: Text('إبلاغ عن هذا المنشور',
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: colors.text)),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: Text('اختر السبب الأقرب. لن يعرف صاحب المنشور أنك من أبلغ.',
+                  style: TextStyle(fontSize: 12, color: colors.textDim)),
+            ),
+          ),
+          for (final reason in SocialService.reportReasons.entries)
+            ListTile(
+              title: Text(reason.value),
+              trailing: const Icon(Icons.chevron_left_rounded),
+              onTap: () async {
+                Navigator.of(sheetContext).pop();
+                try {
+                  await SocialService.reportPost(
+                      post.id, post.uid, reason.key);
+                  messenger.showSnackBar(const SnackBar(
+                      content: Text('تم إرسال البلاغ، شكراً لك')));
+                  await PostService.hidePost(post.id);
+                } catch (error) {
+                  messenger.showSnackBar(
+                      SnackBar(content: Text('تعذر إرسال البلاغ: $error')));
+                }
+              },
+            ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    ),
+  );
 }
 
 /// أيقونة مشاركة بشكل الطائرة الورقية (مثل إنستغرام)، لا تنعكس في الواجهة العربية.

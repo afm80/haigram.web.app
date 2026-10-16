@@ -46,6 +46,7 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
   bool _more() =>
       _morePhotos || _moreTexts || (_mode == _FeedMode.following && _morePrivate);
   // // حسابات أتابعها (تُجلب عند أول فتح لتبويب المتابَعين)
+  Set<String> _hiddenBase = const {}; // مخفيّات وقت آخر تحديث (الجديدة تُعرض بشريط تراجع)
   int _gen = 0; // يُلغي نتائج طلب قديم إذا بدأ تحديث جديد
 
   @override
@@ -103,6 +104,10 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
       _error = null;
     });
     try {
+      if (reset) {
+        await PostService.loadHiddenIds();
+        _hiddenBase = {...PostService.hiddenIds.value};
+      }
       List<String>? uids;
       if (_mode == _FeedMode.following) {
         if (reset || _followIds == null) {
@@ -210,7 +215,7 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
               ? null
               : ([
                   for (final p in [..._photos!, ..._texts!, ..._privPosts])
-                    if (!p.isShort) p
+                    if (!p.isShort && !_hiddenBase.contains(p.id)) p
                 ]..sort((a, b) => b.createdAt.compareTo(a.createdAt)));
           final hasPosts = posts != null && posts.isNotEmpty;
           // شريط شورتز في الأعلى مباشرة تحت القصص ليعرف المستخدم بوجوده.
