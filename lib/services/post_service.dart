@@ -115,6 +115,14 @@ class Post {
       .toList();
 }
 
+/// دفعة من المنشورات مع مؤشر لمتابعة الجلب من بعدها.
+class PostPage {
+  final List<Post> posts;
+  final DocumentSnapshot<Map<String, dynamic>>? cursor; // آخر مستند في الدفعة
+  final bool hasMore;
+  const PostPage(this.posts, this.cursor, this.hasMore);
+}
+
 /// علاقتي بحساب آخر: لا شيء، طلب متابعة معلّق (حساب خاص)، أو أتابعه.
 enum FollowState { none, requested, following }
 
@@ -206,6 +214,21 @@ class PostService {
     }
     return Stream.fromFuture(_scopeToAuthor(_byType(t), uid)).asyncExpand(
         (q) => q.limit(limit).snapshots().map((s) => _parse(s.docs)));
+  }
+
+  /// دفعة واحدة من منشورات الحسابات العامة بالأحدث، للتحميل عند التمرير.
+  /// مرّر [after] (مؤشر الدفعة السابقة) لجلب ما بعدها. تستخدم فهرس
+  /// authorPrivate + type + createdAt الموجود، فلا حاجة لفهرس جديد.
+  static Future<PostPage> page(PostType t,
+      {DocumentSnapshot<Map<String, dynamic>>? after, int limit = 15}) async {
+    var q = _byType(t).where('authorPrivate', isEqualTo: false).limit(limit);
+    if (after != null) q = q.startAfterDocument(after);
+    final snap = await q.get();
+    return PostPage(
+      _parse(snap.docs),
+      snap.docs.isEmpty ? after : snap.docs.last,
+      snap.docs.length >= limit,
+    );
   }
 
   /// يحوّل المستندات إلى منشورات ويتجاهل الفيديوهات القديمة.
