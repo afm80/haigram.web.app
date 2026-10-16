@@ -200,9 +200,9 @@ class _ProfileViewState extends State<ProfileView> {
     // الشبكة، Shorts، فيديو، إعادة النشر، والمحفوظات (لصاحب الحساب فقط).
     // لون أيقونات التبويبات يتبع الوضع (داكن/فاتح) عبر labelColor و unselectedLabelColor.
     final tabs = <Tab>[
-      const Tab(icon: Icon(Icons.photo_library_outlined)),
-      const Tab(icon: _PlayGlyph(vertical: true)),
-      const Tab(icon: _PlayGlyph(vertical: false)),
+      const Tab(icon: _BoxGlyph(Icons.image_rounded)),
+      const Tab(icon: _BoxGlyph(Icons.bolt_rounded)),
+      const Tab(icon: _BoxGlyph(Icons.play_arrow_rounded)),
       const Tab(icon: Icon(Icons.repeat_rounded)),
       if (widget.isMe) const Tab(icon: Icon(Icons.bookmark_border_rounded)),
     ];
@@ -1833,7 +1833,8 @@ class _PostsTabState extends State<_PostsTab> {
                 canPin: widget.isMe,
                 aspectRatio: 9 / 16,
                 tileWidth: 120,
-                minColumns: 3);
+                minColumns: 3,
+                openAsShorts: true);
           case _ProfileTabKind.videos:
             return _PostGrid(
                 list: list,
@@ -1906,60 +1907,25 @@ class _PostsTabState extends State<_PostsTab> {
   }
 }
 
-/// أيقونة رسمناها بأنفسنا: مستطيل عمودي (Shorts) أو أفقي (فيديو) بمثلث تشغيل.
-/// تأخذ لونها وحجمها من IconTheme فتتبع تلوين التبويب المحدد.
-class _PlayGlyph extends StatelessWidget {
-  final bool vertical;
-  final double? size;
-  const _PlayGlyph({required this.vertical, this.size});
+/// أيقونة تبويب موحّدة: مربع بإطار وداخله رمز (صورة / برق / تشغيل).
+/// الثلاث بالحجم نفسه تماماً، وتأخذ لونها من IconTheme فتتبع التبويب المحدد.
+class _BoxGlyph extends StatelessWidget {
+  final IconData icon;
+  const _BoxGlyph(this.icon);
 
   @override
   Widget build(BuildContext context) {
-    final theme = IconTheme.of(context);
-    final s = size ?? theme.size ?? 24;
-    return SizedBox(
-      width: s,
-      height: s,
-      child: CustomPaint(
-        painter: _PlayGlyphPainter(
-            vertical: vertical, color: theme.color ?? Colors.grey),
+    final color = IconTheme.of(context).color ?? Colors.grey;
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color, width: 1.8),
       ),
+      child: Icon(icon, size: 15, color: color),
     );
   }
-}
-
-class _PlayGlyphPainter extends CustomPainter {
-  final bool vertical;
-  final Color color;
-  const _PlayGlyphPainter({required this.vertical, required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final u = size.width / 24;
-    final w = (vertical ? 13.0 : 21.0) * u;
-    final h = (vertical ? 21.0 : 14.0) * u;
-    final rect = Rect.fromCenter(
-        center: size.center(Offset.zero), width: w, height: h);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, Radius.circular(3.5 * u)),
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.8 * u
-        ..color = color,
-    );
-    final c = rect.center;
-    final t = 3.4 * u;
-    final tri = Path()
-      ..moveTo(c.dx - t * 0.7, c.dy - t)
-      ..lineTo(c.dx + t * 1.1, c.dy)
-      ..lineTo(c.dx - t * 0.7, c.dy + t)
-      ..close();
-    canvas.drawPath(tri, Paint()..color = color);
-  }
-
-  @override
-  bool shouldRepaint(_PlayGlyphPainter old) =>
-      old.vertical != vertical || old.color != color;
 }
 
 class _PostGrid extends StatelessWidget {
@@ -1967,6 +1933,7 @@ class _PostGrid extends StatelessWidget {
   final Set<String> pinnedIds;
   final bool canPin;
   final bool shrink; // داخل ListView
+  final bool openAsShorts; // الضغط يفتح عارض الشورتز العمودي (تمرير بين المقاطع)
   final double aspectRatio; // عرض/ارتفاع البطاقة
   final double tileWidth; // عرض البطاقة التقريبي لحساب عدد الأعمدة
   final int minColumns;
@@ -1975,6 +1942,7 @@ class _PostGrid extends StatelessWidget {
     this.pinnedIds = const <String>{},
     this.canPin = false,
     this.shrink = false,
+    this.openAsShorts = false,
     this.aspectRatio = 1,
     this.tileWidth = 150,
     this.minColumns = 3,
@@ -2000,6 +1968,10 @@ class _PostGrid extends StatelessWidget {
           final post = list[i];
           return GestureDetector(
             onTap: () {
+              if (openAsShorts) {
+                showShortDialog(context, post, fromProfile: true, shorts: list);
+                return;
+              }
               Navigator.of(context).push(appRoute('post', {'id': post.id},
                   (_) => PostDetailScreen(post: post)));
             },
