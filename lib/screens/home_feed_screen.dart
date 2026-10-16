@@ -21,6 +21,7 @@ class HomeFeedScreen extends StatefulWidget {
 
 class _HomeFeedScreenState extends State<HomeFeedScreen> {
   late Stream<List<Post>> _feed = _latestPosts();
+  late Stream<List<Post>> _shortsFeed = _allShorts();
   final ScrollController _scroll = ScrollController();
 
   @override
@@ -44,8 +45,17 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
       _scroll.animateTo(0,
           duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
     }
-    setState(() => _feed = _latestPosts());
+    setState(() {
+      _feed = _latestPosts();
+      _shortsFeed = _allShorts();
+    });
   }
+
+  /// كل الشورتز (حتى 100 من الحسابات العامة) بالأحدث، مستقلة عن قائمة المنشورات
+  /// كي يتنقل عارض شورتز بينها كلها وليس بما يظهر في الرئيسية فقط.
+  /// نفس استعلام النصوص الحالي (فهرسه موجود) ثم نصفّي شورتز محلياً.
+  Stream<List<Post>> _allShorts() => PostService.stream(PostType.text, limit: 100)
+      .map((list) => [for (final p in list) if (p.isShort) p]);
 
   /// الصور والنصوص في قائمة واحدة مرتبة بالأحدث.
   Stream<List<Post>> _latestPosts() {
@@ -86,14 +96,13 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
   Widget build(BuildContext context) {
     return SafeArea(
       child: StreamBuilder<List<Post>>(
+        stream: _shortsFeed,
+        builder: (context, shortsSnap) => StreamBuilder<List<Post>>(
         stream: _feed,
         builder: (context, snap) {
           final all = snap.data;
           // شورتز تظهر في شريط أفقي، والبقية منشورات عادية.
-          final shorts = [
-            for (final p in all ?? const <Post>[])
-              if (p.isShort) p
-          ];
+          final shorts = shortsSnap.data ?? const <Post>[];
           final posts =
               all == null ? null : [for (final p in all) if (!p.isShort) p];
           final hasPosts = posts != null && posts.isNotEmpty;
@@ -137,6 +146,7 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
             },
           );
         },
+        ),
       ),
     );
   }
