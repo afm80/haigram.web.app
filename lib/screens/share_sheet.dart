@@ -67,7 +67,16 @@ class _PostShareSheetState extends State<_PostShareSheet> {
   }
 
   Future<List<AppUser>> _loadFriends() async {
-    final ids = await SocialService.mutualFriendIds();
+    // الترتيب: من راسلتهم مؤخراً (الأحدث أولاً)، ثم المتابعة المتبادلة،
+    // ثم من أتابعهم، ثم متابعيّ.
+    final me = PostService.uidOrEmpty;
+    final results = await Future.wait([
+      SocialService.recentChatPartnerIds().catchError((_) => <String>[]),
+      SocialService.mutualFriendIds().catchError((_) => <String>[]),
+      PostService.followingIdsOnce(me).catchError((_) => <String>[]),
+      PostService.followerIdsOnce(me).catchError((_) => <String>[]),
+    ]);
+    final ids = <String>{for (final list in results) ...list}..remove(me);
     final users = await Future.wait(ids.map(UserService.profileOf));
     return users.whereType<AppUser>().toList();
   }
@@ -315,7 +324,7 @@ class _PostShareSheetState extends State<_PostShareSheet> {
         }
         final friends = snapshot.data!;
         if (friends.isEmpty) {
-          return _hint('ستظهر هنا الحسابات التي تتابعك وتتابعها لإرسال $_noun لها.',
+          return _hint('تابع بعض الحسابات أو دعهم يتابعونك لتظهر هنا وترسل لهم $_noun.',
               color: colors.textDim);
         }
         final q = _query.trim().toLowerCase();
