@@ -359,12 +359,13 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                               ),
                                             ),
                                           )
-                                        : Text(
+                                        : c.kind == 'sticker'
+                                            ? StickerGlyph(c.text, size: 56)
+                                            : Text(
                                             c.text,
                                             style: TextStyle(
                                               height: 1.4,
-                                              fontSize:
-                                                  c.kind == 'sticker' ? 40 : null,
+                                              fontSize: null,
                                             ),
                                           ),
                                   ),
@@ -387,7 +388,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                               : Icons.favorite_border_rounded,
                                           size: 18,
                                           color: c.likedBy.contains(me)
-                                              ? context.appColors.reaction
+                                              ? AppColors.likeRed
                                               : context.appColors.textDim,
                                         ),
                                       ),
