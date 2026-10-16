@@ -2,11 +2,13 @@
 import 'package:flutter/material.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
-Widget buildYoutubeEmbed(String videoId) => _NativeYoutube(videoId: videoId);
+Widget buildYoutubeEmbed(String videoId, {double aspect = 16 / 9}) =>
+    _NativeYoutube(videoId: videoId, aspect: aspect);
 
 class _NativeYoutube extends StatefulWidget {
   final String videoId;
-  const _NativeYoutube({required this.videoId});
+  final double aspect;
+  const _NativeYoutube({required this.videoId, this.aspect = 16 / 9});
 
   @override
   State<_NativeYoutube> createState() => _NativeYoutubeState();
@@ -28,5 +30,5 @@ class _NativeYoutubeState extends State<_NativeYoutube> {
 
   @override
   Widget build(BuildContext context) =>
-      YoutubePlayer(controller: _controller, aspectRatio: 16 / 9);
+      YoutubePlayer(controller: _controller, aspectRatio: widget.aspect);
 }

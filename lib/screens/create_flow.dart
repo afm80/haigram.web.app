@@ -397,7 +397,9 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
       final m = widget.media;
       if (m == null) {
-        await PostService.publishText(caption, videoId: videoId);
+        await PostService.publishText(caption,
+            videoId: videoId,
+            isShort: videoId != null && PostService.isShortsLink(link));
       } else {
         final type = switch (widget.kind) {
           CreateKind.post => PostType.photo,

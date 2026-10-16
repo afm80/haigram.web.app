@@ -60,11 +60,22 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
       child: StreamBuilder<List<Post>>(
         stream: _feed,
         builder: (context, snap) {
-          final posts = snap.data;
+          final all = snap.data;
+          // شورتز تظهر في شريط أفقي، والبقية منشورات عادية.
+          final shorts = [
+            for (final p in all ?? const <Post>[])
+              if (p.isShort) p
+          ];
+          final posts =
+              all == null ? null : [for (final p in all) if (!p.isShort) p];
           final hasPosts = posts != null && posts.isNotEmpty;
+          // الشريط بعد 5 منشورات (أو في النهاية إن كانت أقل).
+          final shortsAt = hasPosts ? (posts.length < 5 ? posts.length : 5) : 0;
+          final hasShorts = shorts.isNotEmpty;
+          final rows = hasPosts ? posts.length + 1 : (hasShorts ? 1 : 2);
           return ListView.builder(
             padding: const EdgeInsets.only(top: 8, bottom: 80),
-            itemCount: hasPosts ? posts.length + 1 : 2,
+            itemCount: rows + (hasShorts ? 1 : 0),
             itemBuilder: (_, i) {
               if (i == 0) {
                 return Column(children: [
@@ -74,7 +85,11 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
                       color: context.appColors.text.withOpacity(0.12)),
                 ]);
               }
-              if (hasPosts) return PostCard(post: posts[i - 1]);
+              if (hasShorts && i == shortsAt + 1) {
+                return ShortsRow(shorts: shorts);
+              }
+              final idx = (hasShorts && i > shortsAt + 1) ? i - 1 : i;
+              if (hasPosts) return PostCard(post: posts[idx - 1]);
               if (snap.hasError) {
                 return Padding(
                   padding: const EdgeInsets.all(28),

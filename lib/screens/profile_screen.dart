@@ -1863,6 +1863,25 @@ class _PostsTabState extends State<_PostsTab> {
                 : null,
           );
         }
+        if (_isVideos) {
+          // شورتز في شريط أفقي أعلى التبويب، والفيديوهات العادية في الشبكة تحته.
+          final shorts = [for (final p in list) if (p.isShort) p];
+          final rest = [for (final p in list) if (!p.isShort) p];
+          if (shorts.isNotEmpty) {
+            return ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                ShortsRow(shorts: shorts),
+                if (rest.isNotEmpty)
+                  _PostGrid(
+                      list: rest,
+                      pinnedIds: widget.pinnedIds,
+                      canPin: widget.isMe,
+                      shrink: true),
+              ],
+            );
+          }
+        }
         return _PostGrid(
             list: list, pinnedIds: widget.pinnedIds, canPin: widget.isMe);
       },
@@ -1874,16 +1893,20 @@ class _PostGrid extends StatelessWidget {
   final List<Post> list;
   final Set<String> pinnedIds;
   final bool canPin;
+  final bool shrink; // داخل ListView (مع شريط شورتز)
   const _PostGrid({
     required this.list,
     this.pinnedIds = const <String>{},
     this.canPin = false,
+    this.shrink = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) => GridView.builder(
+        shrinkWrap: shrink,
+        physics: shrink ? const NeverScrollableScrollPhysics() : null,
         padding: const EdgeInsets.all(2),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: _profileGridColumns(constraints.maxWidth),

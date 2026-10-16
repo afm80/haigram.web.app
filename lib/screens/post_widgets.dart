@@ -183,6 +183,7 @@ class _PostCardState extends State<PostCard> {
   Widget _videoBlock(Post p) => YoutubeInline(
       key: ValueKey('yt-${p.id}'),
       videoId: p.videoId!,
+      isShort: p.isShort,
       autoPlay: widget.autoPlayVideo);
 
   Widget _header(Post p) {
@@ -415,15 +416,27 @@ class _LinkTextState extends State<LinkText> {
 class YoutubeInline extends StatefulWidget {
   final String videoId;
   final bool autoPlay;
-  const YoutubeInline({super.key, required this.videoId, this.autoPlay = false});
+  final bool isShort;
+  const YoutubeInline(
+      {super.key,
+      required this.videoId,
+      this.autoPlay = false,
+      this.isShort = false});
 
   @override
   State<YoutubeInline> createState() => _YoutubeInlineState();
 }
 
+/// المشغّل المضمّن النشط حالياً (تغييره يغلق أي مشغّل آخر).
+final ValueNotifier<Object?> activeInlineVideo = ValueNotifier<Object?>(null);
+
+/// يغلق أي فيديو مضمّن يعمل الآن (يُستدعى قبل فتح نافذة شورتز).
+void stopInlineVideos() => activeInlineVideo.value = Object();
+
 class _YoutubeInlineState extends State<YoutubeInline> {
   /// المشغّل الوحيد النشط حالياً: تشغيل فيديو جديد يغلق السابق.
-  static final ValueNotifier<Object?> _active = ValueNotifier<Object?>(null);
+  static final ValueNotifier<Object?> _active = activeInlineVideo;
+  double get _aspect => widget.isShort ? 9 / 16 : 16 / 9;
 
   late bool _playing = widget.autoPlay;
   Timer? _watch;
@@ -472,10 +485,11 @@ class _YoutubeInlineState extends State<YoutubeInline> {
   /// يحدّ ارتفاع الفيديو (16:9) بنحو 55% من ارتفاع الشاشة، فلا يملأ الشاشة
   /// على الكمبيوتر ويبقى ما تحته قابلاً للتمرير.
   Widget _limit(BuildContext context, Widget child) {
-    final maxH = MediaQuery.of(context).size.height * 0.55;
+    final maxH = MediaQuery.of(context).size.height *
+        (widget.isShort ? 0.7 : 0.55);
     return Center(
       child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: maxH * 16 / 9),
+        constraints: BoxConstraints(maxWidth: maxH * _aspect),
         child: child,
       ),
     );
@@ -484,7 +498,8 @@ class _YoutubeInlineState extends State<YoutubeInline> {
   @override
   Widget build(BuildContext context) {
     if (_playing) {
-      return _limit(context, buildYoutubeEmbed(widget.videoId));
+      return _limit(
+          context, buildYoutubeEmbed(widget.videoId, aspect: _aspect));
     }
     return _limit(context, _thumb(context));
   }
@@ -497,7 +512,7 @@ class _YoutubeInlineState extends State<YoutubeInline> {
         _claim();
       },
       child: AspectRatio(
-        aspectRatio: 16 / 9,
+        aspectRatio: _aspect,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -620,4 +635,161 @@ class PostImage extends StatelessWidget {
       },
     );
   }
+}
+
+
+/// شريط أفقي لبطاقات شورتز (9:16). الضغط على بطاقة يفتح الفيديو في نافذة عمودية.
+class ShortsRow extends StatelessWidget {
+  final List<Post> shorts;
+  final EdgeInsetsGeometry padding;
+  const ShortsRow(
+      {super.key,
+      required this.shorts,
+      this.padding = const EdgeInsets.symmetric(vertical: 10)});
+
+  @override
+  Widget build(BuildContext context) {
+    if (shorts.isEmpty) return const SizedBox.shrink();
+    final colors = context.appColors;
+    return Padding(
+      padding: padding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: Text('شورتز',
+                style: TextStyle(
+                    color: colors.text,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700)),
+          ),
+          SizedBox(
+            height: 250,
+            child: ScrollConfiguration(
+              // السحب بالماوس على الكمبيوتر.
+              behavior: ScrollConfiguration.of(context).copyWith(
+                dragDevices: {
+                  PointerDeviceKind.touch,
+                  PointerDeviceKind.mouse,
+                  PointerDeviceKind.trackpad,
+                },
+              ),
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                itemCount: shorts.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (_, i) => _ShortCard(post: shorts[i]),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ShortCard extends StatelessWidget {
+  final Post post;
+  const _ShortCard({required this.post});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => showShortDialog(context, post),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: AspectRatio(
+          aspectRatio: 9 / 16,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Container(color: Colors.black),
+              CachedNetworkImage(
+                imageUrl: post.videoThumb!,
+                fit: BoxFit.cover,
+                errorWidget: (_, __, ___) => const SizedBox.shrink(),
+              ),
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0x00000000), Color(0xAA000000)],
+                  ),
+                ),
+              ),
+              const Center(
+                child: Icon(Icons.play_circle_fill_rounded,
+                    color: Colors.white, size: 40),
+              ),
+              Positioned(
+                left: 8,
+                right: 8,
+                bottom: 8,
+                child: Text(
+                  post.caption.isNotEmpty ? post.caption : post.username,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// يفتح فيديو شورتز في نافذة عمودية. إغلاق النافذة يوقف الصوت.
+void showShortDialog(BuildContext context, Post post) {
+  stopInlineVideos();
+  showDialog<void>(
+    context: context,
+    barrierColor: Colors.black87,
+    builder: (ctx) {
+      final size = MediaQuery.of(ctx).size;
+      final maxH = size.height * 0.8;
+      final w = (maxH * 9 / 16).clamp(0.0, size.width - 32).toDouble();
+      return Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: IconButton(
+                icon: const Icon(Icons.close_rounded, color: Colors.white),
+                onPressed: () => Navigator.of(ctx).pop(),
+              ),
+            ),
+            SizedBox(
+              width: w,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: buildYoutubeEmbed(post.videoId!, aspect: 9 / 16),
+              ),
+            ),
+            if (post.caption.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: SizedBox(
+                  width: w,
+                  child: Text(post.caption,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white)),
+                ),
+              ),
+          ],
+        ),
+      );
+    },
+  );
 }
