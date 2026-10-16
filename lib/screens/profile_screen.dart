@@ -1871,7 +1871,7 @@ class _PostsTabState extends State<_PostsTab> {
             return ListView(
               padding: EdgeInsets.zero,
               children: [
-                ShortsRow(shorts: shorts),
+                ShortsRow(shorts: shorts, fromProfile: true),
                 if (rest.isNotEmpty)
                   _PostGrid(
                       list: rest,

@@ -641,10 +641,12 @@ class PostImage extends StatelessWidget {
 /// شريط أفقي لبطاقات شورتز (9:16). الضغط على بطاقة يفتح الفيديو في نافذة عمودية.
 class ShortsRow extends StatelessWidget {
   final List<Post> shorts;
+  final bool fromProfile; // في الملف الشخصي تظهر خيارات التعديل والحذف لصاحبه
   final EdgeInsetsGeometry padding;
   const ShortsRow(
       {super.key,
       required this.shorts,
+      this.fromProfile = false,
       this.padding = const EdgeInsets.symmetric(vertical: 10)});
 
   @override
@@ -680,7 +682,8 @@ class ShortsRow extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 itemCount: shorts.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (_, i) => _ShortCard(post: shorts[i]),
+                itemBuilder: (_, i) =>
+                    _ShortCard(post: shorts[i], fromProfile: fromProfile),
               ),
             ),
           ),
@@ -692,12 +695,13 @@ class ShortsRow extends StatelessWidget {
 
 class _ShortCard extends StatelessWidget {
   final Post post;
-  const _ShortCard({required this.post});
+  final bool fromProfile;
+  const _ShortCard({required this.post, this.fromProfile = false});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => showShortDialog(context, post),
+      onTap: () => showShortDialog(context, post, fromProfile: fromProfile),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: AspectRatio(
@@ -747,8 +751,12 @@ class _ShortCard extends StatelessWidget {
 }
 
 /// يفتح فيديو شورتز في نافذة عمودية. إغلاق النافذة يوقف الصوت.
-void showShortDialog(BuildContext context, Post post) {
+void showShortDialog(BuildContext context, Post post,
+    {bool fromProfile = false}) {
   stopInlineVideos();
+  final rootCtx = Navigator.of(context, rootNavigator: true).context;
+  final messenger = ScaffoldMessenger.of(context);
+  final mine = post.uid == PostService.uidOrEmpty;
   showDialog<void>(
     context: context,
     barrierColor: Colors.black87,
@@ -766,18 +774,43 @@ void showShortDialog(BuildContext context, Post post) {
               width: w,
               child: Row(
                 children: [
-                  if (post.uid == PostService.uidOrEmpty)
-                    TextButton.icon(
-                      icon: const Icon(Icons.delete_outline_rounded,
-                          color: Colors.white),
-                      label: const Text('حذف',
-                          style: TextStyle(color: Colors.white)),
-                      onPressed: () => _confirmDeleteShort(ctx, post),
-                    ),
                   const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded, color: Colors.white),
-                    onPressed: () => Navigator.of(ctx).pop(),
+                  // قائمة الإجراءات (ثلاث نقاط). الإغلاق بالضغط خارج النافذة.
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert_rounded,
+                        color: Colors.white),
+                    onSelected: (v) async {
+                      switch (v) {
+                        case 'copy':
+                          await Clipboard.setData(
+                              ClipboardData(text: PostService.postLink(post)));
+                          unawaited(PostService.registerShare(post.id));
+                          messenger.showSnackBar(
+                              const SnackBar(content: Text('تم نسخ الرابط')));
+                        case 'share':
+                          Navigator.of(ctx).pop();
+                          showPostShareSheet(rootCtx, post);
+                        case 'story':
+                          Navigator.of(ctx).pop();
+                          showAddToStoryDialog(rootCtx, post, messenger);
+                        case 'edit':
+                          Navigator.of(ctx).pop();
+                          _editShortCaption(rootCtx, post, messenger);
+                        case 'delete':
+                          _confirmDeleteShort(ctx, post);
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(value: 'copy', child: Text('نسخ الرابط')),
+                      const PopupMenuItem(value: 'share', child: Text('مشاركة')),
+                      const PopupMenuItem(
+                          value: 'story', child: Text('إضافة إلى القصة')),
+                      if (fromProfile && mine)
+                        const PopupMenuItem(
+                            value: 'edit', child: Text('تعديل الوصف')),
+                      if (fromProfile && mine)
+                        const PopupMenuItem(value: 'delete', child: Text('حذف')),
+                    ],
                   ),
                 ],
               ),
@@ -833,5 +866,40 @@ Future<void> _confirmDeleteShort(BuildContext dialogCtx, Post post) async {
     messenger.showSnackBar(const SnackBar(content: Text('تم حذف الفيديو')));
   } catch (error) {
     messenger.showSnackBar(SnackBar(content: Text('تعذر الحذف: $error')));
+  }
+}
+
+/// تعديل وصف شورتز (من الملف الشخصي لصاحبه).
+Future<void> _editShortCaption(
+    BuildContext rootCtx, Post post, ScaffoldMessengerState messenger) async {
+  final controller = TextEditingController(text: post.caption);
+  final result = await showDialog<String>(
+    context: rootCtx,
+    builder: (ctx) => AlertDialog(
+      title: const Text('تعديل الوصف'),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        maxLength: 500,
+        minLines: 1,
+        maxLines: 6,
+        decoration: const InputDecoration(hintText: 'اكتب وصفاً...'),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+        TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('حفظ')),
+      ],
+    ),
+  );
+  controller.dispose();
+  if (result == null || result == post.caption) return;
+  try {
+    await PostService.updateCaption(post, result);
+    messenger.showSnackBar(const SnackBar(content: Text('تم تعديل الوصف')));
+  } catch (error) {
+    messenger.showSnackBar(SnackBar(content: Text('تعذر التعديل: $error')));
   }
 }
