@@ -25,6 +25,8 @@ class Post {
   final String? mediaId; // وضع التجربة: الملف مخزّن في Firestore على قطع
   final String? videoId; // معرّف فيديو يوتيوب (11 حرفاً) إن وُجد
   final bool isShort; // رابط شورتز (عمودي 9:16)
+  final String? sharedFromUsername; // قصة مشاركة من منشور: صاحب الأصل
+  final String? sharedFromUid;
   final int chunks;
   final String mime;
   final int likes;
@@ -44,6 +46,8 @@ class Post {
     this.mediaId,
     this.videoId,
     this.isShort = false,
+    this.sharedFromUsername,
+    this.sharedFromUid,
     this.chunks = 0,
     this.mime = 'image/jpeg',
     required this.likes,
@@ -67,6 +71,8 @@ class Post {
       mediaId: m['mediaId'],
       videoId: m['videoId'] as String?,
       isShort: m['isShort'] == true,
+      sharedFromUsername: m['sharedFromUsername'] as String?,
+      sharedFromUid: m['sharedFromUid'] as String?,
       chunks: (m['chunks'] ?? 0) as int,
       mime: m['mime'] ?? 'image/jpeg',
       likes: (m['likes'] ?? 0) as int,
@@ -338,6 +344,23 @@ class PostService {
   }
 
   static String _stamp() => DateTime.now().millisecondsSinceEpoch.toString();
+
+  /// يضيف صورة منشور إلى قصتي مع ذكر صاحبها. لا يعيد رفع الصورة: تشير القصة
+  /// إلى الملف نفسه (رابط أو قطع Firestore).
+  static Future<void> shareToStory(Post p) {
+    if (p.type != PostType.photo) {
+      throw StateError('يمكن إضافة الصور فقط إلى القصة');
+    }
+    return _create(PostType.story, '', p.mediaUrl,
+        mediaId: p.mediaId,
+        chunks: p.chunks,
+        mime: p.mime,
+        extra: {
+          'sharedFromUid': p.uid,
+          'sharedFromUsername': p.username,
+          'sharedFromPostId': p.id,
+        });
+  }
 
   /// ينشر وسائط (صورة/قصة). [mime] مثل image/jpeg.
   static Future<void> publishMedia(
