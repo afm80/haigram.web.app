@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 class AppColors {
   // البنفسجي الغامق المائل إلى الوردي (اللون الأساسي للأزرار والعناصر الفعّالة)
   static const brandPurple = Color(0xFF9A1FA8);
+  /// أحمر قلب الإعجاب (ثابت في الوضعين الداكن والفاتح).
+  static const likeRed = Color(0xFFFF3040);
   static const brandPurpleDeep = Color(0xFF7E1A9E);
   static const brandMagenta = Color(0xFFC02C9E);
 
