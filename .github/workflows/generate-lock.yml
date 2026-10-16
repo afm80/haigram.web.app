@@ -1,0 +1,28 @@
+name: Generate pubspec.lock
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.22.0'
+          cache: true
+
+      - name: Create pubspec.lock
+        run: flutter pub get
+
+      - name: Save pubspec.lock to the repository
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add pubspec.lock
+          git diff --cached --quiet || (git commit -m "Add pubspec.lock" && git push)
