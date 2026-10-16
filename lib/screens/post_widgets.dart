@@ -1627,7 +1627,11 @@ class _EditCaptionDialogState extends State<_EditCaptionDialog> {
                       onPressed: () => Navigator.pop(context),
                       child: const Text('إلغاء')),
                   const SizedBox(width: 8),
+                  // الثيم العام يجعل FilledButton بعرض كامل (Size.fromHeight)،
+                  // وداخل Row يختفي الزر؛ لذا نحدّد حداً أدنى بعرض محدود.
                   FilledButton(
+                      style: FilledButton.styleFrom(
+                          minimumSize: const Size(96, 44)),
                       onPressed: () =>
                           Navigator.pop(context, _controller.text.trim()),
                       child: const Text('حفظ')),
