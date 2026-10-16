@@ -403,6 +403,10 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
       if (navigator != null && navigator.canPop()) {
         navigator.popUntil((route) => route.isFirst);
       }
+      if (tab == 0 && _index == 0) {
+        // ضغط على الرئيسية وأنت فيها: تمرير للأعلى وتحديث.
+        homeRefreshTick.value++;
+      }
       if (tab != _index) {
         _tabHistory
           ..remove(tab)

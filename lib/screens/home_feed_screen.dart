@@ -8,6 +8,9 @@ import 'common_widgets.dart';
 import 'post_widgets.dart';
 import 'story_widgets.dart';
 
+/// يزداد عند الضغط على أيقونة الرئيسية وأنت فيها: تمرير للأعلى وتحديث.
+final ValueNotifier<int> homeRefreshTick = ValueNotifier<int>(0);
+
 /// الرئيسية: شريط القصص ثم منشورات المستخدمين وأحداثهم (صور ونصوص) بالأحدث.
 class HomeFeedScreen extends StatefulWidget {
   const HomeFeedScreen({super.key});
@@ -17,7 +20,32 @@ class HomeFeedScreen extends StatefulWidget {
 }
 
 class _HomeFeedScreenState extends State<HomeFeedScreen> {
-  late final Stream<List<Post>> _feed = _latestPosts();
+  late Stream<List<Post>> _feed = _latestPosts();
+  final ScrollController _scroll = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    homeRefreshTick.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    homeRefreshTick.removeListener(_refresh);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  /// تمرير إلى الأعلى ثم إعادة تحميل المنشورات (البيانات القديمة تبقى ظاهرة حتى تصل الجديدة).
+  void _refresh() {
+    if (!mounted) return;
+    stopInlineVideos();
+    if (_scroll.hasClients) {
+      _scroll.animateTo(0,
+          duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+    }
+    setState(() => _feed = _latestPosts());
+  }
 
   /// الصور والنصوص في قائمة واحدة مرتبة بالأحدث.
   Stream<List<Post>> _latestPosts() {
@@ -69,11 +97,12 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
           final posts =
               all == null ? null : [for (final p in all) if (!p.isShort) p];
           final hasPosts = posts != null && posts.isNotEmpty;
-          // الشريط بعد 5 منشورات (أو في النهاية إن كانت أقل).
-          final shortsAt = hasPosts ? (posts.length < 5 ? posts.length : 5) : 0;
+          // شريط شورتز في الأعلى مباشرة تحت القصص ليعرف المستخدم بوجوده.
+          const shortsAt = 0;
           final hasShorts = shorts.isNotEmpty;
           final rows = hasPosts ? posts.length + 1 : (hasShorts ? 1 : 2);
           return ListView.builder(
+            controller: _scroll,
             padding: const EdgeInsets.only(top: 8, bottom: 80),
             itemCount: rows + (hasShorts ? 1 : 0),
             itemBuilder: (_, i) {
