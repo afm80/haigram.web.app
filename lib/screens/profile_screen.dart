@@ -200,9 +200,9 @@ class _ProfileViewState extends State<ProfileView> {
     // الشبكة، Shorts، فيديو، إعادة النشر، والمحفوظات (لصاحب الحساب فقط).
     // لون أيقونات التبويبات يتبع الوضع (داكن/فاتح) عبر labelColor و unselectedLabelColor.
     final tabs = <Tab>[
-      const Tab(icon: Icon(Icons.grid_on_rounded)),
-      const Tab(icon: Icon(Icons.bolt_rounded)),
-      const Tab(icon: Icon(Icons.play_circle_outline_rounded)),
+      const Tab(icon: Icon(Icons.photo_library_outlined)),
+      const Tab(icon: _PlayGlyph(vertical: true)),
+      const Tab(icon: _PlayGlyph(vertical: false)),
       const Tab(icon: Icon(Icons.repeat_rounded)),
       if (widget.isMe) const Tab(icon: Icon(Icons.bookmark_border_rounded)),
     ];
@@ -1769,7 +1769,7 @@ enum _ProfileTabKind { grid, shorts, videos, reposts }
 
 /// تبويب في الملف الشخصي. كل منشور ينتمي إلى تبويب واحد على الأقل:
 /// - إعادة النشر: كل ما أُعيد نشره، وهو مستبعد من بقية التبويبات.
-/// - الشبكة: الصور وفيديوهات يوتيوب الطويلة مخلوطة بالأحدث مع شارة النوع (بلا شورتز).
+/// - الشبكة: الصور فقط.
 /// - Shorts: شورتز يوتيوب فقط (9:16).
 /// - فيديو: فيديوهات يوتيوب الطويلة فقط (16:9).
 class _PostsTab extends StatefulWidget {
@@ -1800,7 +1800,7 @@ class _PostsTabState extends State<_PostsTab> {
     if (_isRepost(p)) return widget.kind == _ProfileTabKind.reposts;
     switch (widget.kind) {
       case _ProfileTabKind.grid:
-        return p.type == PostType.photo || (p.hasVideo && !p.isShort);
+        return p.type == PostType.photo;
       case _ProfileTabKind.shorts:
         return p.hasVideo && p.isShort;
       case _ProfileTabKind.videos:
@@ -1846,8 +1846,7 @@ class _PostsTabState extends State<_PostsTab> {
             return _PostGrid(
                 list: list,
                 pinnedIds: widget.pinnedIds,
-                canPin: widget.isMe,
-                showTypeBadge: true);
+                canPin: widget.isMe);
           case _ProfileTabKind.reposts:
             return _PostGrid(
                 list: list, pinnedIds: widget.pinnedIds, canPin: widget.isMe);
@@ -1861,11 +1860,11 @@ class _PostsTabState extends State<_PostsTab> {
     switch (widget.kind) {
       case _ProfileTabKind.grid:
         return EmptyState(
-          icon: Icons.grid_on_rounded,
+          icon: Icons.photo_library_outlined,
           title: me ? 'ابدأ بأول منشور' : 'لا توجد منشورات بعد',
           message: me
-              ? 'شارك صورة أو فيديو وسيظهر هنا في ملفك.'
-              : 'ستظهر صور وفيديوهات هذا الحساب هنا.',
+              ? 'شارك صورة وستظهر هنا في ملفك.'
+              : 'ستظهر صور هذا الحساب هنا.',
           action: me
               ? const _CreateButton(
                   label: 'أضف أول منشور', kind: CreateKind.post)
@@ -1873,7 +1872,7 @@ class _PostsTabState extends State<_PostsTab> {
         );
       case _ProfileTabKind.shorts:
         return EmptyState(
-          icon: Icons.bolt_rounded,
+          icon: Icons.smart_display_outlined,
           title: me ? 'ابدأ بأول Short' : 'لا توجد Shorts بعد',
           message: me
               ? 'شارك رابط Short من يوتيوب وسيظهر هنا في ملفك.'
@@ -1885,7 +1884,7 @@ class _PostsTabState extends State<_PostsTab> {
         );
       case _ProfileTabKind.videos:
         return EmptyState(
-          icon: Icons.play_circle_outline_rounded,
+          icon: Icons.videocam_outlined,
           title: me ? 'ابدأ بأول فيديو' : 'لا توجد فيديوهات بعد',
           message: me
               ? 'شارك رابط فيديو من يوتيوب وسيظهر هنا في ملفك.'
@@ -1907,28 +1906,60 @@ class _PostsTabState extends State<_PostsTab> {
   }
 }
 
-/// شارة نوع المنشور في زاوية البطاقة داخل تبويب الشبكة.
-class _TypeBadge extends StatelessWidget {
-  final Post post;
-  const _TypeBadge({required this.post});
+/// أيقونة رسمناها بأنفسنا: مستطيل عمودي (Shorts) أو أفقي (فيديو) بمثلث تشغيل.
+/// تأخذ لونها وحجمها من IconTheme فتتبع تلوين التبويب المحدد.
+class _PlayGlyph extends StatelessWidget {
+  final bool vertical;
+  final double? size;
+  const _PlayGlyph({required this.vertical, this.size});
 
   @override
   Widget build(BuildContext context) {
-    final icon =
-        post.hasVideo ? Icons.play_arrow_rounded : Icons.image_rounded;
-    return PositionedDirectional(
-      top: 6,
-      start: 6,
-      child: Container(
-        padding: const EdgeInsets.all(3),
-        decoration: const BoxDecoration(
-          color: Colors.black54,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, size: 14, color: Colors.white),
+    final theme = IconTheme.of(context);
+    final s = size ?? theme.size ?? 24;
+    return SizedBox(
+      width: s,
+      height: s,
+      child: CustomPaint(
+        painter: _PlayGlyphPainter(
+            vertical: vertical, color: theme.color ?? Colors.grey),
       ),
     );
   }
+}
+
+class _PlayGlyphPainter extends CustomPainter {
+  final bool vertical;
+  final Color color;
+  const _PlayGlyphPainter({required this.vertical, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final u = size.width / 24;
+    final w = (vertical ? 13.0 : 21.0) * u;
+    final h = (vertical ? 21.0 : 14.0) * u;
+    final rect = Rect.fromCenter(
+        center: size.center(Offset.zero), width: w, height: h);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, Radius.circular(3.5 * u)),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.8 * u
+        ..color = color,
+    );
+    final c = rect.center;
+    final t = 3.4 * u;
+    final tri = Path()
+      ..moveTo(c.dx - t * 0.7, c.dy - t)
+      ..lineTo(c.dx + t * 1.1, c.dy)
+      ..lineTo(c.dx - t * 0.7, c.dy + t)
+      ..close();
+    canvas.drawPath(tri, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_PlayGlyphPainter old) =>
+      old.vertical != vertical || old.color != color;
 }
 
 class _PostGrid extends StatelessWidget {
@@ -1939,7 +1970,6 @@ class _PostGrid extends StatelessWidget {
   final double aspectRatio; // عرض/ارتفاع البطاقة
   final double tileWidth; // عرض البطاقة التقريبي لحساب عدد الأعمدة
   final int minColumns;
-  final bool showTypeBadge;
   const _PostGrid({
     required this.list,
     this.pinnedIds = const <String>{},
@@ -1948,7 +1978,6 @@ class _PostGrid extends StatelessWidget {
     this.aspectRatio = 1,
     this.tileWidth = 150,
     this.minColumns = 3,
-    this.showTypeBadge = false,
   });
 
   @override
@@ -2007,7 +2036,6 @@ class _PostGrid extends StatelessWidget {
                           style: const TextStyle(fontSize: 12)),
                     ),
                 },
-                if (showTypeBadge) _TypeBadge(post: post),
                 if (pinnedIds.contains(post.id)) const _PinBadge(),
                 _CardStats(post: post),
               ],
