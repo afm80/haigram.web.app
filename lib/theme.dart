@@ -239,11 +239,27 @@ ThemeData buildTheme(Brightness brightness) {
     dialogTheme: DialogTheme(
       backgroundColor: colors.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      titleTextStyle: TextStyle(
+          color: colors.text, fontSize: 18, fontWeight: FontWeight.w700),
+      contentTextStyle:
+          TextStyle(color: colors.text, fontSize: 14.5, height: 1.4),
     ),
+    // رسائل التنبيه: عكس لون الوضع الحالي ليكون النص واضحاً دائماً
+    // (خلفية فاتحة ونص داكن في الوضع الداكن، والعكس في الفاتح).
     snackBarTheme: SnackBarThemeData(
-      backgroundColor: colors.surfaceHigh,
-      contentTextStyle: TextStyle(color: colors.text),
+      backgroundColor: brightness == Brightness.dark
+          ? const Color(0xFFF3F5F9)
+          : const Color(0xFF1C1B22),
+      contentTextStyle: TextStyle(
+        color: brightness == Brightness.dark
+            ? const Color(0xFF1C1B22)
+            : const Color(0xFFF3F5F9),
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+      ),
+      actionTextColor: AppColors.brandPurple,
       behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
   );
 }
