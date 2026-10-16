@@ -682,8 +682,8 @@ class ShortsRow extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 itemCount: shorts.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (_, i) =>
-                    _ShortCard(post: shorts[i], fromProfile: fromProfile),
+                itemBuilder: (_, i) => _ShortCard(
+                    post: shorts[i], shorts: shorts, fromProfile: fromProfile),
               ),
             ),
           ),
@@ -695,13 +695,16 @@ class ShortsRow extends StatelessWidget {
 
 class _ShortCard extends StatelessWidget {
   final Post post;
+  final List<Post> shorts;
   final bool fromProfile;
-  const _ShortCard({required this.post, this.fromProfile = false});
+  const _ShortCard(
+      {required this.post, required this.shorts, this.fromProfile = false});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => showShortDialog(context, post, fromProfile: fromProfile),
+      onTap: () => showShortDialog(context, post,
+          fromProfile: fromProfile, shorts: shorts),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: AspectRatio(
@@ -750,94 +753,243 @@ class _ShortCard extends StatelessWidget {
   }
 }
 
-/// يفتح فيديو شورتز في نافذة عمودية. إغلاق النافذة يوقف الصوت.
+/// يفتح عارض شورتز العمودي: تمرير/أسهم/مفاتيح للانتقال بين الفيديوهات.
 void showShortDialog(BuildContext context, Post post,
-    {bool fromProfile = false}) {
+    {bool fromProfile = false, List<Post>? shorts}) {
   stopInlineVideos();
-  final rootCtx = Navigator.of(context, rootNavigator: true).context;
-  final messenger = ScaffoldMessenger.of(context);
-  final mine = post.uid == PostService.uidOrEmpty;
-  showDialog<void>(
-    context: context,
-    barrierColor: Colors.black87,
-    builder: (ctx) {
-      final size = MediaQuery.of(ctx).size;
-      final maxH = size.height * 0.8;
-      final w = (maxH * 9 / 16).clamp(0.0, size.width - 32).toDouble();
-      return Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: w,
-              child: Row(
-                children: [
-                  const Spacer(),
-                  // قائمة الإجراءات (ثلاث نقاط). الإغلاق بالضغط خارج النافذة.
-                  PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_vert_rounded,
-                        color: Colors.white),
-                    onSelected: (v) async {
-                      switch (v) {
-                        case 'copy':
-                          await Clipboard.setData(
-                              ClipboardData(text: PostService.postLink(post)));
-                          unawaited(PostService.registerShare(post.id));
-                          messenger.showSnackBar(
-                              const SnackBar(content: Text('تم نسخ الرابط')));
-                        case 'share':
-                          Navigator.of(ctx).pop();
-                          showPostShareSheet(rootCtx, post);
-                        case 'story':
-                          Navigator.of(ctx).pop();
-                          showAddToStoryDialog(rootCtx, post, messenger);
-                        case 'edit':
-                          Navigator.of(ctx).pop();
-                          _editShortCaption(rootCtx, post, messenger);
-                        case 'delete':
-                          _confirmDeleteShort(ctx, post);
-                      }
-                    },
-                    itemBuilder: (_) => [
-                      const PopupMenuItem(value: 'copy', child: Text('نسخ الرابط')),
-                      const PopupMenuItem(value: 'share', child: Text('مشاركة')),
-                      const PopupMenuItem(
-                          value: 'story', child: Text('إضافة إلى القصة')),
-                      if (fromProfile && mine)
-                        const PopupMenuItem(
-                            value: 'edit', child: Text('تعديل الوصف')),
-                      if (fromProfile && mine)
-                        const PopupMenuItem(value: 'delete', child: Text('حذف')),
+  final list = (shorts == null || shorts.isEmpty) ? [post] : shorts;
+  final i = list.indexWhere((p) => p.id == post.id);
+  Navigator.of(context, rootNavigator: true).push(MaterialPageRoute<void>(
+    fullscreenDialog: true,
+    builder: (_) => ShortsViewer(
+        shorts: list, initialIndex: i < 0 ? 0 : i, fromProfile: fromProfile),
+  ));
+}
+
+class ShortsViewer extends StatefulWidget {
+  final List<Post> shorts;
+  final int initialIndex;
+  final bool fromProfile;
+  const ShortsViewer(
+      {super.key,
+      required this.shorts,
+      required this.initialIndex,
+      this.fromProfile = false});
+
+  @override
+  State<ShortsViewer> createState() => _ShortsViewerState();
+}
+
+class _ShortsViewerState extends State<ShortsViewer> {
+  late final PageController _pages =
+      PageController(initialPage: widget.initialIndex);
+  late int _current = widget.initialIndex;
+  DateTime _lastMove = DateTime.fromMillisecondsSinceEpoch(0);
+
+  @override
+  void dispose() {
+    _pages.dispose();
+    super.dispose();
+  }
+
+  void _go(int delta) {
+    // تحديد السرعة حتى لا يقفز عدة فيديوهات بحركة عجلة واحدة.
+    final now = DateTime.now();
+    if (now.difference(_lastMove).inMilliseconds < 450) return;
+    final next = (_current + delta).clamp(0, widget.shorts.length - 1);
+    if (next == _current) return;
+    _lastMove = now;
+    setState(() => _current = next);
+    _pages.animateToPage(next,
+        duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+  }
+
+  void _onMenu(String v, Post post) async {
+    final rootCtx = Navigator.of(context, rootNavigator: true).context;
+    final messenger = ScaffoldMessenger.of(context);
+    switch (v) {
+      case 'copy':
+        await Clipboard.setData(ClipboardData(text: PostService.postLink(post)));
+        unawaited(PostService.registerShare(post.id));
+        messenger.showSnackBar(const SnackBar(content: Text('تم نسخ الرابط')));
+      case 'share':
+        Navigator.of(context).pop();
+        showPostShareSheet(rootCtx, post);
+      case 'story':
+        Navigator.of(context).pop();
+        showAddToStoryDialog(rootCtx, post, messenger);
+      case 'edit':
+        Navigator.of(context).pop();
+        _editShortCaption(rootCtx, post, messenger);
+      case 'delete':
+        _confirmDeleteShort(context, post);
+    }
+  }
+
+  Widget _page(Post post, bool active) {
+    return LayoutBuilder(builder: (context, c) {
+      const captionH = 64.0;
+      final h = (c.maxHeight - captionH - 8).clamp(120.0, 4000.0).toDouble();
+      final w = (h * 9 / 16).clamp(0.0, c.maxWidth).toDouble();
+      final vh = w * 16 / 9;
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: w,
+            height: vh,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: active
+                  ? buildYoutubeEmbed(post.videoId!,
+                      key: ValueKey('short-${post.videoId}'), aspect: 9 / 16)
+                  : CachedNetworkImage(
+                      imageUrl: post.videoThumb!,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) =>
+                          Container(color: Colors.black)),
+            ),
+          ),
+          SizedBox(
+            width: w,
+            height: captionH,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                '@${post.username}${post.caption.isNotEmpty ? '\n${post.caption}' : ''}',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white, fontSize: 13.5),
+              ),
+            ),
+          ),
+        ],
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final wide = MediaQuery.of(context).size.width >= 700;
+    final post = widget.shorts[_current];
+    final mine = post.uid == PostService.uidOrEmpty;
+    Widget strip(bool left) => Positioned(
+          left: left ? 0 : null,
+          right: left ? null : 0,
+          top: 70,
+          bottom: 0,
+          width: 36,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onVerticalDragEnd: (d) {
+              final v = d.primaryVelocity ?? 0;
+              if (v < -150) _go(1);
+              if (v > 150) _go(-1);
+            },
+          ),
+        );
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Focus(
+        autofocus: true,
+        onKeyEvent: (_, e) {
+          if (e is! KeyDownEvent) return KeyEventResult.ignored;
+          if (e.logicalKey == LogicalKeyboardKey.arrowDown) {
+            _go(1);
+            return KeyEventResult.handled;
+          }
+          if (e.logicalKey == LogicalKeyboardKey.arrowUp) {
+            _go(-1);
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        },
+        child: Listener(
+          onPointerSignal: (e) {
+            if (e is PointerScrollEvent) _go(e.scrollDelta.dy > 0 ? 1 : -1);
+          },
+          child: SafeArea(
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  top: 56,
+                  child: PageView.builder(
+                    controller: _pages,
+                    scrollDirection: Axis.vertical,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: widget.shorts.length,
+                    itemBuilder: (_, i) => _page(widget.shorts[i], i == _current),
+                  ),
+                ),
+                strip(true),
+                strip(false),
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: 56,
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back_rounded,
+                            color: Colors.white),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                      const Spacer(),
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert_rounded,
+                            color: Colors.white),
+                        onSelected: (v) => _onMenu(v, post),
+                        itemBuilder: (_) => [
+                          const PopupMenuItem(
+                              value: 'copy', child: Text('نسخ الرابط')),
+                          const PopupMenuItem(
+                              value: 'share', child: Text('مشاركة')),
+                          const PopupMenuItem(
+                              value: 'story', child: Text('إضافة إلى القصة')),
+                          if (widget.fromProfile && mine)
+                            const PopupMenuItem(
+                                value: 'edit', child: Text('تعديل الوصف')),
+                          if (widget.fromProfile && mine)
+                            const PopupMenuItem(
+                                value: 'delete', child: Text('حذف')),
+                        ],
+                      ),
                     ],
                   ),
-                ],
-              ),
-            ),
-            SizedBox(
-              width: w,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: buildYoutubeEmbed(post.videoId!, aspect: 9 / 16),
-              ),
-            ),
-            if (post.caption.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: SizedBox(
-                  width: w,
-                  child: Text(post.caption,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white)),
                 ),
-              ),
-          ],
+                if (wide)
+                  Positioned(
+                    right: 24,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton.filledTonal(
+                            icon: const Icon(Icons.keyboard_arrow_up_rounded),
+                            onPressed:
+                                _current > 0 ? () => _go(-1) : null,
+                          ),
+                          const SizedBox(height: 12),
+                          IconButton.filledTonal(
+                            icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                            onPressed: _current < widget.shorts.length - 1
+                                ? () => _go(1)
+                                : null,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
-      );
-    },
-  );
+      ),
+    );
+  }
 }
 
 /// تأكيد ثم حذف شورتز من نافذة المعاينة (لصاحبه فقط).

@@ -8,7 +8,8 @@ import 'package:flutter/material.dart';
 
 final _registered = <String>{};
 
-Widget buildYoutubeEmbed(String videoId, {double aspect = 16 / 9}) {
+Widget buildYoutubeEmbed(String videoId,
+    {Key? key, double aspect = 16 / 9}) {
   final viewType = 'haigram-yt-$videoId';
   if (_registered.add(viewType)) {
     ui_web.platformViewRegistry.registerViewFactory(viewType, (int viewId) {
@@ -25,6 +26,7 @@ Widget buildYoutubeEmbed(String videoId, {double aspect = 16 / 9}) {
     });
   }
   return AspectRatio(
+    key: key,
     aspectRatio: aspect,
     child: HtmlElementView(viewType: viewType),
   );
