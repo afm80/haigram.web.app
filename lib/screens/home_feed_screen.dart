@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart' show DocumentSnapshot;
 import 'package:flutter/material.dart';
 
 import '../services/post_service.dart';
+import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
 import 'post_widgets.dart';
@@ -36,7 +37,15 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
   bool _loading = false;
   Object? _error;
   _FeedMode _mode = _FeedMode.all;
-  List<String>? _followIds; // حسابات أتابعها (تُجلب عند أول فتح لتبويب المتابَعين)
+  List<String>? _followIds;
+  List<String> _privateIds = const []; // متابَعون حساباتهم خاصة: يُجلبون منفصلين
+  final Map<String, DocumentSnapshot<Map<String, dynamic>>?> _privCursor = {};
+  final Set<String> _privDone = {};
+  List<Post> _privPosts = const [];
+  bool get _morePrivate => _privateIds.any((id) => !_privDone.contains(id));
+  bool _more() =>
+      _morePhotos || _moreTexts || (_mode == _FeedMode.following && _morePrivate);
+  // // حسابات أتابعها (تُجلب عند أول فتح لتبويب المتابَعين)
   int _gen = 0; // يُلغي نتائج طلب قديم إذا بدأ تحديث جديد
 
   @override
@@ -87,7 +96,7 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
 
   /// يجلب الدفعة الأولى ([reset]) أو التالية، ويضيفها إلى القائمة.
   Future<void> _load({bool reset = false}) async {
-    if (!reset && (_loading || !(_morePhotos || _moreTexts))) return;
+    if (!reset && (_loading || !_more())) return;
     final gen = reset ? ++_gen : _gen;
     setState(() {
       _loading = true;
@@ -97,11 +106,36 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
       List<String>? uids;
       if (_mode == _FeedMode.following) {
         if (reset || _followIds == null) {
-          _followIds =
+          final ids =
               await PostService.followingIdsOnce(PostService.uidOrEmpty);
+          // نفصل أصحاب الحسابات الخاصة: لا يمكن جلبهم مع البقية في طلب واحد.
+          final profiles = await Future.wait(ids.map(UserService.profileOf));
+          _followIds = ids;
+          _privateIds = [
+            for (var i = 0; i < ids.length; i++)
+              if (profiles[i]?.isPrivate == true) ids[i]
+          ];
+          if (reset) {
+            _privCursor.clear();
+            _privDone.clear();
+          }
         }
-        uids = _followIds;
+        uids = [
+          for (final id in _followIds!)
+            if (!_privateIds.contains(id)) id
+        ];
       }
+      // الحسابات الخاصة: دفعة لكل حساب لم ينتهِ.
+      final privIds = _mode != _FeedMode.following
+          ? const <String>[]
+          : [
+              for (final id in _privateIds)
+                if (!_privDone.contains(id)) id
+            ];
+      final privPages = await Future.wait([
+        for (final id in privIds)
+          PostService.userPage(id, after: reset ? null : _privCursor[id])
+      ]);
       final photoPage = (reset || _morePhotos)
           ? PostService.page(PostType.photo,
               after: reset ? null : _photoCursor, uids: uids)
@@ -123,6 +157,17 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
           _texts = _merge(reset ? null : _texts, texts.posts);
           _textCursor = texts.cursor;
           _moreTexts = texts.hasMore;
+        }
+        if (_mode == _FeedMode.following) {
+          _privPosts = _merge(reset ? null : _privPosts, [
+            for (final pg in privPages) ...pg.posts,
+          ]);
+          for (var i = 0; i < privIds.length; i++) {
+            _privCursor[privIds[i]] = privPages[i].cursor;
+            if (!privPages[i].hasMore) _privDone.add(privIds[i]);
+          }
+        } else {
+          _privPosts = const [];
         }
         _loading = false;
       });
@@ -164,7 +209,7 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
           final posts = !loaded
               ? null
               : ([
-                  for (final p in [..._photos!, ..._texts!])
+                  for (final p in [..._photos!, ..._texts!, ..._privPosts])
                     if (!p.isShort) p
                 ]..sort((a, b) => b.createdAt.compareTo(a.createdAt)));
           final hasPosts = posts != null && posts.isNotEmpty;
@@ -219,7 +264,7 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
                       icon: Icons.people_outline_rounded,
                       title: 'لا جديد من متابَعيك',
                       message:
-                          'تابع حسابات لترى منشوراتها هنا. منشورات الحسابات الخاصة لا تظهر في هذا التبويب.',
+                          'تابع حسابات لترى منشوراتها هنا.',
                     )
                   : const EmptyState(
                       icon: Icons.photo_library_outlined,
