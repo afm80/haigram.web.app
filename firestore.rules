@@ -20,6 +20,51 @@ service cloud.firestore {
         || exists(/databases/$(database)/documents/userBlocks/$(secondUid)/blocked/$(firstUid));
     }
 
+    // ملفي الشخصي كما هو مخزّن في الخادم (لا نثق بما يرسله العميل).
+    function myProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // اسم الكاتب في المنشور/التعليق يجب أن يطابق ملفه الحقيقي (يمنع الانتحال).
+    // name يقبل الاسم المعروض أو اسم المستخدم لأن التطبيق يرجع إليه إن كان الاسم فارغاً.
+    function authorMatchesProfile() {
+      return request.resource.data.username is string
+        && request.resource.data.username == myProfile().username
+        && request.resource.data.name is string
+        && (request.resource.data.name == myProfile().name
+            || request.resource.data.name == myProfile().username);
+    }
+
+    // هل أتابع هذا المستخدم؟
+    function followsUser(targetUid) {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)/following/$(targetUid));
+    }
+
+    // هل يحق لي قراءة هذا المنشور؟ منشور عام، أو منشوري، أو صاحبه حساب خاص وأتابعه.
+    // authorPrivate يُكتب على المنشور عند إنشائه ويُزامَن عند تبديل خصوصية الحساب.
+    // المنشورات القديمة التي لا تملك الحقل تُعامل كعامة إلى أن يُشغَّل سكربت الترحيل.
+    function canReadPost(data) {
+      return data.get('authorPrivate', false) == false
+        || data.uid == request.auth.uid
+        || followsUser(data.uid);
+    }
+
+    // قراءة المنشور الأب (للتعليقات والإعجابات).
+    function parentPostReadable(postId) {
+      return canReadPost(get(/databases/$(database)/documents/posts/$(postId)).data);
+    }
+
+    // الإعجابات المخفية وقوائم الإعجاب: لا تُعرض إلا إذا سمح صاحبها وكان ملفه مرئياً لي.
+    function canViewLikes(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data.get('hideLikes', false) != true
+        && (!isPrivateUser(uid) || followsUser(uid));
+    }
+
+    // الإعجاب يغيّر العدّاد فقط إذا تغيّر مستند الإعجاب الحقيقي في العملية نفسها.
+    function likeDocPath(postId) {
+      return /databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid);
+    }
+
     function validNotificationCreate(ownerUid, notificationId) {
       let data = request.resource.data;
       let actorUid = request.auth.uid;
@@ -70,28 +115,60 @@ service cloud.firestore {
     }
 
     match /posts/{postId} {
-      allow read: if request.auth != null;
+      // الحساب الخاص: منشوراته لصاحبه ولمتابعيه فقط (تُفرض هنا في الخادم لا في الواجهة).
+      // قواعد القراءة ليست فلتراً: استعلامات القوائم يجب أن تحمل where('authorPrivate', '==', false)
+      // أو تقيّد uid بنفسي/بمن أتابعه، وإلا يرفضها Firestore كاملة.
+      allow read: if request.auth != null && canReadPost(resource.data);
       allow create: if request.auth != null
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.caption.size() <= 500
         && request.resource.data.likes == 0
+        && request.resource.data.get('comments', 0) == 0
+        && request.resource.data.get('views', 0) == 0
+        && request.resource.data.get('shares', 0) == 0
+        && authorMatchesProfile()
+        && request.resource.data.authorPrivate is bool
+        && request.resource.data.authorPrivate == (myProfile().get('isPrivate', false) == true)
         && (!('videoId' in request.resource.data)
             || (request.resource.data.videoId is string
                 && request.resource.data.videoId.matches('^[A-Za-z0-9_-]{11}$')));
-      // المالك يعدّل/يحذف، وأي مستخدم مسجّل يستطيع فقط زيادة/إنقاص عدّاد الإعجاب أو التعليقات بمقدار 1
+      // المالك يعدّل نص المنشور فقط. أي مستخدم مسجّل يستطيع:
+      //  - الإعجاب/إلغاؤه: العدّاد يتغيّر بمقدار 1 فقط وبالتزامن مع إنشاء/حذف مستند إعجابه هو.
+      //  - زيادة/إنقاص عدّاد التعليقات بمقدار 1، وزيادة المشاركات بمقدار 1.
       allow update: if request.auth != null && (
-        resource.data.uid == request.auth.uid ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes'])
-          && math.abs(request.resource.data.likes - resource.data.likes) == 1) ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments'])
-          && math.abs(request.resource.data.comments - resource.data.get('comments', 0)) == 1) ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['shares'])
-          && request.resource.data.shares == resource.data.get('shares', 0) + 1)
+        (resource.data.uid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['caption'])
+          && request.resource.data.caption is string
+          && request.resource.data.caption.size() <= 500) ||
+        // مزامنة authorPrivate عند تبديل خصوصية حسابي (يجب أن تطابق ملفي الحالي).
+        (resource.data.uid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['authorPrivate'])
+          && request.resource.data.authorPrivate is bool
+          && request.resource.data.authorPrivate == (myProfile().get('isPrivate', false) == true)) ||
+        // التفاعل (إعجاب/تعليق/مشاركة) لمن يحق له رؤية المنشور فقط.
+        (canReadPost(resource.data) && (
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes'])
+            && (
+              (request.resource.data.likes == resource.data.likes + 1
+                && !exists(likeDocPath(postId))
+                && existsAfter(likeDocPath(postId)))
+              ||
+              (request.resource.data.likes == resource.data.likes - 1
+                && exists(likeDocPath(postId))
+                && !existsAfter(likeDocPath(postId)))
+            )) ||
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments'])
+            && math.abs(request.resource.data.comments - resource.data.get('comments', 0)) == 1) ||
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['shares'])
+            && request.resource.data.shares == resource.data.get('shares', 0) + 1)
+        ))
       );
       allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
 
       match /likes/{uid} {
-        allow read: if request.auth != null;
+        // مستند إعجابي أنا يُقرأ دائماً (بلا قراءة إضافية)، وإعجابات غيري تتبع قابلية قراءة المنشور.
+        allow read: if request.auth != null
+          && (request.auth.uid == uid || parentPostReadable(postId));
         allow write: if request.auth != null && request.auth.uid == uid;
       }
 
@@ -109,9 +186,13 @@ service cloud.firestore {
 
       // التعليقات: يكتبها أي مستخدم مسجّل، ويحذفها صاحبها أو صاحب المنشور
       match /comments/{commentId} {
-        allow read: if request.auth != null;
+        allow read: if request.auth != null && parentPostReadable(postId);
         allow create: if request.auth != null
+          && parentPostReadable(postId)
           && request.resource.data.uid == request.auth.uid
+          && authorMatchesProfile()
+          && request.resource.data.get('likedBy', []) == []
+          && request.resource.data.createdAt == request.time
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
           && request.resource.data.text.size() <= 500
@@ -413,11 +494,16 @@ service cloud.firestore {
     }
 
     match /users/{uid}/{sub}/{doc} {
-      // طلبات المتابعة: يقرؤها صاحب الحساب أو مرسل الطلب فقط. باقي المجموعات (غير الإشعارات) مفتوحة للقراءة.
+      // طلبات المتابعة: يقرؤها صاحب الحساب أو مرسل الطلب فقط. المحفوظات لصاحبها، والإعجابات حسب إعدادات صاحبها،
+      // وباقي المجموعات (المتابَعون/المتابِعون) مفتوحة للقراءة لأن العدّادات تعتمد عليها.
       allow read: if request.auth != null
         && (sub != 'notifications' || request.auth.uid == uid)
         && (sub != 'followRequests' || request.auth.uid == uid || request.auth.uid == doc)
-        && (sub != 'profileVisits' || request.auth.uid == uid);
+        && (sub != 'profileVisits' || request.auth.uid == uid)
+        // المحفوظات خاصة بصاحبها وحده.
+        && (sub != 'saved' || request.auth.uid == uid)
+        // قائمة الإعجابات: تحترم «إخفاء الإعجابات» وخصوصية الحساب.
+        && (sub != 'liked' || request.auth.uid == uid || canViewLikes(uid));
 
       allow create: if request.auth != null && (
         // المالك: saved / liked ... لكن ليس followers ولا followRequests ولا الإشعارات.
