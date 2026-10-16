@@ -267,13 +267,21 @@ class _PostCardState extends State<PostCard> {
               }
             },
             itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: 'link',
+                child: Row(children: [
+                  Icon(Icons.link_rounded, size: 20),
+                  SizedBox(width: 10),
+                  Text('نسخ رابط المنشور'),
+                ]),
+              ),
               if (p.uid == PostService.uidOrEmpty)
-                PopupMenuItem(
+                const PopupMenuItem(
                   value: 'edit',
                   child: Row(children: [
-                    const Icon(Icons.edit_outlined, size: 20),
-                    const SizedBox(width: 10),
-                    Text(p.type == PostType.text ? 'تعديل المنشور' : 'تعديل الوصف'),
+                    Icon(Icons.edit_outlined, size: 20),
+                    SizedBox(width: 10),
+                    Text('تعديل المنشور'),
                   ]),
                 ),
               if (p.uid == PostService.uidOrEmpty)
@@ -283,11 +291,9 @@ class _PostCardState extends State<PostCard> {
                     Icon(Icons.delete_outline_rounded,
                         size: 20, color: AppColors.brandPurple),
                     const SizedBox(width: 10),
-                    const Text('حذف'),
+                    const Text('حذف المنشور'),
                   ]),
                 ),
-              const PopupMenuItem(
-                  value: 'link', child: Text('نسخ رابط المنشور')),
             ],
           ),
         ],
