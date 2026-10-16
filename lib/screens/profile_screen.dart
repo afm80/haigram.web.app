@@ -197,12 +197,13 @@ class _ProfileViewState extends State<ProfileView> {
       );
     }
 
-    // الصور، المنشورات النصية، الفيديو، والمحفوظات (لصاحب الحساب فقط).
+    // الشبكة، Shorts، فيديو، إعادة النشر، والمحفوظات (لصاحب الحساب فقط).
     // لون أيقونات التبويبات يتبع الوضع (داكن/فاتح) عبر labelColor و unselectedLabelColor.
     final tabs = <Tab>[
-      const Tab(icon: Icon(Icons.photo_library_outlined)),
+      const Tab(icon: Icon(Icons.grid_on_rounded)),
+      const Tab(icon: Icon(Icons.bolt_rounded)),
       const Tab(icon: Icon(Icons.play_circle_outline_rounded)),
-      const Tab(icon: Icon(Icons.article_outlined)),
+      const Tab(icon: Icon(Icons.repeat_rounded)),
       if (widget.isMe) const Tab(icon: Icon(Icons.bookmark_border_rounded)),
     ];
     final pinnedIds = user.pinnedPostIds.toSet();
@@ -229,29 +230,14 @@ class _ProfileViewState extends State<ProfileView> {
           ],
           body: TabBarView(
             children: [
-              _PostsTab(
-                uid: widget.uid,
-                isMe: widget.isMe,
-                type: PostType.photo,
-                pinned: pinned,
-                pinnedIds: pinnedIds,
-              ),
-              _PostsTab(
-                uid: widget.uid,
-                isMe: widget.isMe,
-                type: PostType.text,
-                video: true,
-                pinned: pinned,
-                pinnedIds: pinnedIds,
-              ),
-              _PostsTab(
-                uid: widget.uid,
-                isMe: widget.isMe,
-                type: PostType.text,
-                video: false,
-                pinned: pinned,
-                pinnedIds: pinnedIds,
-              ),
+              for (final kind in _ProfileTabKind.values)
+                _PostsTab(
+                  uid: widget.uid,
+                  isMe: widget.isMe,
+                  kind: kind,
+                  pinned: pinned,
+                  pinnedIds: pinnedIds,
+                ),
               if (widget.isMe) const _SavedGrid(),
             ],
           ),
@@ -1596,8 +1582,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
 // ---------------- شبكات المحتوى ----------------
 
-int _profileGridColumns(double width) => (width / 150).floor().clamp(3, 6);
-
 /// عدّاد يعيد تحميل نفسه فور أي فعل يغيّر الأعداد (متابعة، إعجاب، نشر، حذف)،
 /// ويُبقي القيمة السابقة ظاهرة أثناء التحديث.
 class _LiveStat extends StatefulWidget {
@@ -1781,20 +1765,23 @@ List<Post> _pinnedFirst(List<Post> pinned, List<Post> rest) {
   return [...pinned, ...rest.where((p) => !ids.contains(p.id))];
 }
 
-/// تبويب في الملف الشخصي: الصور (photo) أو المنشورات النصية (text بدون فيديو)
-/// أو الفيديو (text فيه رابط يوتيوب). [video]: null = بلا تصفية.
+enum _ProfileTabKind { grid, shorts, videos, reposts }
+
+/// تبويب في الملف الشخصي. كل منشور ينتمي إلى تبويب واحد على الأقل:
+/// - إعادة النشر: كل ما أُعيد نشره، وهو مستبعد من بقية التبويبات.
+/// - الشبكة: الصور وفيديوهات يوتيوب الطويلة مخلوطة بالأحدث مع شارة النوع (بلا شورتز).
+/// - Shorts: شورتز يوتيوب فقط (9:16).
+/// - فيديو: فيديوهات يوتيوب الطويلة فقط (16:9).
 class _PostsTab extends StatefulWidget {
   final String uid;
   final bool isMe;
-  final PostType type;
-  final bool? video;
+  final _ProfileTabKind kind;
   final List<Post> pinned;
   final Set<String> pinnedIds;
   const _PostsTab({
     required this.uid,
     required this.isMe,
-    required this.type,
-    this.video,
+    required this.kind,
     this.pinned = const [],
     this.pinnedIds = const <String>{},
   });
@@ -1804,15 +1791,24 @@ class _PostsTab extends StatefulWidget {
 }
 
 class _PostsTabState extends State<_PostsTab> {
-  late final Stream<List<Post>> _stream =
-      PostService.stream(widget.type, uid: widget.uid);
+  late final Stream<List<Post>> _stream = PostService.profilePosts(widget.uid);
 
-  bool get _isPhotos => widget.type == PostType.photo;
-  bool get _isVideos => widget.video == true;
+  static bool _isRepost(Post p) => p.repostedFromPostId != null;
 
-  bool _keep(Post p) =>
-      p.type == widget.type &&
-      (widget.video == null || p.hasVideo == widget.video);
+  bool _keep(Post p) {
+    if (p.type == PostType.story) return false;
+    if (_isRepost(p)) return widget.kind == _ProfileTabKind.reposts;
+    switch (widget.kind) {
+      case _ProfileTabKind.grid:
+        return p.type == PostType.photo || (p.hasVideo && !p.isShort);
+      case _ProfileTabKind.shorts:
+        return p.hasVideo && p.isShort;
+      case _ProfileTabKind.videos:
+        return p.hasVideo && !p.isShort;
+      case _ProfileTabKind.reposts:
+        return false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1828,63 +1824,109 @@ class _PostsTabState extends State<_PostsTab> {
         // المثبّت يظهر أولاً في التبويب الذي ينتمي إليه فقط.
         final pinned = widget.pinned.where(_keep).toList();
         final list = _pinnedFirst(pinned, snap.data!.where(_keep).toList());
-        if (list.isEmpty) {
-          final me = widget.isMe;
-          return EmptyState(
-            icon: _isPhotos
-                ? Icons.photo_library_outlined
-                : _isVideos
-                    ? Icons.play_circle_outline_rounded
-                    : Icons.article_outlined,
-            title: _isPhotos
-                ? (me ? 'ابدأ بأول صورة' : 'لا توجد صور بعد')
-                : _isVideos
-                    ? (me ? 'ابدأ بأول فيديو' : 'لا توجد فيديوهات بعد')
-                    : (me ? 'ابدأ بأول منشور' : 'لا توجد منشورات بعد'),
-            message: _isPhotos
-                ? (me
-                    ? 'شارك صورة وستظهر هنا في ملفك.'
-                    : 'ستظهر صور هذا الحساب هنا.')
-                : _isVideos
-                    ? (me
-                        ? 'شارك رابط فيديو من يوتيوب وسيظهر هنا في ملفك.'
-                        : 'ستظهر فيديوهات هذا الحساب هنا.')
-                    : (me
-                        ? 'شارك فكرة أو خاطرة وستظهر هنا في ملفك.'
-                        : 'ستظهر منشورات هذا الحساب هنا.'),
-            action: me
-                ? _CreateButton(
-                    label: _isPhotos
-                        ? 'أضف أول صورة'
-                        : _isVideos
-                            ? 'أضف أول فيديو'
-                            : 'أنشئ أول منشور',
-                    kind: _isVideos ? CreateKind.video : CreateKind.post)
-                : null,
-          );
+        if (list.isEmpty) return _empty();
+        switch (widget.kind) {
+          case _ProfileTabKind.shorts:
+            return _PostGrid(
+                list: list,
+                pinnedIds: widget.pinnedIds,
+                canPin: widget.isMe,
+                aspectRatio: 9 / 16,
+                tileWidth: 120,
+                minColumns: 3);
+          case _ProfileTabKind.videos:
+            return _PostGrid(
+                list: list,
+                pinnedIds: widget.pinnedIds,
+                canPin: widget.isMe,
+                aspectRatio: 16 / 9,
+                tileWidth: 220,
+                minColumns: 2);
+          case _ProfileTabKind.grid:
+            return _PostGrid(
+                list: list,
+                pinnedIds: widget.pinnedIds,
+                canPin: widget.isMe,
+                showTypeBadge: true);
+          case _ProfileTabKind.reposts:
+            return _PostGrid(
+                list: list, pinnedIds: widget.pinnedIds, canPin: widget.isMe);
         }
-        if (_isVideos) {
-          // شورتز في شريط أفقي أعلى التبويب، والفيديوهات العادية في الشبكة تحته.
-          final shorts = [for (final p in list) if (p.isShort) p];
-          final rest = [for (final p in list) if (!p.isShort) p];
-          if (shorts.isNotEmpty) {
-            return ListView(
-              padding: EdgeInsets.zero,
-              children: [
-                ShortsRow(shorts: shorts, fromProfile: true),
-                if (rest.isNotEmpty)
-                  _PostGrid(
-                      list: rest,
-                      pinnedIds: widget.pinnedIds,
-                      canPin: widget.isMe,
-                      shrink: true),
-              ],
-            );
-          }
-        }
-        return _PostGrid(
-            list: list, pinnedIds: widget.pinnedIds, canPin: widget.isMe);
       },
+    );
+  }
+
+  Widget _empty() {
+    final me = widget.isMe;
+    switch (widget.kind) {
+      case _ProfileTabKind.grid:
+        return EmptyState(
+          icon: Icons.grid_on_rounded,
+          title: me ? 'ابدأ بأول منشور' : 'لا توجد منشورات بعد',
+          message: me
+              ? 'شارك صورة أو فيديو وسيظهر هنا في ملفك.'
+              : 'ستظهر صور وفيديوهات هذا الحساب هنا.',
+          action: me
+              ? const _CreateButton(
+                  label: 'أضف أول منشور', kind: CreateKind.post)
+              : null,
+        );
+      case _ProfileTabKind.shorts:
+        return EmptyState(
+          icon: Icons.bolt_rounded,
+          title: me ? 'ابدأ بأول Short' : 'لا توجد Shorts بعد',
+          message: me
+              ? 'شارك رابط Short من يوتيوب وسيظهر هنا في ملفك.'
+              : 'ستظهر Shorts هذا الحساب هنا.',
+          action: me
+              ? const _CreateButton(
+                  label: 'أضف أول Short', kind: CreateKind.video)
+              : null,
+        );
+      case _ProfileTabKind.videos:
+        return EmptyState(
+          icon: Icons.play_circle_outline_rounded,
+          title: me ? 'ابدأ بأول فيديو' : 'لا توجد فيديوهات بعد',
+          message: me
+              ? 'شارك رابط فيديو من يوتيوب وسيظهر هنا في ملفك.'
+              : 'ستظهر فيديوهات هذا الحساب هنا.',
+          action: me
+              ? const _CreateButton(
+                  label: 'أضف أول فيديو', kind: CreateKind.video)
+              : null,
+        );
+      case _ProfileTabKind.reposts:
+        return EmptyState(
+          icon: Icons.repeat_rounded,
+          title: me ? 'لم تعد نشر شيئاً بعد' : 'لا توجد إعادة نشر بعد',
+          message: me
+              ? 'ما تعيد نشره من منشورات الآخرين سيظهر هنا.'
+              : 'ستظهر هنا المنشورات التي أعاد هذا الحساب نشرها.',
+        );
+    }
+  }
+}
+
+/// شارة نوع المنشور في زاوية البطاقة داخل تبويب الشبكة.
+class _TypeBadge extends StatelessWidget {
+  final Post post;
+  const _TypeBadge({required this.post});
+
+  @override
+  Widget build(BuildContext context) {
+    final icon =
+        post.hasVideo ? Icons.play_arrow_rounded : Icons.image_rounded;
+    return PositionedDirectional(
+      top: 6,
+      start: 6,
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: const BoxDecoration(
+          color: Colors.black54,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, size: 14, color: Colors.white),
+      ),
     );
   }
 }
@@ -1893,12 +1935,20 @@ class _PostGrid extends StatelessWidget {
   final List<Post> list;
   final Set<String> pinnedIds;
   final bool canPin;
-  final bool shrink; // داخل ListView (مع شريط شورتز)
+  final bool shrink; // داخل ListView
+  final double aspectRatio; // عرض/ارتفاع البطاقة
+  final double tileWidth; // عرض البطاقة التقريبي لحساب عدد الأعمدة
+  final int minColumns;
+  final bool showTypeBadge;
   const _PostGrid({
     required this.list,
     this.pinnedIds = const <String>{},
     this.canPin = false,
     this.shrink = false,
+    this.aspectRatio = 1,
+    this.tileWidth = 150,
+    this.minColumns = 3,
+    this.showTypeBadge = false,
   });
 
   @override
@@ -1909,7 +1959,10 @@ class _PostGrid extends StatelessWidget {
         physics: shrink ? const NeverScrollableScrollPhysics() : null,
         padding: const EdgeInsets.all(2),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: _profileGridColumns(constraints.maxWidth),
+          crossAxisCount: (constraints.maxWidth / tileWidth)
+              .floor()
+              .clamp(minColumns, minColumns + 3),
+          childAspectRatio: aspectRatio,
           mainAxisSpacing: 2,
           crossAxisSpacing: 2,
         ),
@@ -1954,6 +2007,7 @@ class _PostGrid extends StatelessWidget {
                           style: const TextStyle(fontSize: 12)),
                     ),
                 },
+                if (showTypeBadge) _TypeBadge(post: post),
                 if (pinnedIds.contains(post.id)) const _PinBadge(),
                 _CardStats(post: post),
               ],
