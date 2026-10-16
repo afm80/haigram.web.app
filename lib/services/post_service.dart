@@ -234,26 +234,42 @@ class PostService {
         .toList();
   }
 
-  // الأكثر رواجاً: نخزّن النتيجة 5 دقائق في الذاكرة ونقرأ 60 منشوراً فقط
-  // (كان 150 لكل فتح لصفحة الاستكشاف) لتوفير قراءات Firebase.
+  // الاستكشاف: قراءة واحدة (30 منشوراً صور/نص عام) تغذّي الصور والفيديوهات
+  // والهاشتاقات معاً، وتُخزَّن 5 دقائق في الذاكرة لتوفير قراءات Firebase.
   static const _trendingTtl = Duration(minutes: 5);
-  static const _trendingReadLimit = 60;
-  static DateTime? _tagsAt;
-  static Map<String, int>? _tagsCache;
+  static const _exploreReadLimit = 30;
+  static DateTime? _exploreAt;
+  static List<Post>? _exploreCache;
+  static Future<List<Post>>? _exploreInflight;
 
   static bool _fresh(DateTime? at) =>
       at != null && DateTime.now().difference(at) < _trendingTtl;
 
-  static Future<Map<String, int>> trendingTags() async {
-    if (_fresh(_tagsAt) && _tagsCache != null) return _tagsCache!;
+  static Future<List<Post>> exploreFeed({bool force = false}) {
+    if (!force && _fresh(_exploreAt) && _exploreCache != null) {
+      return Future.value(_exploreCache!);
+    }
+    return _exploreInflight ??=
+        _loadExplore().whenComplete(() => _exploreInflight = null);
+  }
+
+  static Future<List<Post>> _loadExplore() async {
     final snap = await _db
         .collection('posts')
         .where('authorPrivate', isEqualTo: false)
+        .where('type', whereIn: const ['photo', 'text'])
         .orderBy('createdAt', descending: true)
-        .limit(_trendingReadLimit)
+        .limit(_exploreReadLimit)
         .get();
+    _exploreCache = _parse(snap.docs);
+    _exploreAt = DateTime.now();
+    return _exploreCache!;
+  }
+
+  /// أكثر الهاشتاقات تكراراً في [posts] (القصص مستثناة).
+  static Map<String, int> tagsOf(List<Post> posts) {
     final counts = <String, int>{};
-    for (final post in _parse(snap.docs)) {
+    for (final post in posts) {
       if (post.type == PostType.story) continue;
       for (final t in post.hashtags) {
         counts[t] = (counts[t] ?? 0) + 1;
@@ -261,10 +277,11 @@ class PostService {
     }
     final sorted = counts.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
-    _tagsCache = Map.fromEntries(sorted.take(15));
-    _tagsAt = DateTime.now();
-    return _tagsCache!;
+    return Map.fromEntries(sorted.take(15));
   }
+
+  static Future<Map<String, int>> trendingTags({bool force = false}) async =>
+      tagsOf(await exploreFeed(force: force));
 
   /// منشور بمعرّفه. يعيد null إن لم يوجد أو لم يكن لي حق رؤيته
   /// (القواعد ترفض قراءة منشور غير موجود أو منشور حساب خاص لا أتابعه).
