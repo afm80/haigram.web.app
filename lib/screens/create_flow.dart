@@ -280,13 +280,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                       ),
                     ),
                   ),
-                  kind == CreateKind.post
-                      ? _sideButton(Icons.edit_note_rounded, 'نص فقط', () {
-                          Navigator.of(context).pushReplacement(
-                              MaterialPageRoute(
-                                  builder: (_) => ComposeScreen(kind: kind)));
-                        })
-                      : const SizedBox(width: 72),
+                  const SizedBox(width: 72),
                 ],
               ),
             ),
@@ -347,8 +341,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
   // رابط يوتيوب متاح في المنشور النصي فقط (نص، أو فيديو، أو الاثنان معاً).
   bool get _isVideoKind => widget.kind == CreateKind.video;
-  bool get _allowVideo =>
-      _textOnly && (widget.kind == CreateKind.post || _isVideoKind);
+  bool get _allowVideo => _textOnly && _isVideoKind;
 
   @override
   void dispose() {
@@ -366,6 +359,10 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
   Future<void> _publish() async {
     final caption = _caption.text.trim();
+    if (_textOnly && !_isVideoKind) {
+      setState(() => _error = 'أضف صورة أو رابط فيديو أولاً');
+      return;
+    }
     final link = _allowVideo ? _videoLink.text.trim() : '';
     String? videoId;
     if (link.isNotEmpty) {
