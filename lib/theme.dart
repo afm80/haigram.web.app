@@ -266,9 +266,9 @@ ThemeData buildTheme(Brightness brightness) {
   );
 }
 
-class LamhaLogo extends StatelessWidget {
+class HaigramLogo extends StatelessWidget {
   final double size;
-  const LamhaLogo({super.key, this.size = 72});
+  const HaigramLogo({super.key, this.size = 72});
 
   @override
   Widget build(BuildContext context) {

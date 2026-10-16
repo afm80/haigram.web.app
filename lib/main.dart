@@ -73,7 +73,7 @@ class _HaigramBootstrapState extends State<HaigramBootstrap> {
           );
         }
         final preferences = snapshot.data!;
-        return LamhaApp(
+        return HaigramApp(
           preferences: preferences,
           showOnboarding:
               !(preferences.getBool('onboarding_complete') ?? false),
@@ -102,7 +102,7 @@ class _StartupErrorScreen extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const LamhaLogo(size: 84),
+                  const HaigramLogo(size: 84),
                   const SizedBox(height: 20),
                   Text(
                     'تعذر تشغيل التطبيق',
@@ -151,16 +151,16 @@ class _StartupErrorScreen extends StatelessWidget {
   }
 }
 
-class LamhaApp extends StatefulWidget {
+class HaigramApp extends StatefulWidget {
   final SharedPreferences preferences;
   final bool showOnboarding;
-  const LamhaApp({super.key, required this.preferences, required this.showOnboarding});
+  const HaigramApp({super.key, required this.preferences, required this.showOnboarding});
 
   @override
-  State<LamhaApp> createState() => _LamhaAppState();
+  State<HaigramApp> createState() => _HaigramAppState();
 }
 
-class _LamhaAppState extends State<LamhaApp> {
+class _HaigramAppState extends State<HaigramApp> {
   late bool _showOnboarding = widget.showOnboarding;
   late ThemeMode _themeMode = widget.preferences.getBool('dark_mode') == false
       ? ThemeMode.light
@@ -229,7 +229,7 @@ class _LamhaAppState extends State<LamhaApp> {
           }
           if (snap.connectionState == ConnectionState.waiting) {
             return const Scaffold(
-              body: Center(child: LamhaLogo(size: 96)),
+              body: Center(child: HaigramLogo(size: 96)),
             );
           }
           return AnimatedSwitcher(
