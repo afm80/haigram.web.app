@@ -430,9 +430,15 @@ service cloud.firestore {
     match /reports/{reportId} {
       allow create: if request.auth != null
         && request.resource.data.keys().hasOnly([
-          'type', 'targetUid', 'reporterUid', 'reason', 'details', 'createdAt'
+          'type', 'targetUid', 'reporterUid', 'reason', 'details', 'createdAt',
+          'postId'
         ])
-        && request.resource.data.type == 'user'
+        && ((request.resource.data.type == 'user'
+              && !('postId' in request.resource.data))
+            || (request.resource.data.type == 'post'
+              && request.resource.data.postId is string
+              && request.resource.data.postId.size() > 0
+              && request.resource.data.postId.size() <= 40))
         && request.resource.data.reporterUid == request.auth.uid
         && request.resource.data.targetUid is string
         && request.resource.data.targetUid != request.auth.uid
@@ -500,6 +506,7 @@ service cloud.firestore {
         && (sub != 'notifications' || request.auth.uid == uid)
         && (sub != 'followRequests' || request.auth.uid == uid || request.auth.uid == doc)
         && (sub != 'profileVisits' || request.auth.uid == uid)
+        && (sub != 'hiddenPosts' || request.auth.uid == uid)
         // المحفوظات خاصة بصاحبها وحده.
         && (sub != 'saved' || request.auth.uid == uid)
         // قائمة الإعجابات: تحترم «إخفاء الإعجابات» وخصوصية الحساب.
