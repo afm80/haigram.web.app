@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../services/post_service.dart';
@@ -17,9 +18,9 @@ class ExploreScreen extends StatefulWidget {
 }
 
 class _ExploreScreenState extends State<ExploreScreen> {
-  late Future<Map<String, int>> _tags = PostService.trendingTags();
-  late Stream<List<Post>> _photos =
-      PostService.stream(PostType.photo, limit: 30);
+  // قراءة واحدة (30 منشوراً) تغذّي الهاشتاقات والصور والفيديوهات معاً،
+  // وتُخزَّن 5 دقائق؛ السحب للتحديث يفرض قراءة جديدة.
+  late Future<List<Post>> _feed = PostService.exploreFeed();
   bool _searchOpen = false;
 
   Future<void> _openSearch({String? query}) async {
@@ -36,16 +37,16 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   Future<void> _refresh() async {
-    final tags = PostService.trendingTags();
-    setState(() {
-      _tags = tags;
-      _photos = PostService.stream(PostType.photo, limit: 30);
-    });
-    await tags;
+    final feed = PostService.exploreFeed(force: true);
+    setState(() => _feed = feed);
+    try {
+      await feed;
+    } catch (_) {}
   }
 
   @override
   Widget build(BuildContext context) {
+    const listPadding = EdgeInsets.only(left: 12, right: 12, bottom: 80);
     return SafeArea(
       child: Column(
         children: [
@@ -64,13 +65,48 @@ class _ExploreScreenState extends State<ExploreScreen> {
           Expanded(
             child: RefreshIndicator(
               onRefresh: _refresh,
-              child: ListView(
-                padding:
-                    const EdgeInsets.only(left: 12, right: 12, bottom: 80),
-                children: [
-                  _tagsSection(),
-                  _photosSection(),
-                ],
+              child: FutureBuilder<List<Post>>(
+                future: _feed,
+                builder: (context, snap) {
+                  if (snap.hasError) {
+                    return ListView(
+                      padding: listPadding,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(28),
+                          child: Text('تعذر تحميل الاستكشاف\n${snap.error}',
+                              textAlign: TextAlign.center),
+                        ),
+                      ],
+                    );
+                  }
+                  if (!snap.hasData) {
+                    return ListView(
+                      padding: listPadding,
+                      children: const [
+                        Padding(
+                          padding: EdgeInsets.only(top: 60),
+                          child: AppLoading(message: 'جارٍ الاستكشاف...'),
+                        ),
+                      ],
+                    );
+                  }
+                  final posts = snap.data!;
+                  return ListView(
+                    padding: listPadding,
+                    children: [
+                      _tagsSection(PostService.tagsOf(posts)),
+                      _photosSection([
+                        for (final p in posts)
+                          if (p.type == PostType.photo) p
+                      ]),
+                      _videosSection([
+                        for (final p in posts)
+                          if (p.hasVideo) p
+                      ]),
+                    ],
+                  );
+                },
               ),
             ),
           ),
@@ -85,87 +121,117 @@ class _ExploreScreenState extends State<ExploreScreen> {
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
       );
 
-  Widget _tagsSection() {
-    return FutureBuilder<Map<String, int>>(
-      future: _tags,
-      builder: (context, snap) {
-        final tags = (snap.data ?? const <String, int>{}).entries.toList();
-        if (tags.isEmpty) return const SizedBox.shrink();
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _title('الهاشتاقات الرائجة'),
-            for (var i = 0; i < tags.length; i++)
-              ListTile(
-                leading: CircleAvatar(
-                    backgroundColor: context.appColors.surfaceHigh,
-                    child: Text('${i + 1}')),
-                title: Text(tags[i].key,
-                    style: const TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: Text('${tags[i].value} منشور',
-                    style: TextStyle(color: context.appColors.textDim)),
-                onTap: () => _openSearch(query: tags[i].key),
-              ),
-          ],
-        );
-      },
+  Widget _tagsSection(Map<String, int> tagsMap) {
+    final tags = tagsMap.entries.toList();
+    if (tags.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _title('الهاشتاقات الرائجة'),
+        for (var i = 0; i < tags.length; i++)
+          ListTile(
+            leading: CircleAvatar(
+                backgroundColor: context.appColors.surfaceHigh,
+                child: Text('${i + 1}')),
+            title: Text(tags[i].key,
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: Text('${tags[i].value} منشور',
+                style: TextStyle(color: context.appColors.textDim)),
+            onTap: () => _openSearch(query: tags[i].key),
+          ),
+      ],
     );
   }
 
-  Widget _photosSection() {
-    return StreamBuilder<List<Post>>(
-      stream: _photos,
-      builder: (context, snap) {
-        if (snap.hasError) {
-          return Padding(
-            padding: const EdgeInsets.all(28),
-            child: Text('تعذر تحميل الصور\n${snap.error}',
-                textAlign: TextAlign.center),
-          );
-        }
-        if (!snap.hasData) {
-          return const Padding(
-            padding: EdgeInsets.only(top: 60),
-            child: AppLoading(message: 'جارٍ استكشاف الصور...'),
-          );
-        }
-        final photos = snap.data!;
-        if (photos.isEmpty) {
-          return const EmptyState(
-            icon: Icons.photo_library_outlined,
-            title: 'لا توجد صور بعد',
-            message: 'ستظهر هنا أحدث الصور التي يشاركها المستخدمون.',
-          );
-        }
-        final width = MediaQuery.sizeOf(context).width;
-        final columns = width >= 900 ? 5 : (width >= 600 ? 4 : 3);
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _title('أحدث الصور'),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: photos.length,
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: columns,
-                crossAxisSpacing: 3,
-                mainAxisSpacing: 3,
-              ),
-              itemBuilder: (context, i) {
-                final post = photos[i];
-                return GestureDetector(
-                  onTap: () => Navigator.of(context).push(appRoute(
-                      'post',
-                      {'id': post.id},
-                      (_) => PostDetailScreen(post: post))),
-                  child: ClipRect(child: PostImage(post: post)),
-                );
-              },
+  Widget _photosSection(List<Post> photos) {
+    if (photos.isEmpty) {
+      return const EmptyState(
+        icon: Icons.photo_library_outlined,
+        title: 'لا توجد صور بعد',
+        message: 'ستظهر هنا أحدث الصور التي يشاركها المستخدمون.',
+      );
+    }
+    final width = MediaQuery.sizeOf(context).width;
+    final columns = width >= 900 ? 5 : (width >= 600 ? 4 : 3);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _title('أحدث الصور'),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: photos.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            crossAxisSpacing: 3,
+            mainAxisSpacing: 3,
+          ),
+          itemBuilder: (context, i) {
+            final post = photos[i];
+            return GestureDetector(
+              onTap: () => Navigator.of(context).push(appRoute('post',
+                  {'id': post.id}, (_) => PostDetailScreen(post: post))),
+              child: ClipRect(child: PostImage(post: post)),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  /// فيديوهات يوتيوب: العادية في شبكة، والشورتز في شريط أفقي. يختفي القسم إن لم توجد.
+  Widget _videosSection(List<Post> all) {
+    if (all.isEmpty) return const SizedBox.shrink();
+    final shorts = [for (final p in all) if (p.isShort) p];
+    final videos = [for (final p in all) if (!p.isShort) p];
+    final width = MediaQuery.sizeOf(context).width;
+    final columns = width >= 900 ? 4 : (width >= 600 ? 3 : 2);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (videos.isNotEmpty) ...[
+          _title('أحدث الفيديوهات'),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: videos.length,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: columns,
+              crossAxisSpacing: 3,
+              mainAxisSpacing: 3,
+              childAspectRatio: 16 / 9,
             ),
-          ],
-        );
-      },
+            itemBuilder: (context, i) {
+              final post = videos[i];
+              return GestureDetector(
+                onTap: () => Navigator.of(context).push(appRoute('post',
+                    {'id': post.id}, (_) => PostDetailScreen(post: post))),
+                child: ClipRect(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      CachedNetworkImage(
+                        imageUrl: post.videoThumb!,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) =>
+                            Container(color: Colors.black),
+                      ),
+                      const Center(
+                        child: Icon(Icons.play_circle_fill_rounded,
+                            color: Colors.white, size: 36),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+        if (shorts.isNotEmpty)
+          ShortsRow(
+              shorts: shorts,
+              padding: const EdgeInsets.only(top: 12, bottom: 4)),
+      ],
     );
   }
 }
