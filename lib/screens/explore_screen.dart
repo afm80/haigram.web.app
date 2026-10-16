@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/post_service.dart';
 import '../services/user_service.dart';
@@ -8,8 +11,78 @@ import 'common_widgets.dart';
 import 'post_widgets.dart';
 import '../route_state.dart';
 
-/// استكشاف: البحث ومزاياه — حقل البحث، الهاشتاقات الرائجة، وأحدث الصور.
-/// عند الضغط على حقل البحث أو هاشتاق تُفتح صفحة البحث فوق الشريط السفلي.
+/// عدد أعمدة الشبكة حسب عرض الشاشة.
+int _gridColumns(BuildContext context) {
+  final width = MediaQuery.sizeOf(context).width;
+  return width >= 900 ? 5 : (width >= 600 ? 4 : 3);
+}
+
+/// شريحة اختيار موحّدة (تبويبات الاستكشاف والبحث).
+Widget _choiceChip(
+  BuildContext context, {
+  required String label,
+  required bool selected,
+  required VoidCallback onTap,
+}) {
+  return ChoiceChip(
+    label: Text(label),
+    selected: selected,
+    showCheckmark: false,
+    selectedColor: AppColors.brandPurple,
+    labelStyle: TextStyle(
+      fontWeight: FontWeight.w600,
+      color: selected ? Colors.white : context.appColors.text,
+    ),
+    onSelected: (_) => onTap(),
+  );
+}
+
+/// مربع منشور في الشبكة: صورة، أو صورة فيديو مع أيقونة تشغيل، أو نص.
+Widget _postTile(BuildContext context, Post post, {bool root = false}) {
+  Widget child;
+  if (post.hasVideo) {
+    child = Stack(
+      fit: StackFit.expand,
+      children: [
+        CachedNetworkImage(
+          imageUrl: post.videoThumb!,
+          fit: BoxFit.cover,
+          errorWidget: (_, __, ___) => Container(color: Colors.black),
+        ),
+        const Positioned(
+          top: 6,
+          right: 6,
+          child: Icon(Icons.play_circle_fill_rounded,
+              color: Colors.white, size: 22),
+        ),
+      ],
+    );
+  } else if (post.type == PostType.photo) {
+    child = PostImage(post: post);
+  } else {
+    child = Container(
+      color: context.appColors.surfaceHigh,
+      padding: const EdgeInsets.all(8),
+      alignment: Alignment.center,
+      child: Text(
+        post.caption,
+        maxLines: 5,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 12),
+      ),
+    );
+  }
+  return GestureDetector(
+    onTap: () => (root ? rootNavigatorOf(context) : Navigator.of(context))
+        .push(appRoute('post', {'id': post.id},
+            (_) => PostDetailScreen(post: post))),
+    child: ClipRRect(borderRadius: BorderRadius.circular(6), child: child),
+  );
+}
+
+/// استكشاف: حقل البحث، شريط الهاشتاقات الرائجة، تبويبات (الكل/صور/فيديوهات)
+/// وشبكة موحّدة. عند الضغط على حقل البحث أو هاشتاق تُفتح صفحة البحث.
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
 
@@ -17,11 +90,14 @@ class ExploreScreen extends StatefulWidget {
   State<ExploreScreen> createState() => _ExploreScreenState();
 }
 
+enum _ExploreFilter { all, photos, videos }
+
 class _ExploreScreenState extends State<ExploreScreen> {
   // قراءة واحدة (30 منشوراً) تغذّي الهاشتاقات والصور والفيديوهات معاً،
   // وتُخزَّن 5 دقائق؛ السحب للتحديث يفرض قراءة جديدة.
   late Future<List<Post>> _feed = PostService.exploreFeed();
   bool _searchOpen = false;
+  _ExploreFilter _filter = _ExploreFilter.all;
 
   Future<void> _openSearch({String? query}) async {
     if (_searchOpen) return;
@@ -46,7 +122,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   @override
   Widget build(BuildContext context) {
-    const listPadding = EdgeInsets.only(left: 12, right: 12, bottom: 80);
     return SafeArea(
       child: Column(
         children: [
@@ -68,6 +143,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
               child: FutureBuilder<List<Post>>(
                 future: _feed,
                 builder: (context, snap) {
+                  const listPadding = EdgeInsets.only(left: 12, right: 12);
                   if (snap.hasError) {
                     return ListView(
                       padding: listPadding,
@@ -91,21 +167,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       ],
                     );
                   }
-                  final posts = snap.data!;
-                  return ListView(
-                    padding: listPadding,
-                    children: [
-                      _tagsSection(PostService.tagsOf(posts)),
-                      _photosSection([
-                        for (final p in posts)
-                          if (p.type == PostType.photo) p
-                      ]),
-                      _videosSection([
-                        for (final p in posts)
-                          if (p.hasVideo) p
-                      ]),
-                    ],
-                  );
+                  return _content(snap.data!);
                 },
               ),
             ),
@@ -115,128 +177,128 @@ class _ExploreScreenState extends State<ExploreScreen> {
     );
   }
 
-  Widget _title(String text) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Text(text,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-      );
+  Widget _content(List<Post> posts) {
+    final shorts = [
+      for (final p in posts)
+        if (p.hasVideo && p.isShort) p
+    ];
+    final videos = [
+      for (final p in posts)
+        if (p.hasVideo && !p.isShort) p
+    ];
+    final photos = [
+      for (final p in posts)
+        if (!p.hasVideo && p.type == PostType.photo) p
+    ];
 
-  Widget _tagsSection(Map<String, int> tagsMap) {
-    final tags = tagsMap.entries.toList();
-    if (tags.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _title('الهاشتاقات الرائجة'),
-        for (var i = 0; i < tags.length; i++)
-          ListTile(
-            leading: CircleAvatar(
-                backgroundColor: context.appColors.surfaceHigh,
-                child: Text('${i + 1}')),
-            title: Text(tags[i].key,
-                style: const TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: Text('${tags[i].value} منشور',
-                style: TextStyle(color: context.appColors.textDim)),
-            onTap: () => _openSearch(query: tags[i].key),
-          ),
-      ],
-    );
-  }
-
-  Widget _photosSection(List<Post> photos) {
-    if (photos.isEmpty) {
-      return const EmptyState(
-        icon: Icons.photo_library_outlined,
-        title: 'لا توجد صور بعد',
-        message: 'ستظهر هنا أحدث الصور التي يشاركها المستخدمون.',
-      );
+    // الشبكة الموحّدة: «الكل» تحافظ على ترتيب الأحدث أولاً (صور + فيديوهات عادية).
+    final List<Post> gridItems;
+    switch (_filter) {
+      case _ExploreFilter.photos:
+        gridItems = photos;
+      case _ExploreFilter.videos:
+        gridItems = videos;
+      case _ExploreFilter.all:
+        gridItems = [
+          for (final p in posts)
+            if ((p.hasVideo && !p.isShort) ||
+                (!p.hasVideo && p.type == PostType.photo))
+              p
+        ];
     }
-    final width = MediaQuery.sizeOf(context).width;
-    final columns = width >= 900 ? 5 : (width >= 600 ? 4 : 3);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _title('أحدث الصور'),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: photos.length,
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            crossAxisSpacing: 3,
-            mainAxisSpacing: 3,
+    final showShorts = _filter != _ExploreFilter.photos && shorts.isNotEmpty;
+    final isEmpty = gridItems.isEmpty && !showShorts;
+
+    return CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        SliverToBoxAdapter(child: _tagsBar(PostService.tagsOf(posts))),
+        SliverToBoxAdapter(child: _filterBar()),
+        if (showShorts)
+          SliverToBoxAdapter(
+            child: ShortsRow(
+                shorts: shorts,
+                padding: const EdgeInsets.only(top: 4, bottom: 8)),
           ),
-          itemBuilder: (context, i) {
-            final post = photos[i];
-            return GestureDetector(
-              onTap: () => Navigator.of(context).push(appRoute('post',
-                  {'id': post.id}, (_) => PostDetailScreen(post: post))),
-              child: ClipRect(child: PostImage(post: post)),
-            );
-          },
-        ),
+        if (isEmpty)
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: EmptyState(
+              icon: _filter == _ExploreFilter.videos
+                  ? Icons.videocam_outlined
+                  : Icons.photo_library_outlined,
+              title: _filter == _ExploreFilter.videos
+                  ? 'لا توجد فيديوهات بعد'
+                  : 'لا توجد صور بعد',
+              message: 'ستظهر هنا أحدث ما يشاركه المستخدمون.',
+            ),
+          )
+        else
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 80),
+            sliver: SliverGrid(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: _gridColumns(context),
+                crossAxisSpacing: 4,
+                mainAxisSpacing: 4,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (context, i) => _postTile(context, gridItems[i]),
+                childCount: gridItems.length,
+              ),
+            ),
+          ),
       ],
     );
   }
 
-  /// فيديوهات يوتيوب: العادية في شبكة، والشورتز في شريط أفقي. يختفي القسم إن لم توجد.
-  Widget _videosSection(List<Post> all) {
-    if (all.isEmpty) return const SizedBox.shrink();
-    final shorts = [for (final p in all) if (p.isShort) p];
-    final videos = [for (final p in all) if (!p.isShort) p];
-    final width = MediaQuery.sizeOf(context).width;
-    final columns = width >= 900 ? 4 : (width >= 600 ? 3 : 2);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (videos.isNotEmpty) ...[
-          _title('أحدث الفيديوهات'),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: videos.length,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: columns,
-              crossAxisSpacing: 3,
-              mainAxisSpacing: 3,
-              childAspectRatio: 16 / 9,
+  /// الهاشتاقات الرائجة كشرائح في شريط أفقي واحد (بدل قائمة عمودية طويلة).
+  Widget _tagsBar(Map<String, int> tagsMap) {
+    final tags = tagsMap.keys.toList();
+    if (tags.isEmpty) return const SizedBox.shrink();
+    return SizedBox(
+      height: 44,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        itemCount: tags.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, i) => ActionChip(
+          avatar: const Icon(Icons.local_fire_department_rounded, size: 16),
+          label: Text(tags[i]),
+          onPressed: () => _openSearch(query: tags[i]),
+        ),
+      ),
+    );
+  }
+
+  Widget _filterBar() {
+    const labels = {
+      _ExploreFilter.all: 'الكل',
+      _ExploreFilter.photos: 'صور',
+      _ExploreFilter.videos: 'فيديوهات',
+    };
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+      child: Row(
+        children: [
+          for (final entry in labels.entries) ...[
+            _choiceChip(
+              context,
+              label: entry.value,
+              selected: _filter == entry.key,
+              onTap: () => setState(() => _filter = entry.key),
             ),
-            itemBuilder: (context, i) {
-              final post = videos[i];
-              return GestureDetector(
-                onTap: () => Navigator.of(context).push(appRoute('post',
-                    {'id': post.id}, (_) => PostDetailScreen(post: post))),
-                child: ClipRect(
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      CachedNetworkImage(
-                        imageUrl: post.videoThumb!,
-                        fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) =>
-                            Container(color: Colors.black),
-                      ),
-                      const Center(
-                        child: Icon(Icons.play_circle_fill_rounded,
-                            color: Colors.white, size: 36),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
+            const SizedBox(width: 8),
+          ],
         ],
-        if (shorts.isNotEmpty)
-          ShortsRow(
-              shorts: shorts,
-              padding: const EdgeInsets.only(top: 12, bottom: 4)),
-      ],
+      ),
     );
   }
 }
 
-/// صفحة البحث: تُفتح فوق الشريط السفلي وفيها الرائج ونتائج البحث.
+/// صفحة البحث: تُفتح فوق الشريط السفلي وفيها عمليات البحث السابقة والرائج
+/// ونتائج البحث (حسابات / منشورات) مع بحث تلقائي أثناء الكتابة.
 class ExploreSearchScreen extends StatefulWidget {
   /// نص يُبحث عنه فور فتح الصفحة (مثل هاشتاق ضغطت عليه).
   final String? initialQuery;
@@ -248,23 +310,34 @@ class ExploreSearchScreen extends StatefulWidget {
 }
 
 class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
+  static const _recentKey = 'explore_recent_searches';
+  static const _recentMax = 8;
+
   final _search = TextEditingController();
   final _searchFocus = FocusNode();
   late Future<Map<String, int>> _trendingFuture = _loadTrending();
   Future<(List<AppUser>, List<Post>)>? _results;
+  Timer? _debounce;
+  List<String> _recent = const [];
+
+  /// 0 = الحسابات، 1 = المنشورات، null = اختيار تلقائي حسب وجود نتائج.
+  int? _resultTab;
 
   @override
   void initState() {
     super.initState();
+    _loadRecent();
     final q = widget.initialQuery?.trim() ?? '';
     if (q.isNotEmpty) {
       _search.text = q;
       _results = _searchAll(q);
+      _remember(q);
     }
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchFocus.dispose();
     _search.dispose();
     super.dispose();
@@ -272,9 +345,67 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
 
   Future<Map<String, int>> _loadTrending() => PostService.trendingTags();
 
-  void _run(String q) {
+  Future<void> _loadRecent() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList(_recentKey) ?? const <String>[];
+      if (mounted) setState(() => _recent = list);
+    } catch (_) {}
+  }
+
+  Future<void> _saveRecent(List<String> list) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_recentKey, list);
+    } catch (_) {}
+  }
+
+  void _remember(String q) {
     final text = q.trim();
-    setState(() => _results = text.isEmpty ? null : _searchAll(text));
+    if (text.isEmpty) return;
+    final list = [text, ..._recent.where((e) => e != text)]
+        .take(_recentMax)
+        .toList();
+    if (mounted) setState(() => _recent = list);
+    _saveRecent(list);
+  }
+
+  void _forget(String q) {
+    final list = _recent.where((e) => e != q).toList();
+    setState(() => _recent = list);
+    _saveRecent(list);
+  }
+
+  void _clearRecent() {
+    setState(() => _recent = const []);
+    _saveRecent(const []);
+  }
+
+  /// تشغيل البحث فوراً (زر البحث أو الضغط على هاشتاق/بحث سابق).
+  void _run(String q, {bool remember = false}) {
+    _debounce?.cancel();
+    final text = q.trim();
+    if (remember) _remember(text);
+    setState(() {
+      _resultTab = null;
+      _results = text.isEmpty ? null : _searchAll(text);
+    });
+  }
+
+  /// بحث تلقائي أثناء الكتابة بعد توقّف نصف ثانية.
+  void _onChanged(String q) {
+    setState(() {}); // لإظهار/إخفاء زر المسح
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      if (mounted) _run(q);
+    });
+  }
+
+  void _pick(String text) {
+    _search.text = text;
+    _search.selection = TextSelection.collapsed(offset: text.length);
+    _searchFocus.unfocus();
+    _run(text, remember: true);
   }
 
   Future<(List<AppUser>, List<Post>)> _searchAll(String text) async {
@@ -301,7 +432,7 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
                       focusNode: _searchFocus,
                       autofocus: true,
                       textInputAction: TextInputAction.search,
-                      onSubmitted: _run,
+                      onSubmitted: (q) => _run(q, remember: true),
                       decoration: InputDecoration(
                         hintText: 'ابحث بالاسم أو اسم المستخدم أو هاشتاق',
                         prefixIcon: const Icon(Icons.search_rounded),
@@ -315,7 +446,7 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
                                 },
                               ),
                       ),
-                      onChanged: (_) => setState(() {}),
+                      onChanged: _onChanged,
                     ),
                   ),
                   Padding(
@@ -329,7 +460,7 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
               ),
             ),
             Expanded(
-              child: _results == null ? _trending() : _resultsList(),
+              child: _results == null ? _trending() : _resultsView(),
             ),
           ],
         ),
@@ -337,6 +468,21 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
     );
   }
 
+  Widget _sectionTitle(String text, {Widget? trailing}) => Padding(
+        padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(text,
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w700)),
+            ),
+            if (trailing != null) trailing,
+          ],
+        ),
+      );
+
+  /// الحالة الفارغة: عمليات البحث السابقة ثم الهاشتاقات الرائجة كشرائح.
   Widget _trending() {
     return RefreshIndicator(
       onRefresh: () async {
@@ -344,58 +490,87 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
         setState(() => _trendingFuture = refresh);
         await refresh;
       },
-      child: FutureBuilder<Map<String, int>>(
-        future: _trendingFuture,
-        builder: (context, snap) {
-          if (snap.hasError) {
-            return Center(
-                child: Text('تعذر تحميل المحتوى الرائج\n${snap.error}',
-                    textAlign: TextAlign.center));
-          }
-          if (!snap.hasData)
-            return const AppLoading(message: 'جارٍ استكشاف المحتوى...');
-          final tags = snap.data!.entries.toList();
-          return ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            children: [
-              if (tags.isNotEmpty) ...[
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Text('الهاشتاقات الرائجة',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        children: [
+          if (_recent.isNotEmpty) ...[
+            _sectionTitle(
+              'عمليات البحث السابقة',
+              trailing: TextButton(
+                onPressed: _clearRecent,
+                child: const Text('مسح الكل'),
+              ),
+            ),
+            for (final q in _recent)
+              ListTile(
+                dense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                leading: Icon(Icons.history_rounded,
+                    color: context.appColors.textDim),
+                title: Text(q, maxLines: 1, overflow: TextOverflow.ellipsis),
+                trailing: IconButton(
+                  icon: Icon(Icons.close_rounded,
+                      size: 18, color: context.appColors.textDim),
+                  onPressed: () => _forget(q),
                 ),
-                for (var i = 0; i < tags.length; i++)
-                  ListTile(
-                    leading: CircleAvatar(
-                        backgroundColor: context.appColors.surfaceHigh,
-                        child: Text('${i + 1}')),
-                    title: Text(tags[i].key,
-                        style: const TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: Text('${tags[i].value} منشور',
-                        style: TextStyle(color: context.appColors.textDim)),
-                    onTap: () {
-                      _search.text = tags[i].key;
-                      _searchFocus.unfocus();
-                      _run(tags[i].key);
-                    },
+                onTap: () => _pick(q),
+              ),
+          ],
+          FutureBuilder<Map<String, int>>(
+            future: _trendingFuture,
+            builder: (context, snap) {
+              if (snap.hasError) {
+                return Padding(
+                  padding: const EdgeInsets.all(28),
+                  child: Text('تعذر تحميل المحتوى الرائج\n${snap.error}',
+                      textAlign: TextAlign.center),
+                );
+              }
+              if (!snap.hasData) {
+                return const Padding(
+                  padding: EdgeInsets.only(top: 40),
+                  child: AppLoading(message: 'جارٍ استكشاف المحتوى...'),
+                );
+              }
+              final tags = snap.data!.keys.toList();
+              if (tags.isEmpty) return const SizedBox.shrink();
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _sectionTitle('الهاشتاقات الرائجة'),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 0,
+                    children: [
+                      for (final tag in tags)
+                        ActionChip(
+                          avatar: const Icon(
+                              Icons.local_fire_department_rounded,
+                              size: 16),
+                          label: Text(tag),
+                          onPressed: () => _pick(tag),
+                        ),
+                    ],
                   ),
-              ],
-            ],
-          );
-        },
+                ],
+              );
+            },
+          ),
+        ],
       ),
     );
   }
 
-  Widget _resultsList() {
+  Widget _resultsView() {
     return FutureBuilder<(List<AppUser>, List<Post>)>(
       future: _results,
       builder: (context, snap) {
-        if (snap.hasError)
+        if (snap.hasError) {
           return Center(
               child: Text('تعذر البحث\n${snap.error}',
                   textAlign: TextAlign.center));
+        }
         if (!snap.hasData) return const AppLoading(message: 'جارٍ البحث...');
         final (users, posts) = snap.data!;
         if (users.isEmpty && posts.isEmpty) {
@@ -405,42 +580,82 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
             message: 'جرّب اسماً أو كلمة بحث مختلفة.',
           );
         }
-        return ListView(
-          padding: const EdgeInsets.only(bottom: 80),
+        // الاختيار التلقائي: الحسابات إن وُجدت وإلا المنشورات.
+        final tab = _resultTab ?? (users.isNotEmpty ? 0 : 1);
+        return Column(
           children: [
-            if (users.isNotEmpty) ...[
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 4, 16, 4),
-                child: Text('الحسابات',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Row(
+                children: [
+                  _choiceChip(
+                    context,
+                    label: 'الحسابات (${users.length})',
+                    selected: tab == 0,
+                    onTap: () => setState(() => _resultTab = 0),
+                  ),
+                  const SizedBox(width: 8),
+                  _choiceChip(
+                    context,
+                    label: 'المنشورات (${posts.length})',
+                    selected: tab == 1,
+                    onTap: () => setState(() => _resultTab = 1),
+                  ),
+                ],
               ),
-              for (final u in users)
-                ListTile(
-                  onTap: () => openProfile(context, u.uid),
-                  leading: UserAvatar(
-                      uid: u.uid, fallbackName: u.username, radius: 22),
-                  title: Text(u.username,
-                      style: const TextStyle(fontWeight: FontWeight.w700)),
-                  subtitle: u.name.isEmpty
-                      ? null
-                      : Text(u.name,
-                          style: TextStyle(color: context.appColors.textDim)),
-                ),
-              Divider(color: context.appColors.text.withOpacity(0.12)),
-            ],
-            if (posts.isNotEmpty) ...[
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
-                child: Text('المنشورات',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-              ),
-              for (final p in posts) PostCard(post: p),
-            ],
+            ),
+            Expanded(
+              child: tab == 0 ? _usersList(users) : _postsGrid(posts),
+            ),
           ],
         );
       },
+    );
+  }
+
+  Widget _usersList(List<AppUser> users) {
+    if (users.isEmpty) {
+      return const EmptyState(
+        icon: Icons.person_search_outlined,
+        title: 'لا توجد حسابات مطابقة',
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 80),
+      children: [
+        for (final u in users)
+          ListTile(
+            onTap: () => openProfile(context, u.uid),
+            leading:
+                UserAvatar(uid: u.uid, fallbackName: u.username, radius: 22),
+            title: Text(u.username,
+                style: const TextStyle(fontWeight: FontWeight.w700)),
+            subtitle: u.name.isEmpty
+                ? null
+                : Text(u.name,
+                    style: TextStyle(color: context.appColors.textDim)),
+          ),
+      ],
+    );
+  }
+
+  /// المنشورات كشبكة مصغّرة (بدل بطاقات كاملة تطيل الصفحة).
+  Widget _postsGrid(List<Post> posts) {
+    if (posts.isEmpty) {
+      return const EmptyState(
+        icon: Icons.image_search_outlined,
+        title: 'لا توجد منشورات مطابقة',
+      );
+    }
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 80),
+      itemCount: posts.length,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: _gridColumns(context),
+        crossAxisSpacing: 4,
+        mainAxisSpacing: 4,
+      ),
+      itemBuilder: (context, i) => _postTile(context, posts[i], root: true),
     );
   }
 }
