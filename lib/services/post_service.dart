@@ -348,18 +348,20 @@ class PostService {
   /// يضيف صورة منشور إلى قصتي مع ذكر صاحبها. لا يعيد رفع الصورة: تشير القصة
   /// إلى الملف نفسه (رابط أو قطع Firestore).
   static Future<void> shareToStory(Post p) {
+    final extra = {
+      'sharedFromUid': p.uid,
+      'sharedFromUsername': p.username,
+      'sharedFromPostId': p.id,
+    };
+    if (p.hasVideo) {
+      // الفيديو: تُنشر صورته المصغّرة من يوتيوب كقصة مع ذكر صاحبه.
+      return _create(PostType.story, '', p.videoThumb, mime: 'image/jpeg', extra: extra);
+    }
     if (p.type != PostType.photo) {
-      throw StateError('يمكن إضافة الصور فقط إلى القصة');
+      throw StateError('يمكن إضافة الصور والفيديو فقط إلى القصة');
     }
     return _create(PostType.story, '', p.mediaUrl,
-        mediaId: p.mediaId,
-        chunks: p.chunks,
-        mime: p.mime,
-        extra: {
-          'sharedFromUid': p.uid,
-          'sharedFromUsername': p.username,
-          'sharedFromPostId': p.id,
-        });
+        mediaId: p.mediaId, chunks: p.chunks, mime: p.mime, extra: extra);
   }
 
   /// ينشر وسائط (صورة/قصة). [mime] مثل image/jpeg.
