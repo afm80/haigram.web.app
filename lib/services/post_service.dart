@@ -24,6 +24,7 @@ class Post {
   final String? mediaUrl;
   final String? mediaId; // وضع التجربة: الملف مخزّن في Firestore على قطع
   final String? videoId; // معرّف فيديو يوتيوب (11 حرفاً) إن وُجد
+  final bool isShort; // رابط شورتز (عمودي 9:16)
   final int chunks;
   final String mime;
   final int likes;
@@ -42,6 +43,7 @@ class Post {
     required this.mediaUrl,
     this.mediaId,
     this.videoId,
+    this.isShort = false,
     this.chunks = 0,
     this.mime = 'image/jpeg',
     required this.likes,
@@ -64,6 +66,7 @@ class Post {
       mediaUrl: m['mediaUrl'],
       mediaId: m['mediaId'],
       videoId: m['videoId'] as String?,
+      isShort: m['isShort'] == true,
       chunks: (m['chunks'] ?? 0) as int,
       mime: m['mime'] ?? 'image/jpeg',
       likes: (m['likes'] ?? 0) as int,
@@ -391,12 +394,24 @@ class PostService {
     return (id != null && idRe.hasMatch(id)) ? id : null;
   }
 
+  /// هل الرابط رابط شورتز (youtube.com/shorts/ID)؟
+  static bool isShortsLink(String input) {
+    var text = input.trim();
+    if (text.isEmpty) return false;
+    if (!text.contains('://')) text = 'https://$text';
+    final seg = Uri.tryParse(text)?.pathSegments ?? const <String>[];
+    return seg.isNotEmpty && seg.first == 'shorts';
+  }
+
   static String youtubeWatchUrl(String id) => 'https://www.youtube.com/watch?v=$id';
 
   /// منشور نصي، وقد يرافقه (أو يحلّ محلّه) فيديو يوتيوب.
-  static Future<void> publishText(String text, {String? videoId}) => _create(
-      PostType.text, text, null,
-      extra: videoId == null ? const {} : {'videoId': videoId});
+  static Future<void> publishText(String text,
+          {String? videoId, bool isShort = false}) =>
+      _create(PostType.text, text, null, extra: {
+        if (videoId != null) 'videoId': videoId,
+        if (videoId != null && isShort) 'isShort': true,
+      });
 
   // ---- الإعجاب والحفظ والمتابعة ----
   static DocumentReference<Map<String, dynamic>> _likeRef(String postId) =>
