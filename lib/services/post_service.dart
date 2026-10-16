@@ -23,6 +23,7 @@ class Post {
   final String caption;
   final String? mediaUrl;
   final String? mediaId; // وضع التجربة: الملف مخزّن في Firestore على قطع
+  final List<String> albumUrls; // ألبوم: روابط كل الصور (الأولى = mediaUrl)
   final String? videoId; // معرّف فيديو يوتيوب (11 حرفاً) إن وُجد
   final bool isShort; // رابط شورتز (عمودي 9:16)
   final bool authorPrivate; // حساب صاحب المنشور خاص (تفرضه قواعد Firestore)
@@ -48,6 +49,7 @@ class Post {
     required this.caption,
     required this.mediaUrl,
     this.mediaId,
+    this.albumUrls = const [],
     this.videoId,
     this.isShort = false,
     this.authorPrivate = false,
@@ -77,6 +79,9 @@ class Post {
       caption: m['caption'] ?? '',
       mediaUrl: m['mediaUrl'],
       mediaId: m['mediaId'],
+      albumUrls: (m['albumUrls'] is List)
+          ? (m['albumUrls'] as List).whereType<String>().toList()
+          : const <String>[],
       videoId: m['videoId'] as String?,
       isShort: m['isShort'] == true,
       authorPrivate: m['authorPrivate'] == true,
@@ -104,6 +109,13 @@ class Post {
   }
 
   bool get hasVideo => videoId != null && videoId!.isNotEmpty;
+
+  /// منشور ألبوم: أكثر من صورة في منشور واحد.
+  bool get isAlbum => albumUrls.length > 1;
+
+  /// روابط صور المنشور بالترتيب (صورة واحدة للمنشور العادي).
+  List<String> get imageUrls =>
+      isAlbum ? albumUrls : (mediaUrl != null ? [mediaUrl!] : const []);
 
   /// صورة الفيديو المصغّرة من يوتيوب (لا تستهلك أي حصة من Firebase أو Cloudinary).
   String? get videoThumb =>
@@ -584,6 +596,7 @@ class PostService {
         extra: {
           if (p.hasVideo) 'videoId': p.videoId,
           if (p.hasVideo && p.isShort) 'isShort': true,
+          if (p.isAlbum) 'albumUrls': p.albumUrls,
           'repostedFromUid': originalUid,
           'repostedFromUsername': originalUsername,
           'repostedFromPostId': originalId,
@@ -618,6 +631,44 @@ class PostService {
           mime: mime,
           extra: extra);
     }
+  }
+
+  /// أقصى عدد صور في ألبوم واحد.
+  static const maxAlbumImages = 10;
+
+  /// ينشر ألبوماً (عدة صور في منشور واحد). يتطلب تخزيناً بروابط مباشرة
+  /// (Cloudinary أو Storage)؛ وضع التجربة (Firestore) لا يدعم الألبومات.
+  static Future<void> publishAlbum(
+    List<Uint8List> images, {
+    required String mime,
+    required String ext,
+    required String caption,
+    required void Function(double) onProgress,
+  }) async {
+    if (images.length < 2) {
+      throw StateError('الألبوم يحتاج صورتين على الأقل');
+    }
+    if (images.length > maxAlbumImages) {
+      throw StateError('الحد الأقصى $maxAlbumImages صور');
+    }
+    if (!useRemoteMedia) {
+      throw StateError('الألبومات تتطلب تفعيل Cloudinary أو Storage');
+    }
+    final urls = <String>[];
+    onProgress(0);
+    for (var i = 0; i < images.length; i++) {
+      final String url;
+      if (useCloudinary) {
+        url = await _uploadCloudinary(images[i], mime, ext);
+      } else {
+        url = await _upload(images[i],
+            'photos/${_user.uid}/${_stamp()}_$i.$ext', mime, null);
+      }
+      urls.add(url);
+      onProgress((i + 1) / images.length);
+    }
+    await _create(PostType.photo, caption, urls.first,
+        mime: mime, extra: {'albumUrls': urls});
   }
 
   /// يستخرج معرّف الفيديو من أي صيغة رابط يوتيوب:
