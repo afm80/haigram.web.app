@@ -126,19 +126,20 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # أيقونة التطبيق من أيقونات المشروع (web/icons) بدل أيقونة Flutter الافتراضية
+      # أيقونة تطبيق أندرويد: من الملف الخاص android-icon/app-icon.png (لا تمسّ أيقونات الويب)
       - name: Generate launcher icon
         run: |
           set -e
-          # أيقونة Android المتكيّفة تُقصّ إلى دائرة/مربع داخل منطقة آمنة (66% من الوسط)،
-          # فنصنع مقدمة شفافة يحتل الشعار 56% منها حتى لا يظهر مكبّراً أو مقصوصاً.
+          # أيقونة Android المتكيّفة تُقصّ إلى دائرة/مربع داخل منطقة آمنة (66% من الوسط).
+          # الإطار الأبيض في الصورة يشغل 82.5% من عرضها، فنصغّر الصورة بحيث يصير الإطار
+          # 52% من القماشة: يملأ الأيقونة دون أن تُقصّ زواياه في الشكل الدائري.
           python3 -m venv /tmp/iconenv
           /tmp/iconenv/bin/pip install --quiet pillow
           /tmp/iconenv/bin/python - <<'PY'
           from PIL import Image
           size = 1024
-          inner = int(size * 0.56)
-          mark = Image.open('assets/haigram-mark.png').convert('RGBA').resize((inner, inner), Image.LANCZOS)
+          inner = int(size * 0.52 / 0.825)
+          mark = Image.open('android-icon/app-icon.png').convert('RGBA').resize((inner, inner), Image.LANCZOS)
           canvas = Image.new('RGBA', (size, size), (0, 0, 0, 0))
           offset = (size - inner) // 2
           canvas.paste(mark, (offset, offset), mark)
@@ -149,8 +150,8 @@ jobs:
           flutter_launcher_icons:
             android: true
             ios: false
-            image_path: "web/icons/Icon-512.png"
-            adaptive_icon_background: "#0B0B12"
+            image_path: "android-icon/app-icon.png"
+            adaptive_icon_background: "#000000"
             adaptive_icon_foreground: "adaptive-foreground.png"
           YAML
           dart run flutter_launcher_icons
