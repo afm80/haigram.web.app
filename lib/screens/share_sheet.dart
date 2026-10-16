@@ -48,6 +48,7 @@ class _PostShareSheetState extends State<_PostShareSheet> {
   final Map<String, AppUser> _selected = {};
   final _note = TextEditingController();
   bool _sending = false;
+  String _query = '';
 
   Post get _post => widget.post;
   String get _noun => 'المنشور';
@@ -317,7 +318,54 @@ class _PostShareSheetState extends State<_PostShareSheet> {
           return _hint('ستظهر هنا الحسابات التي تتابعك وتتابعها لإرسال $_noun لها.',
               color: colors.textDim);
         }
-        return _row(friends.map(_friendItem).toList());
+        final q = _query.trim().toLowerCase();
+        final shown = q.isEmpty
+            ? friends
+            : friends
+                .where((f) =>
+                    f.username.toLowerCase().contains(q) ||
+                    f.displayName.toLowerCase().contains(q))
+                .toList();
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+              child: TextField(
+                onChanged: (v) => setState(() => _query = v),
+                decoration: InputDecoration(
+                  isDense: true,
+                  filled: true,
+                  fillColor: colors.surfaceHigh,
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  hintText: 'بحث',
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ),
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.34),
+              child: shown.isEmpty
+                  ? _hint('لا نتائج', color: colors.textDim)
+                  : GridView.builder(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 4,
+                        mainAxisExtent: 104,
+                      ),
+                      itemCount: shown.length,
+                      itemBuilder: (_, i) => _friendItem(shown[i]),
+                    ),
+            ),
+          ],
+        );
       },
     );
   }

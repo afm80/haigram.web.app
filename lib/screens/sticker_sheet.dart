@@ -3,6 +3,45 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import 'sticker_data.dart';
 
+/// رابط صورة Twemoji الملوّنة (مفتوحة الترخيص CC-BY 4.0) للإيموجي [emoji].
+/// تظهر بألوانها على كل الأجهزة والمتصفحات دون الاعتماد على خط النظام.
+String stickerImageUrl(String emoji) {
+  final hasZwj = emoji.runes.contains(0x200D);
+  final cps = emoji.runes
+      .where((r) => hasZwj || r != 0xFE0F)
+      .map((r) => r.toRadixString(16))
+      .join('-');
+  return 'https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/$cps.png';
+}
+
+/// ملصق/إيموجي ملوّن: صورة Twemoji، ويرجع إلى النص إن تعذر تحميلها.
+class StickerGlyph extends StatelessWidget {
+  final String emoji;
+  final double size;
+  const StickerGlyph(this.emoji, {super.key, this.size = 30});
+
+  @override
+  Widget build(BuildContext context) {
+    final fallback = Text(emoji, style: TextStyle(fontSize: size * 0.9));
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Image.network(
+        stickerImageUrl(emoji),
+        width: size,
+        height: size,
+        cacheWidth: (size * 3).round(),
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.medium,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) => Center(child: fallback),
+        loadingBuilder: (_, child, progress) =>
+            progress == null ? child : const SizedBox.shrink(),
+      ),
+    );
+  }
+}
+
 /// نافذة الملصقات بنمط تيك توك: ورقة كبيرة تُسحب لأعلى، وتبويبات للفئات
 /// وشبكة كبيرة بدل القائمة الصغيرة.
 Future<void> showStickerSheet(
@@ -78,8 +117,7 @@ class _StickerSheetState extends State<_StickerSheet> {
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Text(stickerCategories[i].icon,
-                          style: const TextStyle(fontSize: 22)),
+                      child: StickerGlyph(stickerCategories[i].icon, size: 26),
                     ),
                   );
                 },
@@ -119,8 +157,7 @@ class _StickerSheetState extends State<_StickerSheet> {
                       widget.onPick(sticker);
                     },
                     child: Center(
-                      child: Text(sticker,
-                          style: const TextStyle(fontSize: 30)),
+                      child: StickerGlyph(sticker, size: 34),
                     ),
                   );
                 },

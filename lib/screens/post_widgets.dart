@@ -61,6 +61,7 @@ class _PostCardState extends State<PostCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (p.repostedFromUsername != null) _repostLabel(p),
         _header(p),
         StreamBuilder<bool>(
           stream: PostService.isLiked(p.id),
@@ -125,7 +126,7 @@ class _PostCardState extends State<PostCard> {
                       duration: const Duration(milliseconds: 200),
                       child: const Icon(Icons.favorite_rounded,
                           size: 100,
-                          color: AppColors.brandOrange,
+                          color: AppColors.likeRed,
                           shadows: [
                             Shadow(blurRadius: 24, color: Color(0x66000000))
                           ]),
@@ -185,6 +186,45 @@ class _PostCardState extends State<PostCard> {
       videoId: p.videoId!,
       isShort: p.isShort,
       autoPlay: widget.autoPlayVideo);
+
+  /// «أعاد @فلان نشره» فوق المنشور المُعاد نشره.
+  Widget _repostLabel(Post p) {
+    final dim = context.appColors.textDim;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: p.repostedFromUid == null
+          ? null
+          : () => openProfile(context, p.repostedFromUid!),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+        child: Row(
+          children: [
+            Icon(Icons.repeat_rounded, size: 16, color: dim),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                  'أعاد @${p.username} نشر منشور @${p.repostedFromUsername}',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: dim, fontSize: 12.5)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _toggleRepost() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final posted = await PostService.toggleRepost(widget.post);
+      messenger.showSnackBar(SnackBar(
+          content: Text(posted ? 'تمت إعادة النشر' : 'تم إلغاء إعادة النشر')));
+    } catch (error) {
+      final text =
+          error is StateError ? error.message : 'تعذرت العملية: $error';
+      messenger.showSnackBar(SnackBar(content: Text(text)));
+    }
+  }
 
   Widget _header(Post p) {
     return Padding(
@@ -265,7 +305,7 @@ class _PostCardState extends State<PostCard> {
                   liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                   size: 28,
                   color: liked
-                      ? context.appColors.reaction
+                      ? AppColors.likeRed
                       : Theme.of(context).brightness == Brightness.dark
                           ? Colors.white
                           : Colors.black,
@@ -282,14 +322,27 @@ class _PostCardState extends State<PostCard> {
               color: context.appColors.text,
             ),
           ),
+          StreamBuilder<bool>(
+            stream: PostService.isReposted(p),
+            builder: (context, s) {
+              final reposted = s.data ?? false;
+              return IconButton(
+                tooltip: reposted ? 'إلغاء إعادة النشر' : 'إعادة النشر',
+                onPressed: _toggleRepost,
+                icon: Icon(
+                  Icons.repeat_rounded,
+                  size: 29,
+                  color: reposted
+                      ? const Color(0xFF00BA7C)
+                      : context.appColors.text,
+                ),
+              );
+            },
+          ),
           IconButton(
             tooltip: 'مشاركة',
             onPressed: () => showPostShareSheet(context, widget.post),
-            icon: Transform.scale(
-              scaleX: -1,
-              child: Icon(Icons.reply_rounded,
-                  size: 30, color: context.appColors.text),
-            ),
+            icon: const _SharePlaneIcon(),
           ),
           const Spacer(),
           StreamBuilder<bool>(
@@ -315,6 +368,21 @@ class _PostCardState extends State<PostCard> {
       ),
     );
   }
+}
+
+/// أيقونة مشاركة بشكل الطائرة الورقية (مثل إنستغرام)، لا تنعكس في الواجهة العربية.
+class _SharePlaneIcon extends StatelessWidget {
+  const _SharePlaneIcon();
+
+  @override
+  Widget build(BuildContext context) => Directionality(
+        textDirection: TextDirection.ltr,
+        child: Transform.rotate(
+          angle: -0.38,
+          child: Icon(Icons.send_outlined,
+              size: 26, color: context.appColors.text),
+        ),
+      );
 }
 
 /// نص منشور تُلوَّن فيه الهاشتاقات والروابط وتُفتح عند النقر:

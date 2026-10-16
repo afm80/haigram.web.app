@@ -983,6 +983,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                       ),
                                     ),
                                   )
+                                else if (sticker)
+                                  StickerGlyph(message.text, size: 56)
                                 else
                                   Text(
                                     message.text,
