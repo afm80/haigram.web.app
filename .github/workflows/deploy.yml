@@ -21,6 +21,8 @@ jobs:
         run: |
           cp -r web /tmp/web-custom
           flutter create . --platforms=web --project-name lamha --org app.lamha >/dev/null
+          # flutter create يولّد اختباراً افتراضياً يشير إلى تطبيق غير موجود ويُفشل الفحص؛ نحذفه.
+          rm -rf test
           cp -r /tmp/web-custom/. web/
 
       - run: flutter pub get
