@@ -275,6 +275,9 @@ class _PostCardState extends State<PostCard> {
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_horiz_rounded),
             color: context.appColors.surfaceHigh,
+            // مشغّل يوتيوب (iframe) يبقى فوق واجهة فلاتر ويلتقط النقرات،
+            // فنزيله قبل ظهور القائمة كي تصل النقرة إلى (تعديل/حذف...).
+            onOpened: stopInlineVideos,
             onSelected: (v) {
               switch (v) {
                 case 'link':
@@ -454,7 +457,9 @@ class _HiddenStrip extends StatelessWidget {
 }
 
 /// نافذة أسباب الإبلاغ عن منشور؛ بعد الإرسال يُخفى المنشور عن المُبلِّغ.
-void reportPostSheet(BuildContext context, Post post) {
+Future<void> reportPostSheet(BuildContext context, Post post) async {
+  await _releaseVideosForDialog();
+  if (!context.mounted) return;
   final colors = context.appColors;
   final messenger = ScaffoldMessenger.of(context);
   showModalBottomSheet<void>(
