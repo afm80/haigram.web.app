@@ -548,6 +548,12 @@ class _YoutubeInlineState extends State<YoutubeInline> {
     _watch?.cancel();
     _watch = Timer.periodic(const Duration(milliseconds: 300), (_) {
       if (!mounted || !_playing) return;
+      // صفحة أخرى فُتحت فوق هذا المنشور (ملف شخصي، منشور...): نوقف الفيديو.
+      final secondary = ModalRoute.of(context)?.secondaryAnimation;
+      if (secondary != null && secondary.status != AnimationStatus.dismissed) {
+        _stop();
+        return;
+      }
       final box = context.findRenderObject();
       if (box is! RenderBox || !box.attached) return;
       final top = box.localToGlobal(Offset.zero).dy;

@@ -13,7 +13,7 @@ import 'create_flow.dart';
 import 'explore_screen.dart';
 import 'home_feed_screen.dart';
 import 'social_screens.dart';
-import 'post_widgets.dart' show PostDetailScreen;
+import 'post_widgets.dart' show PostDetailScreen, stopInlineVideos;
 import 'profile_screen.dart';
 import 'settings_screen.dart';
 
@@ -415,6 +415,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
         if (_tabHistory.length > 10) _tabHistory.removeAt(0);
       }
     }
+    // التبويبات تبقى حيّة خلف IndexedStack، فنوقف أي فيديو يعمل قبل مغادرة التبويب.
+    if (tab != _index) stopInlineVideos();
     _exitTimer?.cancel();
     _lastBackPress = null;
     setState(() {
