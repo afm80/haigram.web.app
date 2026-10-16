@@ -429,14 +429,18 @@ class _Header extends StatelessWidget {
                       child: _LiveStat(
                         label: 'متابعين',
                         load: () => PostService.countFollowers(uid),
-                        onTap: () => _showFollowSheet(context, uid, 0),
+                        onTap: (isMe || access == _Access.open)
+                            ? () => _showFollowSheet(context, uid, 0)
+                            : null,
                       ),
                     ),
                     Expanded(
                       child: _LiveStat(
                         label: 'أتابعه',
                         load: () => PostService.countFollowing(uid),
-                        onTap: () => _showFollowSheet(context, uid, 1),
+                        onTap: (isMe || access == _Access.open)
+                            ? () => _showFollowSheet(context, uid, 1)
+                            : null,
                       ),
                     ),
                   ],
