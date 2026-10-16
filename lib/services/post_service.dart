@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:http/http.dart' as http;
@@ -25,6 +26,7 @@ class Post {
   final String? mediaId; // وضع التجربة: الملف مخزّن في Firestore على قطع
   final String? videoId; // معرّف فيديو يوتيوب (11 حرفاً) إن وُجد
   final bool isShort; // رابط شورتز (عمودي 9:16)
+  final bool authorPrivate; // حساب صاحب المنشور خاص (تفرضه قواعد Firestore)
   final String? sharedFromUsername; // قصة مشاركة من منشور: صاحب الأصل
   final String? sharedFromUid;
   final int chunks;
@@ -46,6 +48,7 @@ class Post {
     this.mediaId,
     this.videoId,
     this.isShort = false,
+    this.authorPrivate = false,
     this.sharedFromUsername,
     this.sharedFromUid,
     this.chunks = 0,
@@ -71,6 +74,7 @@ class Post {
       mediaId: m['mediaId'],
       videoId: m['videoId'] as String?,
       isShort: m['isShort'] == true,
+      authorPrivate: m['authorPrivate'] == true,
       sharedFromUsername: m['sharedFromUsername'] as String?,
       sharedFromUid: m['sharedFromUid'] as String?,
       chunks: (m['chunks'] ?? 0) as int,
@@ -164,13 +168,36 @@ class PostService {
       .where('type', isEqualTo: t.name)
       .orderBy('createdAt', descending: true);
 
+  /// هل الخطأ رفض صلاحية من قواعد Firestore (مثل منشور حساب خاص لا أتابعه)؟
+  static bool _isDenied(Object error) =>
+      error is FirebaseException && error.code == 'permission-denied';
+
+  /// يقيّد استعلام المنشورات بكاتب واحد بشكل تقبله قواعد Firestore:
+  /// - أنا: يكفي تقييد uid.
+  /// - حساب عام: نضيف authorPrivate == false.
+  /// - حساب خاص: بلا فلتر إضافي، وتسمح القواعد فقط إن كنت أتابعه.
+  static Future<Query<Map<String, dynamic>>> _scopeToAuthor(
+      Query<Map<String, dynamic>> q, String uid) async {
+    q = q.where('uid', isEqualTo: uid);
+    if (uid == uidOrEmpty) return q;
+    final target = await UserService.profileOf(uid);
+    return target?.isPrivate == true
+        ? q
+        : q.where('authorPrivate', isEqualTo: false);
+  }
+
+  /// بلا [uid]: منشورات الحسابات العامة فقط (القواعد ترفض الاستعلام بدون هذا الفلتر).
+  /// مع [uid]: منشورات ذلك المستخدم إن كان لي حق رؤيتها.
   static Stream<List<Post>> stream(PostType t, {String? uid, int limit = 40}) {
-    var q = _byType(t);
-    if (uid != null) q = q.where('uid', isEqualTo: uid);
-    return q
-        .limit(limit)
-        .snapshots()
-        .map((s) => _parse(s.docs));
+    if (uid == null) {
+      return _byType(t)
+          .where('authorPrivate', isEqualTo: false)
+          .limit(limit)
+          .snapshots()
+          .map((s) => _parse(s.docs));
+    }
+    return Stream.fromFuture(_scopeToAuthor(_byType(t), uid)).asyncExpand(
+        (q) => q.limit(limit).snapshots().map((s) => _parse(s.docs)));
   }
 
   /// يحوّل المستندات إلى منشورات ويتجاهل الفيديوهات القديمة.
@@ -181,18 +208,20 @@ class PostService {
           if (!Post.isLegacyVideo(d)) Post.fromDoc(d),
       ];
 
-  static Stream<List<Post>> profilePosts(String uid, {int limit = 90}) => _db
-      .collection('posts')
-      .where('type', whereIn: const ['photo', 'text'])
-      .where('uid', isEqualTo: uid)
-      .orderBy('createdAt', descending: true)
-      .limit(limit)
-      .snapshots()
-      .map((snapshot) => _parse(snapshot.docs));
+  static Stream<List<Post>> profilePosts(String uid, {int limit = 90}) =>
+      Stream.fromFuture(_scopeToAuthor(
+              _db
+                  .collection('posts')
+                  .where('type', whereIn: const ['photo', 'text'])
+                  .orderBy('createdAt', descending: true),
+              uid))
+          .asyncExpand((q) =>
+              q.limit(limit).snapshots().map((s) => _parse(s.docs)));
 
   static Future<List<Post>> search(String text) async {
     final snap = await _db
         .collection('posts')
+        .where('authorPrivate', isEqualTo: false)
         .orderBy('createdAt', descending: true)
         .limit(150)
         .get();
@@ -220,6 +249,7 @@ class PostService {
     if (_fresh(_tagsAt) && _tagsCache != null) return _tagsCache!;
     final snap = await _db
         .collection('posts')
+        .where('authorPrivate', isEqualTo: false)
         .orderBy('createdAt', descending: true)
         .limit(_trendingReadLimit)
         .get();
@@ -237,10 +267,17 @@ class PostService {
     return _tagsCache!;
   }
 
+  /// منشور بمعرّفه. يعيد null إن لم يوجد أو لم يكن لي حق رؤيته
+  /// (القواعد ترفض قراءة منشور غير موجود أو منشور حساب خاص لا أتابعه).
   static Future<Post?> postById(String postId) async {
-    final snapshot = await _db.collection('posts').doc(postId).get();
-    if (!snapshot.exists || Post.isLegacyVideo(snapshot)) return null;
-    return Post.fromDoc(snapshot);
+    try {
+      final snapshot = await _db.collection('posts').doc(postId).get();
+      if (!snapshot.exists || Post.isLegacyVideo(snapshot)) return null;
+      return Post.fromDoc(snapshot);
+    } on FirebaseException catch (e) {
+      if (_isDenied(e)) return null;
+      rethrow;
+    }
   }
 
   static String postLink(Post post) =>
@@ -319,11 +356,21 @@ class PostService {
     });
   }
 
+  /// حالة خصوصية حسابي كما هي في الخادم (تُكتب على كل منشور جديد وتطابقها القواعد).
+  static Future<bool> _myPrivacy() async {
+    try {
+      final s = await _db.collection('users').doc(_user.uid).get();
+      return s.data()?['isPrivate'] == true;
+    } catch (_) {
+      return UserService.me?.isPrivate ?? false;
+    }
+  }
+
   static Future<void> _create(PostType type, String caption, String? url,
       {String? mediaId,
       int chunks = 0,
       String? mime,
-      Map<String, dynamic> extra = const {}}) {
+      Map<String, dynamic> extra = const {}}) async {
     final data = <String, dynamic>{
       'type': type.name,
       'uid': _user.uid,
@@ -337,10 +384,33 @@ class PostService {
       'likes': 0,
       'views': 0,
       'comments': 0,
+      'authorPrivate': await _myPrivacy(),
       'createdAt': FieldValue.serverTimestamp(),
     };
     data.addAll(extra);
-    return _db.collection('posts').add(data).then((_) => notifyStatsChanged());
+    await _db.collection('posts').add(data);
+    notifyStatsChanged();
+  }
+
+  /// يزامن authorPrivate على كل منشوراتي وقصصي مع إعداد الخصوصية الحالي.
+  /// يُستدعى بعد تبديل خصوصية الحساب. الدفعات 10 مستندات فقط كي لا نتجاوز
+  /// حد 20 عملية وصول لقواعد Firestore في الدفعة الواحدة.
+  static Future<void> syncAuthorPrivacy(bool isPrivate) async {
+    final snap = await _db
+        .collection('posts')
+        .where('uid', isEqualTo: _user.uid)
+        .get();
+    final stale = snap.docs
+        .where((d) => d.data()['authorPrivate'] != isPrivate)
+        .toList();
+    for (var i = 0; i < stale.length; i += 10) {
+      final batch = _db.batch();
+      for (final d in stale.skip(i).take(10)) {
+        batch.update(d.reference, {'authorPrivate': isPrivate});
+      }
+      await batch.commit();
+    }
+    if (stale.isNotEmpty) notifyStatsChanged();
   }
 
   static String _stamp() => DateTime.now().millisecondsSinceEpoch.toString();
@@ -348,6 +418,9 @@ class PostService {
   /// يضيف صورة منشور إلى قصتي مع ذكر صاحبها. لا يعيد رفع الصورة: تشير القصة
   /// إلى الملف نفسه (رابط أو قطع Firestore).
   static Future<void> shareToStory(Post p) {
+    if (p.authorPrivate && p.uid != _user.uid) {
+      throw StateError('لا يمكن مشاركة منشور من حساب خاص');
+    }
     final extra = {
       'sharedFromUid': p.uid,
       'sharedFromUsername': p.username,
@@ -481,7 +554,13 @@ class PostService {
   static Future<void> toggleLike(String postId, bool liked) async {
     final batch = _db.batch();
     final post = _db.collection('posts').doc(postId);
-    final postSnapshot = await post.get();
+    DocumentSnapshot<Map<String, dynamic>> postSnapshot;
+    try {
+      postSnapshot = await post.get();
+    } on FirebaseException catch (e) {
+      if (_isDenied(e)) throw StateError('المنشور غير متاح');
+      rethrow;
+    }
     if (!postSnapshot.exists) {
       throw StateError('المنشور غير موجود');
     }
@@ -751,48 +830,49 @@ class PostService {
           .count ??
       0;
 
-  /// عدد منشورات المستخدم (صور + نص، دون القصص).
+  /// عدد منشورات المستخدم (صور + نص، دون القصص). 0 إن كان حساباً خاصاً لا أتابعه.
   static Future<int> countPosts(String uid) async {
-    final counts = await Future.wait(['photo', 'text'].map((t) async {
-      final snap = await _db
-          .collection('posts')
-          .where('type', isEqualTo: t)
-          .where('uid', isEqualTo: uid)
-          .count()
-          .get();
-      return snap.count ?? 0;
-    }));
-    return counts.fold<int>(0, (a, b) => a + b);
-  }
-
-  /// مجموع إعجابات منشورات المستخدم. يستعمل استعلام تجميع (قراءة واحدة تقريباً
-  /// لكل 1000 منشور) وإن لم يتوفر يرجع للجمع اليدوي.
-  static Future<int> totalLikes(String uid) async {
-    final query = _db.collection('posts').where('uid', isEqualTo: uid);
     try {
-      final agg = await query.aggregate(sum('likes')).get();
-      return (agg.getSum('likes') ?? 0).round();
-    } catch (_) {
-      final snap = await query.get();
-      return snap.docs
-          .fold<int>(0, (a, d) => a + ((d.data()['likes'] ?? 0) as num).toInt());
+      final counts = await Future.wait(['photo', 'text'].map((t) async {
+        final q = await _scopeToAuthor(
+            _db.collection('posts').where('type', isEqualTo: t), uid);
+        final snap = await q.count().get();
+        return snap.count ?? 0;
+      }));
+      return counts.fold<int>(0, (a, b) => a + b);
+    } on FirebaseException catch (e) {
+      if (_isDenied(e)) return 0;
+      rethrow;
     }
   }
 
-  /// منشورات بمعرّفاتها (حتى 10)، بنفس ترتيب [ids]؛ المحذوفة تُهمَل.
+  /// مجموع إعجابات منشورات المستخدم. يستعمل استعلام تجميع (قراءة واحدة تقريباً
+  /// لكل 1000 منشور) وإن لم يتوفر يرجع للجمع اليدوي. 0 إن لم يحق لي رؤيتها.
+  static Future<int> totalLikes(String uid) async {
+    try {
+      final query = await _scopeToAuthor(_db.collection('posts'), uid);
+      try {
+        final agg = await query.aggregate(sum('likes')).get();
+        return (agg.getSum('likes') ?? 0).round();
+      } catch (_) {
+        final snap = await query.get();
+        return snap.docs.fold<int>(
+            0, (a, d) => a + ((d.data()['likes'] ?? 0) as num).toInt());
+      }
+    } on FirebaseException catch (e) {
+      if (_isDenied(e)) return 0;
+      rethrow;
+    }
+  }
+
+  /// منشورات بمعرّفاتها (حتى 10)، بنفس ترتيب [ids]؛ المحذوفة أو غير المتاحة تُهمَل.
+  /// قراءات منفردة لأن قواعد Firestore لا تقبل استعلام معرّفات على منشورات قد تكون خاصة.
   static Future<List<Post>> postsByIds(List<String> ids) async {
     if (ids.isEmpty) return const [];
-    final snap = await _db
-        .collection('posts')
-        .where(FieldPath.documentId, whereIn: ids.take(10).toList())
-        .get();
-    final byId = {
-      for (final d in snap.docs)
-        if (!Post.isLegacyVideo(d)) d.id: Post.fromDoc(d),
-    };
+    final posts = await Future.wait(ids.take(10).map(postById));
     return [
-      for (final id in ids)
-        if (byId[id] != null) byId[id]!,
+      for (final p in posts)
+        if (p != null) p,
     ];
   }
 
@@ -801,7 +881,18 @@ class PostService {
       .collection('posts')
       .doc(id)
       .snapshots()
-      .map((d) => d.exists && !Post.isLegacyVideo(d) ? Post.fromDoc(d) : null);
+      .map<Post?>(
+          (d) => d.exists && !Post.isLegacyVideo(d) ? Post.fromDoc(d) : null)
+      .transform(StreamTransformer<Post?, Post?>.fromHandlers(
+        handleError: (error, stack, sink) {
+          // منشور لم يعد متاحاً لي (حُذف أو أصبح صاحبه خاصاً): نعامله كمحذوف.
+          if (_isDenied(error)) {
+            sink.add(null);
+          } else {
+            sink.addError(error, stack);
+          }
+        },
+      ));
 
   /// تعديل نص المنشور/وصف الفيديو (للمالك فقط حسب قواعد Firestore).
   static Future<void> updateCaption(Post p, String caption) async {
@@ -834,9 +925,11 @@ class PostService {
           .orderBy('at', descending: true)
           .snapshots()
           .asyncMap((s) async {
-        final docs = await Future.wait(
-            s.docs.map((d) => _db.collection('posts').doc(d.id).get()));
-        return _parse(docs.where((d) => d.exists));
+        final posts = await Future.wait(s.docs.map((d) => postById(d.id)));
+        return [
+          for (final p in posts)
+            if (p != null) p,
+        ];
       });
 
   /// المنشورات (صور ونصوص) التي أعجب بها المستخدم [uid]، الأحدث أولاً.
@@ -848,11 +941,11 @@ class PostService {
           .limit(limit)
           .snapshots()
           .asyncMap((s) async {
-        final docs = await Future.wait(
-            s.docs.map((d) => _db.collection('posts').doc(d.id).get()));
-        return _parse(docs.where((d) => d.exists))
-            .where((post) => post.type != PostType.story)
-            .toList();
+        final posts = await Future.wait(s.docs.map((d) => postById(d.id)));
+        return [
+          for (final p in posts)
+            if (p != null && p.type != PostType.story) p,
+        ];
       });
 
   // ---- التعليقات ----
@@ -941,8 +1034,53 @@ class PostService {
   // ---- القصص (تختفي بعد 24 ساعة) ----
   static const storyLifetime = Duration(hours: 24);
 
+  /// يدمج قائمتي منشورات في قائمة واحدة بلا تكرار، مرتبة بالأحدث.
+  static Stream<List<Post>> _mergeLists(
+      Stream<List<Post>> a, Stream<List<Post>> b) {
+    late final StreamController<List<Post>> controller;
+    StreamSubscription<List<Post>>? subA;
+    StreamSubscription<List<Post>>? subB;
+    List<Post>? listA;
+    List<Post>? listB;
+
+    void emit() {
+      final x = listA;
+      final y = listB;
+      if (x == null || y == null) return;
+      final byId = {for (final p in [...x, ...y]) p.id: p};
+      controller.add(
+          byId.values.toList()..sort((m, n) => n.createdAt.compareTo(m.createdAt)));
+    }
+
+    controller = StreamController<List<Post>>(
+      onListen: () {
+        subA = a.listen((v) {
+          listA = v;
+          emit();
+        }, onError: controller.addError);
+        subB = b.listen((v) {
+          listB = v;
+          emit();
+        }, onError: controller.addError);
+      },
+      onCancel: () async {
+        await subA?.cancel();
+        await subB?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
+  /// قصص الحسابات العامة، وقصصي أنا أيضاً إذا كان حسابي خاصاً
+  /// (لأن القصص العامة تستثني الحسابات الخاصة).
+  static Stream<List<Post>> _visibleStories() {
+    final public = stream(PostType.story, limit: 100);
+    if (UserService.me?.isPrivate != true) return public;
+    return _mergeLists(public, stream(PostType.story, uid: uidOrEmpty, limit: 30));
+  }
+
   static Stream<List<StoryGroup>> storyGroups() =>
-      stream(PostType.story, limit: 100).map((list) {
+      _visibleStories().map((list) {
         final cutoff = DateTime.now().subtract(storyLifetime);
         final live = list.where((p) => p.createdAt.isAfter(cutoff)).toList();
         final byUser = <String, List<Post>>{};
