@@ -806,6 +806,13 @@ class _ShortsViewerState extends State<ShortsViewer> {
         duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
   }
 
+  /// تمرير باللمس: سحب للأعلى = التالي، للأسفل = السابق.
+  void _onDragEnd(DragEndDetails d) {
+    final v = d.primaryVelocity ?? 0;
+    if (v < -150) _go(1);
+    if (v > 150) _go(-1);
+  }
+
   void _onMenu(String v, Post post) async {
     final rootCtx = Navigator.of(context, rootNavigator: true).context;
     final messenger = ScaffoldMessenger.of(context);
@@ -852,7 +859,10 @@ class _ShortsViewerState extends State<ShortsViewer> {
                           Container(color: Colors.black)),
             ),
           ),
-          SizedBox(
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onVerticalDragEnd: _onDragEnd,
+            child: SizedBox(
             width: w,
             height: captionH,
             child: Padding(
@@ -865,6 +875,7 @@ class _ShortsViewerState extends State<ShortsViewer> {
               ),
             ),
           ),
+          ),
         ],
       );
     });
@@ -875,19 +886,21 @@ class _ShortsViewerState extends State<ShortsViewer> {
     final wide = MediaQuery.of(context).size.width >= 700;
     final post = widget.shorts[_current];
     final mine = post.uid == PostService.uidOrEmpty;
+    // شريطان جانبيان للتمرير باللمس (مشغّل يوتيوب يلتقط اللمس فوق الفيديو):
+    // عرض كل منهما نحو خُمس الشاشة، ويمتدان من 40% من الارتفاع إلى الأسفل
+    // حيث يكون الإبهام، وتبقى وسط الفيديو وأعلاه للمس (تشغيل/إيقاف).
+    final size = MediaQuery.of(context).size;
+    final stripWidth = (size.width * 0.2).clamp(36.0, 120.0).toDouble();
+    final stripTop = size.height * 0.4;
     Widget strip(bool left) => Positioned(
           left: left ? 0 : null,
           right: left ? null : 0,
-          top: 70,
+          top: stripTop,
           bottom: 0,
-          width: 36,
+          width: stripWidth,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onVerticalDragEnd: (d) {
-              final v = d.primaryVelocity ?? 0;
-              if (v < -150) _go(1);
-              if (v > 150) _go(-1);
-            },
+            onVerticalDragEnd: _onDragEnd,
           ),
         );
     return Scaffold(
