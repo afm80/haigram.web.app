@@ -238,6 +238,25 @@ class PostService {
     );
   }
 
+  /// دفعة من منشورات حساب واحد (خاص أتابعه أو عام). استعلام بحساب ثابت فتسمح
+  /// القواعد به لأنني أتابعه. يستخدم فهرس type + uid + createdAt الموجود.
+  static Future<PostPage> userPage(String uid,
+      {DocumentSnapshot<Map<String, dynamic>>? after, int limit = 10}) async {
+    var q = _db
+        .collection('posts')
+        .where('uid', isEqualTo: uid)
+        .where('type', whereIn: const ['photo', 'text'])
+        .orderBy('createdAt', descending: true)
+        .limit(limit);
+    if (after != null) q = q.startAfterDocument(after);
+    final snap = await q.get();
+    return PostPage(
+      _parse(snap.docs),
+      snap.docs.isEmpty ? after : snap.docs.last,
+      snap.docs.length >= limit,
+    );
+  }
+
   /// يحوّل المستندات إلى منشورات ويتجاهل الفيديوهات القديمة.
   static List<Post> _parse(
           Iterable<DocumentSnapshot<Map<String, dynamic>>> docs) =>
