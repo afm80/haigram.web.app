@@ -255,7 +255,7 @@ class _ActivitySummaryTileState extends State<_ActivitySummaryTile> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: const BoxDecoration(
-                    color: AppColors.brandPurple,
+                    color: AppColors.notificationRed,
                     shape: BoxShape.circle,
                   ),
                   child: Center(
@@ -1313,7 +1313,8 @@ class _NotificationTile extends StatelessWidget {
               ? _FollowRequestActions(requesterUid: notification.actorUid)
               : notification.read
                   ? null
-                  : Icon(Icons.circle, color: colors.reaction, size: 9)),
+                  : const Icon(Icons.circle,
+                      color: AppColors.notificationRed, size: 9)),
       tileColor: notification.read ? null : colors.surface.withOpacity(0.7),
     );
   }

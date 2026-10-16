@@ -466,8 +466,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
                           constraints:
                               const BoxConstraints(minWidth: 15, minHeight: 15),
                           padding: const EdgeInsets.symmetric(horizontal: 4),
-                          decoration: BoxDecoration(
-                            color: context.appColors.reaction,
+                          decoration: const BoxDecoration(
+                            color: AppColors.notificationRed,
                             shape: BoxShape.circle,
                           ),
                           alignment: Alignment.center,
@@ -475,8 +475,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
                               ? const SizedBox(width: 5, height: 5)
                               : Text(
                                   badgeCount > 99 ? '99+' : '$badgeCount',
-                                  style: TextStyle(
-                                      color: context.appColors.onReaction,
+                                  style: const TextStyle(
+                                      color: Colors.white,
                                       fontSize: 8,
                                       fontWeight: FontWeight.w700),
                                 ),
