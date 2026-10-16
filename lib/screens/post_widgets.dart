@@ -1234,7 +1234,12 @@ class _ShortsViewerState extends State<ShortsViewer> {
         Navigator.of(context).pop();
         _editShortCaption(rootCtx, post, messenger);
       case 'delete':
-        _confirmDeleteShort(context, post);
+        // نُزيل مشغّل يوتيوب (iframe) قبل الحوار وإلا التقط نقرة «حذف».
+        setState(() => _menuOpen = true);
+        await WidgetsBinding.instance.endOfFrame;
+        if (!mounted) return;
+        final deleted = await _confirmDeleteShort(context, post);
+        if (!deleted && mounted) setState(() => _menuOpen = false);
     }
   }
 
@@ -1454,7 +1459,7 @@ class _ShortsViewerState extends State<ShortsViewer> {
 }
 
 /// تأكيد ثم حذف شورتز من نافذة المعاينة (لصاحبه فقط).
-Future<void> _confirmDeleteShort(BuildContext dialogCtx, Post post) async {
+Future<bool> _confirmDeleteShort(BuildContext dialogCtx, Post post) async {
   final messenger = ScaffoldMessenger.of(dialogCtx);
   final ok = await showDialog<bool>(
     context: dialogCtx,
@@ -1471,7 +1476,7 @@ Future<void> _confirmDeleteShort(BuildContext dialogCtx, Post post) async {
       ],
     ),
   );
-  if (ok != true) return;
+  if (ok != true) return false;
   // نغلق نافذة الفيديو أولاً فيتوقف الصوت ثم نحذف.
   if (dialogCtx.mounted) Navigator.of(dialogCtx).pop();
   try {
@@ -1480,6 +1485,7 @@ Future<void> _confirmDeleteShort(BuildContext dialogCtx, Post post) async {
   } catch (error) {
     messenger.showSnackBar(SnackBar(content: Text('تعذر الحذف: $error')));
   }
+  return true;
 }
 
 /// تعديل وصف شورتز (من الملف الشخصي لصاحبه) بنفس الحوار الواسع.
