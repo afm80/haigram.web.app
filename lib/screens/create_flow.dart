@@ -144,6 +144,27 @@ Future<PickedMedia?> pickMedia(
   return PickedMedia(bytes: bytes, ext: 'jpg', mime: 'image/jpeg', name: f.name);
 }
 
+/// يختار عدة صور دفعة واحدة (حتى [max]) من ملفات الجهاز لألبوم.
+/// [truncated] يصبح true إن اختار المستخدم أكثر من الحد فقُصّت القائمة.
+Future<(List<PickedMedia>, bool)> pickAlbumMedia(
+  ImagePicker picker, {
+  int max = PostService.maxAlbumImages,
+}) async {
+  if (max <= 0) return (<PickedMedia>[], false);
+  final files = await picker.pickMultiImage(
+      maxWidth: 1080, maxHeight: 1080, imageQuality: 60);
+  final out = <PickedMedia>[];
+  for (final f in files.take(max)) {
+    final bytes = await f.readAsBytes();
+    if (bytes.length > maxPhotoBytes) {
+      throw MediaError('إحدى الصور كبيرة جداً');
+    }
+    out.add(PickedMedia(
+        bytes: bytes, ext: 'jpg', mime: 'image/jpeg', name: f.name));
+  }
+  return (out, files.length > max);
+}
+
 /// الخطوة الأولى: اختيار المصدر (كاميرا أو ملفات الجهاز) كما في إنستغرام.
 class CaptureScreen extends StatefulWidget {
   final CreateKind kind;
@@ -165,6 +186,27 @@ class _CaptureScreenState extends State<CaptureScreen> {
       _error = null;
     });
     try {
+      // منشور من ملفات الجهاز: اختيار عدة صور لألبوم (يتطلب تخزيناً برابط).
+      if (source == ImageSource.gallery &&
+          widget.kind == CreateKind.post &&
+          PostService.useRemoteMedia) {
+        final (picked, truncated) = await pickAlbumMedia(_picker);
+        if (picked.isEmpty || !mounted) {
+          if (mounted) setState(() => _busy = false);
+          return;
+        }
+        if (truncated) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(
+                  'الحد الأقصى ${PostService.maxAlbumImages} صور، تم أخذ أول ${PostService.maxAlbumImages}')));
+        }
+        Navigator.of(context).pushReplacement(MaterialPageRoute(
+            builder: (_) => ComposeScreen(
+                kind: widget.kind,
+                media: picked.first,
+                extraMedia: picked.sublist(1))));
+        return;
+      }
       final media = await pickMedia(
         _picker,
         source: source,
@@ -232,7 +274,10 @@ class _CaptureScreenState extends State<CaptureScreen> {
                             ),
                             const SizedBox(height: 20),
                             Text(
-                              'التقط صورة أو اختر من ملفاتك',
+                              (kind == CreateKind.post &&
+                                      PostService.useRemoteMedia)
+                                  ? 'التقط صورة أو اختر حتى ${PostService.maxAlbumImages} صور من ملفاتك'
+                                  : 'التقط صورة أو اختر من ملفاتك',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                   fontSize: 16, color: colors.text),
@@ -324,7 +369,12 @@ class _CaptureScreenState extends State<CaptureScreen> {
 class ComposeScreen extends StatefulWidget {
   final CreateKind kind;
   final PickedMedia? media; // null = منشور نصي فقط
-  const ComposeScreen({super.key, required this.kind, this.media});
+  final List<PickedMedia> extraMedia; // صور إضافية لألبوم (بعد الأولى)
+  const ComposeScreen(
+      {super.key,
+      required this.kind,
+      this.media,
+      this.extraMedia = const []});
 
   @override
   State<ComposeScreen> createState() => _ComposeScreenState();
@@ -336,8 +386,38 @@ class _ComposeScreenState extends State<ComposeScreen> {
   double _progress = 0;
   bool _busy = false;
   String? _error;
+  final _picker = ImagePicker();
+
+  // صور المنشور (واحدة أو ألبوم). تتغيّر بالإضافة والحذف قبل النشر.
+  late final List<PickedMedia> _images = [
+    if (widget.media != null) widget.media!,
+    ...widget.extraMedia,
+  ];
 
   bool get _textOnly => widget.media == null;
+
+  // الألبومات للمنشور فقط (لا للقصة) وتتطلب تخزيناً برابط مباشر.
+  bool get _canAlbum =>
+      widget.kind == CreateKind.post && PostService.useRemoteMedia;
+
+  Future<void> _addMore() async {
+    final room = PostService.maxAlbumImages - _images.length;
+    if (room <= 0 || _busy) return;
+    try {
+      final (picked, truncated) = await pickAlbumMedia(_picker, max: room);
+      if (!mounted || picked.isEmpty) return;
+      setState(() {
+        _images.addAll(picked);
+        _error = truncated
+            ? 'الحد الأقصى ${PostService.maxAlbumImages} صور'
+            : null;
+      });
+    } on MediaError catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (e) {
+      if (mounted) setState(() => _error = 'تعذر اختيار الصور: $e');
+    }
+  }
 
   // رابط يوتيوب متاح في المنشور النصي فقط (نص، أو فيديو، أو الاثنان معاً).
   bool get _isVideoKind => widget.kind == CreateKind.video;
@@ -392,7 +472,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
         if (mounted) setState(() => _progress = p);
       }
 
-      final m = widget.media;
+      final m = _images.isEmpty ? null : _images.first;
       if (m == null) {
         await PostService.publishText(caption,
             videoId: videoId,
@@ -403,11 +483,20 @@ class _ComposeScreenState extends State<ComposeScreen> {
           CreateKind.story => PostType.story,
           CreateKind.video => PostType.photo,
         };
-        await PostService.publishMedia(type, m.bytes,
-            mime: m.mime,
-            ext: m.ext,
-            caption: caption,
-            onProgress: onProgress);
+        if (_images.length > 1 && type == PostType.photo) {
+          await PostService.publishAlbum(
+              [for (final img in _images) img.bytes],
+              mime: m.mime,
+              ext: m.ext,
+              caption: caption,
+              onProgress: onProgress);
+        } else {
+          await PostService.publishMedia(type, m.bytes,
+              mime: m.mime,
+              ext: m.ext,
+              caption: caption,
+              onProgress: onProgress);
+        }
       }
       nav.popUntil((r) => r.isFirst);
       messenger.showSnackBar(SnackBar(
@@ -424,9 +513,52 @@ class _ComposeScreenState extends State<ComposeScreen> {
     }
   }
 
+  /// شريط معاينة الألبوم: مصغّرات أفقية، وعلى كل واحدة زر حذف.
+  Widget _albumStrip() {
+    return SizedBox(
+      height: 150,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _images.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, i) => Stack(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.memory(_images[i].bytes,
+                  width: 120, height: 150, fit: BoxFit.cover),
+            ),
+            PositionedDirectional(
+              top: 4,
+              end: 4,
+              child: GestureDetector(
+                onTap: _busy ? null : () => setState(() => _images.removeAt(i)),
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(
+                      color: Colors.black54, shape: BoxShape.circle),
+                  child: const Icon(Icons.close_rounded,
+                      size: 16, color: Colors.white),
+                ),
+              ),
+            ),
+            PositionedDirectional(
+              bottom: 4,
+              start: 6,
+              child: Text('${i + 1}',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      shadows: [Shadow(blurRadius: 4, color: Colors.black87)])),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final m = widget.media;
     return Scaffold(
       appBar: AppBar(
         title: Text(_kindTitle(widget.kind)),
@@ -444,15 +576,29 @@ class _ComposeScreenState extends State<ComposeScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            if (m != null)
+            if (_images.length == 1)
               Center(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(14),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
                         maxHeight: MediaQuery.of(context).size.height * 0.5),
-                    child: Image.memory(m.bytes, fit: BoxFit.contain),
+                    child: Image.memory(_images.first.bytes,
+                        fit: BoxFit.contain),
                   ),
+                ),
+              ),
+            if (_images.length > 1) _albumStrip(),
+            if (_images.isNotEmpty &&
+                _canAlbum &&
+                _images.length < PostService.maxAlbumImages)
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton.icon(
+                  onPressed: _busy ? null : _addMore,
+                  icon: const Icon(Icons.add_photo_alternate_outlined),
+                  label: Text(
+                      'إضافة صور (${_images.length}/${PostService.maxAlbumImages})'),
                 ),
               ),
             const SizedBox(height: 16),

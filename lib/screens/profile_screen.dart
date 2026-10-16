@@ -2012,6 +2012,15 @@ class _PostGrid extends StatelessWidget {
                           style: const TextStyle(fontSize: 12)),
                     ),
                 },
+                if (post.isAlbum)
+                  const PositionedDirectional(
+                    top: 6,
+                    start: 6,
+                    child: Icon(Icons.collections_rounded,
+                        color: Colors.white,
+                        size: 18,
+                        shadows: [Shadow(blurRadius: 4, color: Colors.black54)]),
+                  ),
                 if (pinnedIds.contains(post.id)) const _PinBadge(),
                 _CardStats(post: post),
               ],

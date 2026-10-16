@@ -136,11 +136,13 @@ class _PostCardState extends State<PostCard> {
                         return SizedBox(
                           width: double.infinity,
                           height: mediaHeight,
-                          child: PostImage(
-                            post: p,
-                            fit: BoxFit.contain,
-                            height: mediaHeight,
-                          ),
+                          child: p.isAlbum
+                              ? PostAlbumPager(post: p, height: mediaHeight)
+                              : PostImage(
+                                  post: p,
+                                  fit: BoxFit.contain,
+                                  height: mediaHeight,
+                                ),
                         );
                       },
                     ),
@@ -865,8 +867,15 @@ class PostImage extends StatelessWidget {
   final Post post;
   final BoxFit fit;
   final double? height;
+
+  /// رابط صورة محدد (لصفحات الألبوم)؛ وإلا تُعرض الصورة الأولى للمنشور.
+  final String? urlOverride;
   const PostImage(
-      {super.key, required this.post, this.fit = BoxFit.cover, this.height});
+      {super.key,
+      required this.post,
+      this.fit = BoxFit.cover,
+      this.height,
+      this.urlOverride});
 
   @override
   Widget build(BuildContext context) {
@@ -901,9 +910,10 @@ class PostImage extends StatelessWidget {
         ),
       ),
     );
-    if (post.mediaUrl != null) {
+    final url = urlOverride ?? post.mediaUrl;
+    if (url != null) {
       return CachedNetworkImage(
-        imageUrl: PostService.optimizedImageUrl(post.mediaUrl!, decodeWidth),
+        imageUrl: PostService.optimizedImageUrl(url, decodeWidth),
         width: double.infinity,
         height: height,
         fit: fit,
@@ -929,6 +939,89 @@ class PostImage extends StatelessWidget {
   }
 }
 
+
+/// ألبوم صور: تمرير أفقي بين صور المنشور مع عدّاد (1/5) ونقاط الصفحات.
+class PostAlbumPager extends StatefulWidget {
+  final Post post;
+  final double height;
+  const PostAlbumPager({super.key, required this.post, required this.height});
+
+  @override
+  State<PostAlbumPager> createState() => _PostAlbumPagerState();
+}
+
+class _PostAlbumPagerState extends State<PostAlbumPager> {
+  final _controller = PageController();
+  int _page = 0;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final urls = widget.post.imageUrls;
+    return Stack(
+      children: [
+        PageView.builder(
+          controller: _controller,
+          itemCount: urls.length,
+          onPageChanged: (i) => setState(() => _page = i),
+          itemBuilder: (_, i) => PostImage(
+            post: widget.post,
+            urlOverride: urls[i],
+            fit: BoxFit.contain,
+            height: widget.height,
+          ),
+        ),
+        PositionedDirectional(
+          top: 10,
+          end: 10,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+            decoration: BoxDecoration(
+              color: Colors.black54,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text('${_page + 1}/${urls.length}',
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700)),
+          ),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 8,
+          child: IgnorePointer(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                for (var i = 0; i < urls.length; i++)
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    margin: const EdgeInsets.symmetric(horizontal: 2.5),
+                    width: i == _page ? 8 : 6,
+                    height: i == _page ? 8 : 6,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: i == _page ? Colors.white : Colors.white54,
+                      boxShadow: const [
+                        BoxShadow(color: Colors.black45, blurRadius: 3)
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 /// شريط أفقي لبطاقات شورتز (9:16). الضغط على بطاقة يفتح الفيديو في نافذة عمودية.
 class ShortsRow extends StatelessWidget {

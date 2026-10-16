@@ -58,7 +58,21 @@ Widget _postTile(BuildContext context, Post post, {bool root = false}) {
       ],
     );
   } else if (post.type == PostType.photo) {
-    child = PostImage(post: post);
+    child = Stack(
+      fit: StackFit.expand,
+      children: [
+        PostImage(post: post),
+        if (post.isAlbum)
+          const PositionedDirectional(
+            top: 6,
+            end: 6,
+            child: Icon(Icons.collections_rounded,
+                color: Colors.white,
+                size: 18,
+                shadows: [Shadow(blurRadius: 4, color: Colors.black54)]),
+          ),
+      ],
+    );
   } else {
     child = Container(
       color: context.appColors.surfaceHigh,
