@@ -762,11 +762,24 @@ void showShortDialog(BuildContext context, Post post) {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Align(
-              alignment: AlignmentDirectional.centerEnd,
-              child: IconButton(
-                icon: const Icon(Icons.close_rounded, color: Colors.white),
-                onPressed: () => Navigator.of(ctx).pop(),
+            SizedBox(
+              width: w,
+              child: Row(
+                children: [
+                  if (post.uid == PostService.uidOrEmpty)
+                    TextButton.icon(
+                      icon: const Icon(Icons.delete_outline_rounded,
+                          color: Colors.white),
+                      label: const Text('حذف',
+                          style: TextStyle(color: Colors.white)),
+                      onPressed: () => _confirmDeleteShort(ctx, post),
+                    ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, color: Colors.white),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                  ),
+                ],
               ),
             ),
             SizedBox(
@@ -792,4 +805,33 @@ void showShortDialog(BuildContext context, Post post) {
       );
     },
   );
+}
+
+/// تأكيد ثم حذف شورتز من نافذة المعاينة (لصاحبه فقط).
+Future<void> _confirmDeleteShort(BuildContext dialogCtx, Post post) async {
+  final messenger = ScaffoldMessenger.of(dialogCtx);
+  final ok = await showDialog<bool>(
+    context: dialogCtx,
+    builder: (ctx) => AlertDialog(
+      title: const Text('حذف الفيديو؟'),
+      content: const Text('لا يمكن التراجع عن هذا الإجراء.'),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('إلغاء')),
+        TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('حذف')),
+      ],
+    ),
+  );
+  if (ok != true) return;
+  // نغلق نافذة الفيديو أولاً فيتوقف الصوت ثم نحذف.
+  if (dialogCtx.mounted) Navigator.of(dialogCtx).pop();
+  try {
+    await PostService.deletePost(post);
+    messenger.showSnackBar(const SnackBar(content: Text('تم حذف الفيديو')));
+  } catch (error) {
+    messenger.showSnackBar(SnackBar(content: Text('تعذر الحذف: $error')));
+  }
 }
