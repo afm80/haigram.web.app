@@ -28,6 +28,9 @@ class Post {
   final bool authorPrivate; // حساب صاحب المنشور خاص (تفرضه قواعد Firestore)
   final String? sharedFromUsername; // قصة مشاركة من منشور: صاحب الأصل
   final String? sharedFromUid;
+  final String? repostedFromUid; // إعادة نشر: صاحب المنشور الأصلي
+  final String? repostedFromUsername;
+  final String? repostedFromPostId;
   final int chunks;
   final String mime;
   final int likes;
@@ -50,6 +53,9 @@ class Post {
     this.authorPrivate = false,
     this.sharedFromUsername,
     this.sharedFromUid,
+    this.repostedFromUid,
+    this.repostedFromUsername,
+    this.repostedFromPostId,
     this.chunks = 0,
     this.mime = 'image/jpeg',
     required this.likes,
@@ -76,6 +82,9 @@ class Post {
       authorPrivate: m['authorPrivate'] == true,
       sharedFromUsername: m['sharedFromUsername'] as String?,
       sharedFromUid: m['sharedFromUid'] as String?,
+      repostedFromUid: m['repostedFromUid'] as String?,
+      repostedFromUsername: m['repostedFromUsername'] as String?,
+      repostedFromPostId: m['repostedFromPostId'] as String?,
       chunks: (m['chunks'] ?? 0) as int,
       mime: m['mime'] ?? 'image/jpeg',
       likes: (m['likes'] ?? 0) as int,
@@ -451,6 +460,53 @@ class PostService {
     }
     return _create(PostType.story, '', p.mediaUrl,
         mediaId: p.mediaId, chunks: p.chunks, mime: p.mime, extra: extra);
+  }
+
+  // ---- إعادة النشر ----
+  static Query<Map<String, dynamic>> _myRepostQuery(String originalId) => _db
+      .collection('posts')
+      .where('uid', isEqualTo: _user.uid)
+      .where('repostedFromPostId', isEqualTo: originalId)
+      .limit(1);
+
+  /// هل أعدت نشر هذا المنشور؟ (يعمل أيضاً إن كان [p] نفسه إعادة نشر.)
+  static Stream<bool> isReposted(Post p) => _myRepostQuery(p.repostedFromPostId ?? p.id)
+      .snapshots()
+      .map((s) => s.docs.isNotEmpty);
+
+  /// يعيد نشر المنشور في ملفي (نسخة تشير إلى الملف نفسه مع ذكر صاحبه)،
+  /// وإن كنت أعدت نشره سابقاً يلغي إعادة النشر. يرجع true عند النشر.
+  static Future<bool> toggleRepost(Post p) async {
+    final originalId = p.repostedFromPostId ?? p.id;
+    final originalUid = p.repostedFromUid ?? p.uid;
+    final originalUsername = p.repostedFromUsername ?? p.username;
+    final existing = await _myRepostQuery(originalId).get();
+    if (existing.docs.isNotEmpty) {
+      await existing.docs.first.reference.delete();
+      notifyStatsChanged();
+      return false;
+    }
+    if (originalUid == _user.uid) {
+      throw StateError('لا يمكنك إعادة نشر منشورك');
+    }
+    if (p.authorPrivate) {
+      throw StateError('لا يمكن إعادة نشر منشور من حساب خاص');
+    }
+    if (p.type == PostType.story) {
+      throw StateError('لا يمكن إعادة نشر القصص');
+    }
+    await _create(p.type, p.caption, p.mediaUrl,
+        mediaId: p.mediaId,
+        chunks: p.chunks,
+        mime: p.mime,
+        extra: {
+          if (p.hasVideo) 'videoId': p.videoId,
+          if (p.hasVideo && p.isShort) 'isShort': true,
+          'repostedFromUid': originalUid,
+          'repostedFromUsername': originalUsername,
+          'repostedFromPostId': originalId,
+        });
+    return true;
   }
 
   /// ينشر وسائط (صورة/قصة). [mime] مثل image/jpeg.
@@ -916,7 +972,8 @@ class PostService {
   }
 
   static Future<void> deletePost(Post p) async {
-    if (p.mediaId != null) {
+    // إعادة النشر تشير إلى ملف الأصل، فلا نحذف ملفاته مع النسخة.
+    if (p.mediaId != null && p.repostedFromPostId == null) {
       for (var i = 0; i < p.chunks; i++) {
         try {
           await _db.collection('media').doc('${p.mediaId}_$i').delete();
