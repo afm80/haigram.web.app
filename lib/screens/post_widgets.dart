@@ -785,6 +785,8 @@ class _ShortsViewerState extends State<ShortsViewer> {
       PageController(initialPage: widget.initialIndex);
   late int _current = widget.initialIndex;
   DateTime _lastMove = DateTime.fromMillisecondsSinceEpoch(0);
+  // أثناء فتح القائمة نخفي مشغّل يوتيوب (iframe) لأنه يلتقط النقرات فوقه في الويب.
+  bool _menuOpen = false;
 
   @override
   void dispose() {
@@ -918,7 +920,8 @@ class _ShortsViewerState extends State<ShortsViewer> {
                     scrollDirection: Axis.vertical,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: widget.shorts.length,
-                    itemBuilder: (_, i) => _page(widget.shorts[i], i == _current),
+                    itemBuilder: (_, i) =>
+                        _page(widget.shorts[i], i == _current && !_menuOpen),
                   ),
                 ),
                 strip(true),
@@ -939,7 +942,12 @@ class _ShortsViewerState extends State<ShortsViewer> {
                       PopupMenuButton<String>(
                         icon: const Icon(Icons.more_vert_rounded,
                             color: Colors.white),
-                        onSelected: (v) => _onMenu(v, post),
+                        onOpened: () => setState(() => _menuOpen = true),
+                        onCanceled: () => setState(() => _menuOpen = false),
+                        onSelected: (v) {
+                          setState(() => _menuOpen = false);
+                          _onMenu(v, post);
+                        },
                         itemBuilder: (_) => [
                           const PopupMenuItem(
                               value: 'copy', child: Text('نسخ الرابط')),
