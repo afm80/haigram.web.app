@@ -561,6 +561,8 @@ class _StoryViewerState extends State<StoryViewer>
                             _progress(group, si, active),
                             _header(group, story, mine),
                             const Spacer(),
+                            if (story.sharedFromUsername != null)
+                              _sharedFrom(story),
                             if (story.caption.isNotEmpty) _caption(story),
                           ],
                         ),
@@ -692,6 +694,21 @@ class _StoryViewerState extends State<StoryViewer>
             const SizedBox(height: 8),
           ],
         ),
+      ),
+    );
+  }
+
+  /// «من @صاحب الصورة» للقصة المشاركة من منشور.
+  Widget _sharedFrom(Post story) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+            color: const Color(0x99000000),
+            borderRadius: BorderRadius.circular(16)),
+        child: Text('من @${story.sharedFromUsername}',
+            style: const TextStyle(color: Colors.white, fontSize: 13)),
       ),
     );
   }

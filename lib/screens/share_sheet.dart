@@ -10,6 +10,7 @@ import '../services/social_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
+import 'post_widgets.dart' show PostImage;
 
 /// رابط مشاركة المنشور (?p=).
 String postShareLink(Post post) => PostService.postLink(post);
@@ -162,6 +163,77 @@ class _PostShareSheetState extends State<_PostShareSheet> {
   }
 
   bool get _mine => _post.uid == PostService.uidOrEmpty;
+
+  /// معاينة الصورة مع اسم صاحبها، ثم النشر في قصتي عند التأكيد.
+  Future<void> _addToStory() async {
+    final rootContext = Navigator.of(context, rootNavigator: true).context;
+    Navigator.pop(context);
+    final ok = await showDialog<bool>(
+      context: rootContext,
+      builder: (ctx) {
+        final h = (MediaQuery.of(ctx).size.height * 0.5).clamp(200.0, 480.0).toDouble();
+        return AlertDialog(
+          title: const Text('إضافة إلى قصتك'),
+          content: SizedBox(
+            width: 300,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: SizedBox(
+                    height: h,
+                    width: double.infinity,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        const ColoredBox(color: Color(0xFF111111)),
+                        PostImage(
+                            post: _post, fit: BoxFit.contain, height: h),
+                        PositionedDirectional(
+                          start: 8,
+                          top: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                                color: const Color(0x99000000),
+                                borderRadius: BorderRadius.circular(14)),
+                            child: Text('من @${_post.username}',
+                                style: const TextStyle(
+                                    color: Colors.white, fontSize: 12.5)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text('ستظهر في قصتك لمدة 24 ساعة مع ذكر صاحب الصورة.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12.5)),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('إلغاء')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('نشر في قصتي')),
+          ],
+        );
+      },
+    );
+    if (ok != true) return;
+    try {
+      await PostService.shareToStory(_post);
+      _toast('تمت الإضافة إلى قصتك');
+    } catch (error) {
+      _toast('تعذرت الإضافة: $error');
+    }
+  }
 
   /// يغلق الورقة ثم يفتح حوار تعديل النص (نستعمل سياق الـ root لأنه يبقى صالحاً).
   Future<void> _edit() async {
@@ -519,6 +591,12 @@ class _PostShareSheetState extends State<_PostShareSheet> {
               saved ? 'تمت الإزالة من المحفوظات' : 'تم الحفظ',
             ),
           ),
+          if (_post.type == PostType.photo)
+            _item(
+              label: 'أضف إلى قصتي',
+              icon: _icon(Icons.add_circle_outline_rounded),
+              onTap: _addToStory,
+            ),
           if (_mine)
             _item(
               label: 'تعديل',
