@@ -217,7 +217,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
       backgroundColor: context.appColors.surface,
       builder: (sheetContext) => SafeArea(
         child: ListTile(
-          leading: const Icon(Icons.delete_outline_rounded, color: AppColors.brandPurple),
+          leading: Icon(Icons.delete_outline_rounded,
+              color: context.appColors.text),
           title: const Text('حذف التعليق'),
           onTap: () async {
             Navigator.pop(sheetContext);
@@ -443,15 +444,15 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                               insertAtCursor(_text, sticker),
                         );
                       },
-                      icon: const Icon(Icons.emoji_emotions_outlined,
-                          color: AppColors.accent),
+                      icon: Icon(Icons.emoji_emotions_outlined,
+                          color: context.appColors.text),
                     ),
                     IconButton(
                       tooltip: 'إرسال صورة',
                       visualDensity: VisualDensity.compact,
                       onPressed: _sending ? null : _pickImage,
-                      icon: const Icon(Icons.image_outlined,
-                          color: AppColors.accent),
+                      icon: Icon(Icons.image_outlined,
+                          color: context.appColors.text),
                     ),
                     Expanded(
                       child: TextField(
@@ -471,8 +472,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                     const SizedBox(width: 6),
                     IconButton(
                       onPressed: _send,
-                      icon: const Icon(Icons.send_rounded,
-                          color: AppColors.accent),
+                      icon: Icon(Icons.send_rounded,
+                          color: context.appColors.text),
                     ),
                   ],
                 ),
