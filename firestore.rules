@@ -488,6 +488,14 @@ service cloud.firestore {
         && request.auth.uid == uid
         && request.resource.data.username is string
         && request.resource.data.username.matches('^[a-z0-9._]{3,24}$')
+        // اسم المستخدم: إما لم يتغيّر، أو محجوز باسمي في usernames (يمنع أخذ اسم غيري).
+        && (
+          (resource != null
+            && resource.data.get('username', '') == request.resource.data.username)
+          || (existsAfter(/databases/$(database)/documents/usernames/$(request.resource.data.username))
+            && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.username)).data.uid
+              == request.auth.uid)
+        )
         && request.resource.data.name.size() <= 50
         && request.resource.data.bio.size() <= 150
         && request.resource.data.get('website', '') is string
