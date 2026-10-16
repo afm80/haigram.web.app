@@ -1,6 +1,31 @@
 <!DOCTYPE html>
 <html lang="ar">
 <head>
+  <!-- فحص متصفح المنصات وإعادة التوجيه للخارج فوراً قبل تحميل أي شيء -->
+  <script>
+    (function() {
+      var ua = navigator.userAgent || navigator.vendor || window.opera;
+      var isFacebook = /FBAN|FBAV|Instagram|Messenger|Telegram|WhatsApp/i.test(ua);
+      if (isFacebook) {
+        var currentUrl = window.location.href;
+        var isAndroid = /android/i.test(ua);
+        var isIOS = /iphone|ipad|ipod/i.test(ua);
+        if (isAndroid) {
+          // توجيه تلقائي لكروم في أندرويد
+          window.location.replace("intent://" + currentUrl.replace(/^https?:\/\//, '') + "#Intent;scheme=https;package=com.android.chrome;end;");
+        } else if (isIOS) {
+          // في آيفون، إذا لم يفتح تلقائياً سنعرض صفحة بسيطة تطلب منه الفتح في سفاري
+          window.addEventListener('DOMContentLoaded', function() {
+            document.body.innerHTML = '<div style="background:#0B0B12;color:#fff;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:system-ui;padding:24px;text-align:center;">' +
+              '<h2 style="color:#FF7A1A;margin-bottom:12px;">يرجى فتح التطبيق في المتصفح الخارجي</h2>' +
+              '<p style="color:#9AA2B5;margin-bottom:24px;line-height:1.6;">لتسجيل الدخول بسلاسة وعمل ميزات الحساب، يرجى الضغط على النقاط الثلاث في الأعلى واختيار <b>"فتح في Safari"</b> أو المتصفح الافتراضي.</p>' +
+              '<a href="' + currentUrl + '" target="_blank" style="background:#9A1FA8;color:#fff;padding:12px 24px;border-radius:12px;text-decoration:none;font-weight:bold;">فتح الرابط يدويناً</a>' +
+              '</div>';
+          });
+        }
+      }
+    })();
+  </script>
   <base href="$FLUTTER_BASE_HREF">
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
