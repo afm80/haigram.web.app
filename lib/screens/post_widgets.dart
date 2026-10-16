@@ -209,9 +209,35 @@ class _PostCardState extends State<PostCard> {
             icon: const Icon(Icons.more_horiz_rounded),
             color: context.appColors.surfaceHigh,
             onSelected: (v) {
-              if (v == 'link') _copyPostLink();
+              switch (v) {
+                case 'link':
+                  _copyPostLink();
+                case 'edit':
+                  editPostCaption(context, p);
+                case 'delete':
+                  deletePostWithConfirm(context, p);
+              }
             },
             itemBuilder: (_) => [
+              if (p.uid == PostService.uidOrEmpty)
+                PopupMenuItem(
+                  value: 'edit',
+                  child: Row(children: [
+                    const Icon(Icons.edit_outlined, size: 20),
+                    const SizedBox(width: 10),
+                    Text(p.type == PostType.text ? 'تعديل المنشور' : 'تعديل الوصف'),
+                  ]),
+                ),
+              if (p.uid == PostService.uidOrEmpty)
+                PopupMenuItem(
+                  value: 'delete',
+                  child: Row(children: [
+                    Icon(Icons.delete_outline_rounded,
+                        size: 20, color: AppColors.brandPurple),
+                    const SizedBox(width: 10),
+                    const Text('حذف'),
+                  ]),
+                ),
               const PopupMenuItem(
                   value: 'link', child: Text('نسخ رابط المنشور')),
             ],
@@ -1042,37 +1068,155 @@ Future<void> _confirmDeleteShort(BuildContext dialogCtx, Post post) async {
   }
 }
 
-/// تعديل وصف شورتز (من الملف الشخصي لصاحبه).
+/// تعديل وصف شورتز (من الملف الشخصي لصاحبه) بنفس الحوار الواسع.
 Future<void> _editShortCaption(
-    BuildContext rootCtx, Post post, ScaffoldMessengerState messenger) async {
-  final controller = TextEditingController(text: post.caption);
+        BuildContext rootCtx, Post post, ScaffoldMessengerState messenger) =>
+    editPostCaption(rootCtx, post);
+
+/// يوقف أي فيديو يوتيوب مضمّن ويمنحه إطاراً ليُزال من الشاشة؛ مشغّل الويب
+/// (iframe) يبقى فوق الواجهة ويلتقط النقرات، فنزيله قبل فتح أي حوار.
+Future<void> _releaseVideosForDialog() async {
+  stopInlineVideos();
+  await WidgetsBinding.instance.endOfFrame;
+}
+
+/// حوار تعديل واسع لنص المنشور أو وصف الصورة/الفيديو (للمالك فقط).
+Future<void> editPostCaption(BuildContext context, Post post) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final rootCtx = Navigator.of(context, rootNavigator: true).context;
+  final isText = post.type == PostType.text;
+  await _releaseVideosForDialog();
+  if (!rootCtx.mounted) return;
   final result = await showDialog<String>(
     context: rootCtx,
+    barrierDismissible: false,
+    builder: (_) => _EditCaptionDialog(initial: post.caption, isText: isText),
+  );
+  if (result == null || result == post.caption) return;
+  if (isText && !post.hasVideo && result.isEmpty) {
+    messenger.showSnackBar(
+        const SnackBar(content: Text('لا يمكن ترك المنشور فارغاً')));
+    return;
+  }
+  try {
+    await PostService.updateCaption(post, result);
+    messenger.showSnackBar(SnackBar(
+        content: Text('تم تعديل ${isText ? 'المنشور' : 'الوصف'}')));
+  } catch (error) {
+    messenger.showSnackBar(SnackBar(content: Text('تعذر التعديل: $error')));
+  }
+}
+
+/// تأكيد ثم حذف المنشور (للمالك فقط).
+Future<void> deletePostWithConfirm(BuildContext context, Post post) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final rootCtx = Navigator.of(context, rootNavigator: true).context;
+  await _releaseVideosForDialog();
+  if (!rootCtx.mounted) return;
+  final ok = await showDialog<bool>(
+    context: rootCtx,
+    barrierDismissible: false,
     builder: (ctx) => AlertDialog(
-      title: const Text('تعديل الوصف'),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        maxLength: 500,
-        minLines: 1,
-        maxLines: 6,
-        decoration: const InputDecoration(hintText: 'اكتب وصفاً...'),
-      ),
+      title: const Text('حذف المنشور؟'),
+      content: const Text('لا يمكن التراجع عن هذا الإجراء.'),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('إلغاء')),
         TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('حفظ')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('حذف')),
       ],
     ),
   );
-  controller.dispose();
-  if (result == null || result == post.caption) return;
+  if (ok != true) return;
   try {
-    await PostService.updateCaption(post, result);
-    messenger.showSnackBar(const SnackBar(content: Text('تم تعديل الوصف')));
+    await PostService.deletePost(post);
+    messenger.showSnackBar(const SnackBar(content: Text('تم حذف المنشور')));
   } catch (error) {
-    messenger.showSnackBar(SnackBar(content: Text('تعذر التعديل: $error')));
+    messenger.showSnackBar(SnackBar(content: Text('تعذر الحذف: $error')));
+  }
+}
+
+class _EditCaptionDialog extends StatefulWidget {
+  final String initial;
+  final bool isText;
+  const _EditCaptionDialog({required this.initial, required this.isText});
+
+  @override
+  State<_EditCaptionDialog> createState() => _EditCaptionDialogState();
+}
+
+class _EditCaptionDialogState extends State<_EditCaptionDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final size = MediaQuery.sizeOf(context);
+    return Dialog(
+      backgroundColor: colors.surface,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 760,
+          minWidth: size.width > 800 ? 600 : size.width - 24,
+          maxHeight: size.height * 0.85,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                widget.isText ? 'تعديل المنشور' : 'تعديل الوصف',
+                style: const TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 14),
+              Flexible(
+                child: TextField(
+                  controller: _controller,
+                  autofocus: true,
+                  maxLength: 500,
+                  minLines: 8,
+                  maxLines: 16,
+                  keyboardType: TextInputType.multiline,
+                  decoration: InputDecoration(
+                    hintText:
+                        widget.isText ? 'اكتب المنشور...' : 'اكتب وصفاً...',
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('إلغاء')),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                      onPressed: () =>
+                          Navigator.pop(context, _controller.text.trim()),
+                      child: const Text('حفظ')),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
