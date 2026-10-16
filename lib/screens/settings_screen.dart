@@ -175,6 +175,10 @@ class _PrivacySectionState extends State<_PrivacySection> {
           isPrivate: isPrivate,
           hideLikes: hideLikes,
           profileVisits: profileVisits);
+      if (isPrivate != null) {
+        // يزامن حقل الخصوصية على منشوراتي وقصصي (تعتمد عليه قواعد Firestore).
+        await PostService.syncAuthorPrivacy(isPrivate);
+      }
       if (isPrivate == false) {
         // الحساب أصبح عاماً: تُقبل الطلبات المعلّقة تلقائياً.
         await PostService.approveAllFollowRequests();
