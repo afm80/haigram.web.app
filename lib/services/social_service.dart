@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../l10n.dart';
 class Conversation {
   final String id;
   final List<String> participants;
@@ -128,7 +129,7 @@ class SocialNotification {
       id: doc.id,
       type: data['type'] as String,
       actorUid: data['actorUid'] as String,
-      actorUsername: data['actorUsername'] as String? ?? 'مستخدم',
+      actorUsername: data['actorUsername'] as String? ?? tr('مستخدم'),
       postId: data['postId'] as String?,
       commentText: data['commentText'] as String?,
       createdAt: createdAt is Timestamp
@@ -209,7 +210,7 @@ class SocialService {
 
   static Future<void> setBlocked(String otherUid, bool blocked) async {
     if (otherUid.isEmpty || otherUid == _uid) {
-      throw ArgumentError.value(otherUid, 'otherUid', 'مستخدم غير صالح');
+      throw ArgumentError.value(otherUid, 'otherUid', tr('مستخدم غير صالح'));
     }
     final reference = _blockRef(_uid, otherUid);
     if (blocked) {
@@ -257,7 +258,7 @@ class SocialService {
     if (targetUid.isEmpty ||
         targetUid == _uid ||
         !reportReasons.containsKey(reason)) {
-      throw ArgumentError('بلاغ غير صالح');
+      throw ArgumentError(tr('بلاغ غير صالح'));
     }
     await _db.collection('reports').add({
       'type': 'user',
@@ -278,7 +279,7 @@ class SocialService {
         ownerUid.isEmpty ||
         ownerUid == _uid ||
         !reportReasons.containsKey(reason)) {
-      throw ArgumentError('بلاغ غير صالح');
+      throw ArgumentError(tr('بلاغ غير صالح'));
     }
     await _db.collection('reports').add({
       'type': 'post',
@@ -383,10 +384,10 @@ class SocialService {
 
   static Future<String> startConversation(String otherUid) async {
     if (otherUid.isEmpty || otherUid == _uid) {
-      throw ArgumentError.value(otherUid, 'otherUid', 'مستخدم غير صالح');
+      throw ArgumentError.value(otherUid, 'otherUid', tr('مستخدم غير صالح'));
     }
     if (await isBlockedEither(otherUid)) {
-      throw StateError('لا يمكن بدء محادثة مع مستخدم محظور');
+      throw StateError(tr('لا يمكن بدء محادثة مع مستخدم محظور'));
     }
     final participants = [_uid, otherUid]..sort();
     final conversationId =
@@ -400,7 +401,7 @@ class SocialService {
             List<String>.from(snapshot.data()!['participants'] as List);
         if (stored.toSet().difference(participants.toSet()).isNotEmpty ||
             participants.toSet().difference(stored.toSet()).isNotEmpty) {
-          throw StateError('المحادثة لا تخص هذين المستخدمين');
+          throw StateError(tr('المحادثة لا تخص هذين المستخدمين'));
         }
         return;
       }
@@ -419,14 +420,14 @@ class SocialService {
   static Future<void> sendMessage(String conversationId, String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty || trimmed.length > 2000) {
-      throw ArgumentError('يجب أن تكون الرسالة بين حرف واحد و2000 حرف');
+      throw ArgumentError(tr('يجب أن تكون الرسالة بين حرف واحد و2000 حرف'));
     }
     await _sendChatMessage(conversationId, text: trimmed, kind: 'text');
   }
 
   static Future<void> sendSticker(String conversationId, String sticker) async {
     if (sticker.isEmpty || sticker.length > 24) {
-      throw ArgumentError.value(sticker, 'sticker', 'ملصق غير صالح');
+      throw ArgumentError.value(sticker, 'sticker', tr('ملصق غير صالح'));
     }
     await _sendChatMessage(conversationId, text: sticker, kind: 'sticker');
   }
@@ -434,7 +435,7 @@ class SocialService {
   static Future<void> sendImage(
       String conversationId, Uint8List imageBytes) async {
     if (imageBytes.isEmpty || imageBytes.length > 700 * 1024) {
-      throw ArgumentError('حجم الصورة يجب ألا يتجاوز 700 كيلوبايت');
+      throw ArgumentError(tr('حجم الصورة يجب ألا يتجاوز 700 كيلوبايت'));
     }
     await _sendChatMessage(
       conversationId,
@@ -475,10 +476,10 @@ class SocialService {
     final chatSnapshot = snapshots[0];
     final messageSnapshot = snapshots[1];
     if (!chatSnapshot.exists || !messageSnapshot.exists) {
-      throw StateError('الرسالة غير موجودة');
+      throw StateError(tr('الرسالة غير موجودة'));
     }
     if (messageSnapshot.data()?['senderUid'] != _uid) {
-      throw StateError('يمكنك حذف رسائلك فقط');
+      throw StateError(tr('يمكنك حذف رسائلك فقط'));
     }
 
     final batch = _db.batch();
@@ -513,17 +514,17 @@ class SocialService {
     final message = chat.collection('messages').doc();
     final conversation = await chat.get();
     if (!conversation.exists) {
-      throw StateError('المحادثة غير موجودة');
+      throw StateError(tr('المحادثة غير موجودة'));
     }
     final participants =
         List<String>.from(conversation.data()!['participants'] as List);
     if (!participants.contains(_uid)) {
-      throw StateError('لا تملك صلاحية إرسال رسالة في هذه المحادثة');
+      throw StateError(tr('لا تملك صلاحية إرسال رسالة في هذه المحادثة'));
     }
     final otherUid =
         participants.firstWhere((participant) => participant != _uid);
     if (await isBlockedEither(otherUid)) {
-      throw StateError('لا يمكن إرسال الرسائل بعد الحظر');
+      throw StateError(tr('لا يمكن إرسال الرسائل بعد الحظر'));
     }
 
     await _db.runTransaction((transaction) async {
@@ -531,7 +532,7 @@ class SocialService {
       if (!snapshot.exists ||
           !List<String>.from(snapshot.data()!['participants'] as List)
               .contains(_uid)) {
-        throw StateError('لا تملك صلاحية إرسال رسالة في هذه المحادثة');
+        throw StateError(tr('لا تملك صلاحية إرسال رسالة في هذه المحادثة'));
       }
       final messageData = <String, dynamic>{
         'senderUid': _uid,

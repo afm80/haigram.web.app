@@ -12,6 +12,7 @@ import 'package:http/http.dart' as http;
 import 'social_service.dart';
 import 'user_service.dart';
 
+import '../l10n.dart';
 enum PostType { photo, text, story }
 
 class Post {
@@ -74,7 +75,7 @@ class Post {
       type: PostType.values
           .firstWhere((t) => t.name == m['type'], orElse: () => PostType.text),
       uid: m['uid'] ?? '',
-      username: m['username'] ?? 'مستخدم',
+      username: m['username'] ?? tr('مستخدم'),
       name: m['name'] ?? '',
       caption: m['caption'] ?? '',
       mediaUrl: m['mediaUrl'],
@@ -434,11 +435,11 @@ class PostService {
     if (streamed.statusCode != 200) {
       final message = (json['error'] is Map ? json['error']['message'] : null) ??
           'HTTP ${streamed.statusCode}';
-      throw StateError('فشل الرفع إلى Cloudinary: $message');
+      throw StateError(trf('فشل الرفع إلى Cloudinary: {0}', [message]));
     }
     final url = json['secure_url'] as String?;
     if (url == null || url.isEmpty) {
-      throw StateError('لم يُرجع Cloudinary رابط الملف');
+      throw StateError(tr('لم يُرجع Cloudinary رابط الملف'));
     }
     return url;
   }
@@ -538,7 +539,7 @@ class PostService {
   /// إلى الملف نفسه (رابط أو قطع Firestore).
   static Future<void> shareToStory(Post p) {
     if (p.authorPrivate && p.uid != _user.uid) {
-      throw StateError('لا يمكن مشاركة منشور من حساب خاص');
+      throw StateError(tr('لا يمكن مشاركة منشور من حساب خاص'));
     }
     final extra = {
       'sharedFromUid': p.uid,
@@ -550,7 +551,7 @@ class PostService {
       return _create(PostType.story, '', p.videoThumb, mime: 'image/jpeg', extra: extra);
     }
     if (p.type != PostType.photo) {
-      throw StateError('يمكن إضافة الصور والفيديو فقط إلى القصة');
+      throw StateError(tr('يمكن إضافة الصور والفيديو فقط إلى القصة'));
     }
     return _create(PostType.story, '', p.mediaUrl,
         mediaId: p.mediaId, chunks: p.chunks, mime: p.mime, extra: extra);
@@ -581,13 +582,13 @@ class PostService {
       return false;
     }
     if (originalUid == _user.uid) {
-      throw StateError('لا يمكنك إعادة نشر منشورك');
+      throw StateError(tr('لا يمكنك إعادة نشر منشورك'));
     }
     if (p.authorPrivate) {
-      throw StateError('لا يمكن إعادة نشر منشور من حساب خاص');
+      throw StateError(tr('لا يمكن إعادة نشر منشور من حساب خاص'));
     }
     if (p.type == PostType.story) {
-      throw StateError('لا يمكن إعادة نشر القصص');
+      throw StateError(tr('لا يمكن إعادة نشر القصص'));
     }
     await _create(p.type, p.caption, p.mediaUrl,
         mediaId: p.mediaId,
@@ -646,13 +647,13 @@ class PostService {
     required void Function(double) onProgress,
   }) async {
     if (images.length < 2) {
-      throw StateError('الألبوم يحتاج صورتين على الأقل');
+      throw StateError(tr('الألبوم يحتاج صورتين على الأقل'));
     }
     if (images.length > maxAlbumImages) {
-      throw StateError('الحد الأقصى $maxAlbumImages صور');
+      throw StateError(trf('الحد الأقصى {0} صور', [maxAlbumImages]));
     }
     if (!useRemoteMedia) {
-      throw StateError('الألبومات تتطلب تفعيل Cloudinary أو Storage');
+      throw StateError(tr('الألبومات تتطلب تفعيل Cloudinary أو Storage'));
     }
     final urls = <String>[];
     onProgress(0);
@@ -763,11 +764,11 @@ class PostService {
     try {
       postSnapshot = await post.get();
     } on FirebaseException catch (e) {
-      if (_isDenied(e)) throw StateError('المنشور غير متاح');
+      if (_isDenied(e)) throw StateError(tr('المنشور غير متاح'));
       rethrow;
     }
     if (!postSnapshot.exists) {
-      throw StateError('المنشور غير موجود');
+      throw StateError(tr('المنشور غير موجود'));
     }
     final ownerUid = postSnapshot.data()?['uid'] as String?;
     // نسخة على ملف المستخدم لعرضها في تبويب الإعجابات.
@@ -867,7 +868,7 @@ class PostService {
   /// متابعة حقيقية: حساب عام ← متابعة فورية، حساب خاص ← طلب ينتظر موافقة صاحبه.
   static Future<FollowState> follow(String targetUid) async {
     if (targetUid.isEmpty || targetUid == _user.uid) {
-      throw ArgumentError.value(targetUid, 'targetUid', 'مستخدم غير صالح');
+      throw ArgumentError.value(targetUid, 'targetUid', tr('مستخدم غير صالح'));
     }
     // قراءة طازجة من الخادم (دون التخزين المؤقت) لمعرفة هل الحساب خاص الآن.
     final target = await _db.collection('users').doc(targetUid).get();
@@ -1174,7 +1175,7 @@ class PostService {
     Uint8List? imageBytes,
   }) async {
     if (imageBytes != null && (imageBytes.isEmpty || imageBytes.length > 700 * 1024)) {
-      throw ArgumentError('حجم الصورة يجب ألا يتجاوز 700 كيلوبايت');
+      throw ArgumentError(tr('حجم الصورة يجب ألا يتجاوز 700 كيلوبايت'));
     }
     final batch = _db.batch();
     final commentRef = _commentsRef(postId).doc();
@@ -1226,7 +1227,7 @@ class PostService {
         final reference = _commentsRef(postId).doc(commentId);
         final snapshot = await transaction.get(reference);
         if (!snapshot.exists) {
-          throw StateError('التعليق غير موجود');
+          throw StateError(tr('التعليق غير موجود'));
         }
         final likedBy =
             List<String>.from(snapshot.data()?['likedBy'] as List? ?? const []);
@@ -1355,7 +1356,7 @@ class Comment {
     return Comment(
       id: d.id,
       uid: m['uid'] ?? '',
-      username: m['username'] ?? 'مستخدم',
+      username: m['username'] ?? tr('مستخدم'),
       name: m['name'] ?? '',
       text: m['text'] ?? '',
       kind: m['kind'] as String? ?? 'text',

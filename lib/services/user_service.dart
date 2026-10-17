@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/painting.dart';
 
+import '../l10n.dart';
 /// ملف مستخدم: الاسم (يظهر بخط عريض) + اسم المستخدم الفريد (@) + النبذة.
 class AppUser {
   final String uid;
@@ -118,7 +119,7 @@ class UsernameTaken implements Exception {
 class PinLimitReached implements Exception {
   const PinLimitReached();
   @override
-  String toString() => 'يمكنك تثبيت ${UserService.maxPinned} منشورات كحد أقصى';
+  String toString() => trf('يمكنك تثبيت {0} منشورات كحد أقصى', [UserService.maxPinned]);
 }
 
 class UserService {
@@ -137,9 +138,9 @@ class UserService {
 
   /// يعيد رسالة خطأ بالعربية أو null إذا كان الاسم صالحاً.
   static String? validate(String u) {
-    if (u.length < 3) return 'اسم المستخدم 3 أحرف على الأقل';
-    if (u.length > 24) return 'اسم المستخدم 24 حرفاً كحد أقصى';
-    if (!usernameRe.hasMatch(u)) return 'اسم المستخدم: أحرف إنجليزية صغيرة وأرقام و _ و . فقط';
+    if (u.length < 3) return tr('اسم المستخدم 3 أحرف على الأقل');
+    if (u.length > 24) return tr('اسم المستخدم 24 حرفاً كحد أقصى');
+    if (!usernameRe.hasMatch(u)) return tr('اسم المستخدم: أحرف إنجليزية صغيرة وأرقام و _ و . فقط');
     return null;
   }
 
@@ -242,7 +243,7 @@ class UserService {
         continue;
       }
     }
-    throw Exception('تعذر إنشاء اسم مستخدم');
+    throw Exception(tr('تعذر إنشاء اسم مستخدم'));
   }
 
   /// تعديل ملفي الشخصي. [photoB64] = الصورة المرفوعة (null لإزالتها). يرمي [UsernameTaken] إذا كان الاسم محجوزاً.
