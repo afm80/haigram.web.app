@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'firebase_options.dart';
+import 'l10n.dart';
 import 'screens/auth_screen.dart';
 import 'screens/home_shell.dart';
 import 'screens/onboarding_screen.dart';
@@ -166,6 +167,37 @@ class _HaigramAppState extends State<HaigramApp> {
       ? ThemeMode.light
       : ThemeMode.dark;
 
+  @override
+  void initState() {
+    super.initState();
+    AppLang.code.value =
+        widget.preferences.getString('lang') == 'en' ? 'en' : 'ar';
+    AppLang.code.addListener(_onLangChanged);
+  }
+
+  @override
+  void dispose() {
+    AppLang.code.removeListener(_onLangChanged);
+    super.dispose();
+  }
+
+  void _onLangChanged() {
+    widget.preferences.setString('lang', AppLang.code.value);
+    if (!mounted) return;
+    setState(() {});
+    // النصوص تُقرأ عبر tr() دون اشتراك في أي Inherited، فنعيد بناء كل الشاشات
+    // المفتوحة ليظهر تغيير اللغة فوراً دون الخروج من الصفحة الحالية.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      void rebuild(Element el) {
+        el.markNeedsBuild();
+        el.visitChildren(rebuild);
+      }
+
+      (context as Element).visitChildren(rebuild);
+    });
+  }
+
   Future<void> _completeOnboarding() async {
     final saved = await widget.preferences.setBool('onboarding_complete', true);
     if (!saved) throw StateError('Failed to save onboarding preference');
@@ -175,7 +207,7 @@ class _HaigramAppState extends State<HaigramApp> {
   Future<void> _setThemeMode(ThemeMode themeMode) async {
     final saved =
         await widget.preferences.setBool('dark_mode', themeMode == ThemeMode.dark);
-    if (!saved) throw StateError('تعذر حفظ إعداد المظهر');
+    if (!saved) throw StateError(tr('تعذر حفظ إعداد المظهر'));
     if (mounted) setState(() => _themeMode = themeMode);
   }
 
@@ -203,7 +235,7 @@ class _HaigramAppState extends State<HaigramApp> {
           child: child ?? const SizedBox.shrink(),
         );
       },
-      locale: const Locale('ar'),
+      locale: Locale(AppLang.code.value),
       supportedLocales: const [Locale('ar'), Locale('en')],
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
