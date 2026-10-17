@@ -8,6 +8,7 @@ import 'package:image/image.dart' as img;
 import '../services/user_service.dart';
 import '../theme.dart';
 
+import '../l10n.dart';
 /// يفتح شاشة تعديل وتحجيم الصورة الشخصية (تحريك + تكبير بإصبعين/عجلة الفأرة + تدوير)
 /// ويعيد صورة JPEG مربّعة مصغّرة جاهزة للحفظ، أو null عند الإلغاء.
 Future<Uint8List?> cropProfilePhoto(BuildContext context, Uint8List bytes) =>
@@ -23,7 +24,7 @@ void showProfilePhoto(BuildContext context, AppUser user) {
   final image = user.avatarImage;
   if (image == null) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('لا توجد صورة شخصية لهذا الحساب')),
+      SnackBar(content: Text(tr('لا توجد صورة شخصية لهذا الحساب'))),
     );
     return;
   }
@@ -145,7 +146,7 @@ class _CropScreenState extends State<_CropScreen> {
         _error = null;
       });
     } catch (_) {
-      if (mounted) setState(() => _error = 'تعذر قراءة الصورة');
+      if (mounted) setState(() => _error = tr('تعذر قراءة الصورة'));
     }
   }
 
@@ -154,14 +155,14 @@ class _CropScreenState extends State<_CropScreen> {
     setState(() => _busy = true);
     try {
       final decoded = img.decodeImage(_bytes);
-      if (decoded == null) throw StateError('صيغة غير مدعومة');
+      if (decoded == null) throw StateError(tr('صيغة غير مدعومة'));
       final rotated = img.copyRotate(decoded, angle: 90);
       _bytes = Uint8List.fromList(img.encodeJpg(rotated, quality: 92));
       _imageSize = null;
       _controller.value = Matrix4.identity();
       await _decodeSize();
     } catch (e) {
-      if (mounted) setState(() => _error = 'تعذر تدوير الصورة: $e');
+      if (mounted) setState(() => _error = trf('تعذر تدوير الصورة: {0}', [e]));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -174,9 +175,9 @@ class _CropScreenState extends State<_CropScreen> {
       // القص يتم حسابياً من موضع الصورة وتكبيرها، دون التقاط الشاشة،
       // لأن التقاط الشاشة (toImage) لا يعمل في متصفح الجوال/الآيباد.
       final size = _imageSize;
-      if (size == null) throw StateError('الصورة لم تُحمّل بعد');
+      if (size == null) throw StateError(tr('الصورة لم تُحمّل بعد'));
       final decoded = img.decodeImage(_bytes);
-      if (decoded == null) throw StateError('صيغة غير مدعومة');
+      if (decoded == null) throw StateError(tr('صيغة غير مدعومة'));
       final baked = img.bakeOrientation(decoded);
       final scale0 =
           box / (size.width < size.height ? size.width : size.height);
@@ -209,13 +210,13 @@ class _CropScreenState extends State<_CropScreen> {
         out = Uint8List.fromList(img.encodeJpg(rgba, quality: quality));
         quality -= 10;
       } while (out.length > _maxBytes && quality >= 30);
-      if (out.length > _maxBytes) throw StateError('الصورة كبيرة جداً');
+      if (out.length > _maxBytes) throw StateError(tr('الصورة كبيرة جداً'));
       if (mounted) Navigator.of(context).pop(out);
     } catch (e) {
       if (mounted) {
         setState(() {
           _busy = false;
-          _error = 'تعذر قص الصورة: $e';
+          _error = trf('تعذر قص الصورة: {0}', [e]);
         });
       }
     }
@@ -228,7 +229,7 @@ class _CropScreenState extends State<_CropScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: const Text('تعديل الصورة'),
+        title: Text(tr('تعديل الصورة')),
         actions: [
           Padding(
             padding: const EdgeInsetsDirectional.only(end: 8),
@@ -236,7 +237,7 @@ class _CropScreenState extends State<_CropScreen> {
               onPressed: _busy || _imageSize == null
                   ? null
                   : () => _done(_cropBoxSize),
-              child: const Text('تم',
+              child: Text(tr('تم'),
                   style: TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,
@@ -319,10 +320,10 @@ class _CropScreenState extends State<_CropScreen> {
             return Column(
               children: [
                 Expanded(child: Center(child: cropArea)),
-                const Padding(
+                Padding(
                   padding: EdgeInsets.symmetric(horizontal: 24, vertical: 4),
                   child: Text(
-                    'حرّك الصورة بإصبعك، وكبّرها بإصبعين أو بعجلة الفأرة',
+                    tr('حرّك الصورة بإصبعك، وكبّرها بإصبعين أو بعجلة الفأرة'),
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Colors.white70, fontSize: 13),
                   ),
@@ -338,7 +339,7 @@ class _CropScreenState extends State<_CropScreen> {
                   child: Row(
                     children: [
                       IconButton(
-                        tooltip: 'تدوير',
+                        tooltip: tr('تدوير'),
                         onPressed: _busy || size == null ? null : _rotate,
                         icon: const Icon(Icons.rotate_90_degrees_cw_rounded,
                             color: Colors.white, size: 28),
@@ -353,7 +354,7 @@ class _CropScreenState extends State<_CropScreen> {
                             side: const BorderSide(color: Colors.white38),
                             minimumSize: const Size.fromHeight(46),
                           ),
-                          child: const Text('إلغاء'),
+                          child: Text(tr('إلغاء')),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -372,7 +373,7 @@ class _CropScreenState extends State<_CropScreen> {
                                   height: 20,
                                   child: CircularProgressIndicator(
                                       strokeWidth: 2, color: Colors.white))
-                              : const Text('تم'),
+                              : Text(tr('تم')),
                         ),
                       ),
                     ],

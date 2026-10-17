@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../l10n.dart';
 import '../theme.dart';
+import 'language_button.dart';
 
 class OnboardingScreen extends StatefulWidget {
   final Future<void> Function() onComplete;
@@ -51,7 +53,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         setState(() {
           _saving = false;
           _error =
-              'تعذر حفظ إعداد البداية. تحقق من مساحة التخزين ثم حاول مرة أخرى.';
+              tr('تعذر حفظ إعداد البداية. تحقق من مساحة التخزين ثم حاول مرة أخرى.');
         });
       }
     }
@@ -105,7 +107,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         child: _page < _slides.length - 1
                             ? TextButton(
                                 onPressed: _saving ? null : _finish,
-                                child: const Text('تخطي'),
+                                child: Text(tr('تخطي')),
                               )
                             : const SizedBox.shrink(),
                       ),
@@ -123,7 +125,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         ),
                       ],
                     ),
-                    const Expanded(child: SizedBox()),
+                    const Expanded(
+                      child: Align(
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: LanguageButton(),
+                      ),
+                    ),
                   ],
                 ),
                 Expanded(
@@ -168,8 +175,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           height: 22,
                           child: CircularProgressIndicator(strokeWidth: 2))
                       : Text(_page == _slides.length - 1
-                          ? 'ابدأ رحلتك'
-                          : 'التالي'),
+                          ? tr('ابدأ رحلتك')
+                          : tr('التالي')),
                 ),
               ],
             ),
@@ -229,7 +236,7 @@ class _SlideView extends StatelessWidget {
               child: Icon(slide.icon, size: 112, color: Colors.white),
             ),
           const SizedBox(height: 48),
-          Text(slide.title,
+          Text(tr(slide.title),
               textAlign: TextAlign.center,
               style: const TextStyle(
                   fontSize: 25, fontWeight: FontWeight.w800, height: 1.3)),
@@ -237,7 +244,7 @@ class _SlideView extends StatelessWidget {
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 360),
             child: Text(
-              slide.description,
+              tr(slide.description),
               textAlign: TextAlign.center,
               style: TextStyle(
                   color: context.appColors.textDim, fontSize: 16, height: 1.65),

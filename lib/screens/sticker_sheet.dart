@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import 'sticker_data.dart';
 
+import '../l10n.dart';
 /// رابط صورة Twemoji الملوّنة (مفتوحة الترخيص CC-BY 4.0) للإيموجي [emoji].
 /// تظهر بألوانها على كل الأجهزة والمتصفحات دون الاعتماد على خط النظام.
 String stickerImageUrl(String emoji) {
@@ -128,7 +129,7 @@ class _StickerSheetState extends State<_StickerSheet> {
               child: Align(
                 alignment: AlignmentDirectional.centerStart,
                 child: Text(
-                  category.title,
+                  tr(category.title),
                   style: TextStyle(
                     color: colors.textDim,
                     fontSize: 13,

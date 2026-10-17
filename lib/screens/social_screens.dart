@@ -16,6 +16,7 @@ import 'sticker_sheet.dart';
 import 'story_widgets.dart' show StoryViewed, StoryViewer;
 import '../route_state.dart';
 
+import '../l10n.dart';
 /// صندوق البريد (على طريقة تيكتوك): صف الأصدقاء، ثم المتابعون والإعجابات
 /// والتعليقات، ثم المحادثات.
 class InboxScreen extends StatelessWidget {
@@ -27,10 +28,10 @@ class InboxScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: colors.bg,
       appBar: AppBar(
-        title: const Text('صندوق البريد'),
+        title: Text(tr('صندوق البريد')),
         actions: [
           IconButton(
-            tooltip: 'رسالة جديدة',
+            tooltip: tr('رسالة جديدة'),
             onPressed: () => rootNavigatorOf(context).push(
               MaterialPageRoute(builder: (_) => const _FriendsScreen()),
             ),
@@ -52,9 +53,9 @@ class InboxScreen extends StatelessWidget {
                   error: storySnapshot.error,
                 ),
                 const _ActivitySummaryTile(),
-                const Padding(
+                Padding(
                   padding: EdgeInsetsDirectional.fromSTEB(16, 14, 16, 6),
-                  child: Text('المحادثات',
+                  child: Text(tr('المحادثات'),
                       style:
                           TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                 ),
@@ -77,7 +78,7 @@ class InboxScreen extends StatelessWidget {
       return [
         SizedBox(
           height: 240,
-          child: _MessageState(message: 'تعذر تحميل الرسائل\n${snapshot.error}'),
+          child: _MessageState(message: trf('تعذر تحميل الرسائل\n{0}', [snapshot.error])),
         ),
       ];
     }
@@ -91,11 +92,11 @@ class InboxScreen extends StatelessWidget {
     }
     final conversations = snapshot.data!;
     if (conversations.isEmpty) {
-      return const [
+      return [
         SizedBox(
           height: 240,
           child: _MessageState(
-            message: 'لا توجد محادثات بعد\nابدأ محادثة مع أحد أصدقائك',
+            message: tr('لا توجد محادثات بعد\nابدأ محادثة مع أحد أصدقائك'),
             icon: Icons.chat_bubble_outline_rounded,
           ),
         ),
@@ -140,7 +141,7 @@ class InboxScreen extends StatelessWidget {
                 storyIndex >= 0 && StoryViewed.allSeen(stories[storyIndex]),
           ),
           title: Text(
-            user?.displayName ?? 'مستخدم',
+            user?.displayName ?? tr('مستخدم'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontWeight: FontWeight.w700),
@@ -150,8 +151,8 @@ class InboxScreen extends StatelessWidget {
             builder: (context, onlineSnapshot) {
               // المتصل الآن: «نشط الآن» بدل آخر رسالة (كما في تيكتوك).
               if (onlineSnapshot.data == true) {
-                return const Text(
-                  'نشط الآن',
+                return Text(
+                  tr('نشط الآن'),
                   maxLines: 1,
                   style: TextStyle(
                       color: Color(0xFF25D366), fontWeight: FontWeight.w600),
@@ -159,9 +160,9 @@ class InboxScreen extends StatelessWidget {
               }
               return Text(
                 conversation.lastMessage.isEmpty
-                    ? 'ابدأ المحادثة'
+                    ? tr('ابدأ المحادثة')
                     : conversation.lastSenderUid == SocialService.currentUid
-                        ? 'أنت: ${conversation.lastMessage}'
+                        ? trf('أنت: {0}', [conversation.lastMessage])
                         : conversation.lastMessage,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -211,15 +212,15 @@ class _ActivitySummaryTileState extends State<_ActivitySummaryTile> {
         names.add(n.actorUsername);
       }
     }
-    if (names.length == 1) return '@${names[0]} بدأ بمتابعتك';
-    if (names.length == 2) return '@${names[0]} و @${names[1]} يتابعانك';
+    if (names.length == 1) return trf('@{0} بدأ بمتابعتك', [names[0]]);
+    if (names.length == 2) return trf('@{0} و @{1} يتابعانك', [names[0], names[1]]);
     if (names.length > 2) {
-      return '@${names[0]} و @${names[1]} و ${names.length - 2} آخرين يتابعونك';
+      return trf('@{0} و @{1} و {2} آخرين يتابعونك', [names[0], names[1], names.length - 2]);
     }
     if (all.isNotEmpty) {
       return '@${all.first.actorUsername} ${_notificationMessage(all.first)}';
     }
-    return 'لا يوجد نشاط جديد';
+    return tr('لا يوجد نشاط جديد');
   }
 
   @override
@@ -240,7 +241,7 @@ class _ActivitySummaryTileState extends State<_ActivitySummaryTile> {
             backgroundColor: AppColors.brandPurple,
             child: Icon(Icons.bolt_rounded, color: Colors.white, size: 24),
           ),
-          title: const Text('النشاط والمتابعون الجدد',
+          title: Text(tr('النشاط والمتابعون الجدد'),
               style: TextStyle(fontWeight: FontWeight.w700)),
           subtitle: Text(
             _summary(all),
@@ -287,18 +288,18 @@ bool _matchesCategory(SocialNotification n, String type) =>
 String _notificationMessage(SocialNotification notification) {
   switch (notification.type) {
     case 'follow':
-      return 'بدأ بمتابعتك';
+      return tr('بدأ بمتابعتك');
     case 'followRequest':
-      return 'يريد متابعتك';
+      return tr('يريد متابعتك');
     case 'followAccepted':
-      return 'قبل طلب متابعتك';
+      return tr('قبل طلب متابعتك');
     case 'like':
-      return 'أعجب بمنشورك';
+      return tr('أعجب بمنشورك');
     case 'comment':
       final text = notification.commentText;
-      return text == null || text.isEmpty ? 'علّق على منشورك' : 'علّق: $text';
+      return text == null || text.isEmpty ? tr('علّق على منشورك') : trf('علّق: {0}', [text]);
     default:
-      return 'لديك إشعار جديد';
+      return tr('لديك إشعار جديد');
   }
 }
 
@@ -359,7 +360,7 @@ class _FollowingRailState extends State<_FollowingRail> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر فتح المحادثة: $error')),
+          SnackBar(content: Text(trf('تعذر فتح المحادثة: {0}', [error]))),
         );
       }
     }
@@ -375,7 +376,7 @@ class _FollowingRailState extends State<_FollowingRail> {
           if (snapshot.hasError) {
             return Center(
               child: Text(
-                'تعذر تحميل الأشخاص الذين تتابعهم: ${snapshot.error}',
+                trf('تعذر تحميل الأشخاص الذين تتابعهم: {0}', [snapshot.error]),
                 style: TextStyle(color: context.appColors.textDim),
               ),
             );
@@ -396,8 +397,8 @@ class _FollowingRailState extends State<_FollowingRail> {
             return Center(
               child: Text(
                 widget.error == null
-                    ? 'تابع أصدقاءك لتظهر حساباتهم هنا'
-                    : 'تعذر تحميل القصص: ${widget.error}',
+                    ? tr('تابع أصدقاءك لتظهر حساباتهم هنا')
+                    : trf('تعذر تحميل القصص: {0}', [widget.error]),
                 style: TextStyle(color: context.appColors.textDim),
               ),
             );
@@ -518,7 +519,7 @@ class _FriendsScreenState extends State<_FriendsScreen> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر بدء المحادثة: $error')),
+          SnackBar(content: Text(trf('تعذر بدء المحادثة: {0}', [error]))),
         );
       }
     } finally {
@@ -531,22 +532,22 @@ class _FriendsScreenState extends State<_FriendsScreen> {
     final colors = context.appColors;
     return Scaffold(
       backgroundColor: colors.bg,
-      appBar: AppBar(title: const Text('رسالة جديدة')),
+      appBar: AppBar(title: Text(tr('رسالة جديدة'))),
       body: FutureBuilder<List<AppUser>>(
         future: _friends,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return _MessageState(
-                message: 'تعذر تحميل قائمة الأصدقاء\n${snapshot.error}');
+                message: trf('تعذر تحميل قائمة الأصدقاء\n{0}', [snapshot.error]));
           }
           if (!snapshot.hasData) {
             return const AppLoading();
           }
           final friends = snapshot.data!;
           if (friends.isEmpty) {
-            return const _MessageState(
+            return _MessageState(
               message:
-                  'لا يوجد أصدقاء متبادلون بعد\nتابعوا بعضكما لتبدآ المحادثة',
+                  tr('لا يوجد أصدقاء متبادلون بعد\nتابعوا بعضكما لتبدآ المحادثة'),
               icon: Icons.people_outline_rounded,
             );
           }
@@ -639,7 +640,7 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() => _pendingImage = null);
     if (image != null) {
       SocialService.sendImage(widget.conversationId, image)
-          .catchError((Object e) => _showError('تعذر إرسال الصورة', e));
+          .catchError((Object e) => _showError(tr('تعذر إرسال الصورة'), e));
     }
     if (text.isNotEmpty) {
       final sending = isSingleSticker(text)
@@ -647,7 +648,7 @@ class _ChatScreenState extends State<ChatScreen> {
           : SocialService.sendMessage(widget.conversationId, text);
       sending.catchError((Object e) {
         if (mounted && _text.text.isEmpty) _text.text = text;
-        _showError('تعذر إرسال الرسالة', e);
+        _showError(tr('تعذر إرسال الرسالة'), e);
       });
     }
   }
@@ -667,14 +668,14 @@ class _ChatScreenState extends State<ChatScreen> {
       final bytes = await image.readAsBytes();
       if (!mounted) return;
       if (bytes.length > 700 * 1024) {
-        _showError('تعذر إرفاق الصورة', 'حجم الصورة يجب ألا يتجاوز 700 كيلوبايت');
+        _showError(tr('تعذر إرفاق الصورة'), tr('حجم الصورة يجب ألا يتجاوز 700 كيلوبايت'));
         return;
       }
       setState(() => _pendingImage = bytes);
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر إرفاق الصورة: $error')),
+          SnackBar(content: Text(trf('تعذر إرفاق الصورة: {0}', [error]))),
         );
       }
     }
@@ -689,12 +690,12 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             ListTile(
               leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('اختيار من المعرض'),
+              title: Text(tr('اختيار من المعرض')),
               onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
             ),
             ListTile(
               leading: const Icon(Icons.camera_alt_outlined),
-              title: const Text('التقاط صورة'),
+              title: Text(tr('التقاط صورة')),
               onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
             ),
           ],
@@ -714,20 +715,20 @@ class _ChatScreenState extends State<ChatScreen> {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: Text(blocking ? 'حظر المستخدم؟' : 'إلغاء الحظر؟'),
+          title: Text(blocking ? tr('حظر المستخدم؟') : tr('إلغاء الحظر؟')),
           content: Text(
             blocking
-                ? 'لن تتمكن أنت وهذا المستخدم من إرسال الرسائل لبعضكما.'
-                : 'سيتمكن هذا المستخدم من مراسلتك مجدداً.',
+                ? tr('لن تتمكن أنت وهذا المستخدم من إرسال الرسائل لبعضكما.')
+                : tr('سيتمكن هذا المستخدم من مراسلتك مجدداً.'),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('إلغاء'),
+              child: Text(tr('إلغاء')),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text(blocking ? 'حظر' : 'إلغاء الحظر'),
+              child: Text(blocking ? tr('حظر') : tr('إلغاء الحظر')),
             ),
           ],
         ),
@@ -738,13 +739,13 @@ class _ChatScreenState extends State<ChatScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-                content: Text(blocking ? 'تم حظر المستخدم' : 'تم إلغاء الحظر')),
+                content: Text(blocking ? tr('تم حظر المستخدم') : tr('تم إلغاء الحظر'))),
           );
         }
       } catch (error) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('تعذر تحديث الحظر: $error')),
+            SnackBar(content: Text(trf('تعذر تحديث الحظر: {0}', [error]))),
           );
         }
       }
@@ -775,27 +776,27 @@ class _ChatScreenState extends State<ChatScreen> {
               ListTile(
                 leading: const Icon(Icons.delete_forever_rounded,
                     color: AppColors.brandPurple),
-                title: const Text('حذف لدى الجميع'),
-                subtitle: const Text('تُحذف الرسالة من المحادثة عند الطرفين'),
+                title: Text(tr('حذف لدى الجميع')),
+                subtitle: Text(tr('تُحذف الرسالة من المحادثة عند الطرفين')),
                 onTap: () {
                   Navigator.pop(sheetContext);
                   run(
                     () => SocialService.deleteMessage(
                         widget.conversationId, message.id),
-                    'تعذر حذف الرسالة',
+                    tr('تعذر حذف الرسالة'),
                   );
                 },
               ),
             ListTile(
               leading: const Icon(Icons.delete_outline_rounded),
-              title: const Text('حذف لدي فقط'),
-              subtitle: const Text('تبقى الرسالة ظاهرة للطرف الآخر'),
+              title: Text(tr('حذف لدي فقط')),
+              subtitle: Text(tr('تبقى الرسالة ظاهرة للطرف الآخر')),
               onTap: () {
                 Navigator.pop(sheetContext);
                 run(
                   () => SocialService.hideMessageForMe(
                       widget.conversationId, message.id),
-                  'تعذر حذف الرسالة',
+                  tr('تعذر حذف الرسالة'),
                 );
               },
             ),
@@ -815,7 +816,7 @@ class _ChatScreenState extends State<ChatScreen> {
           return Scaffold(
             backgroundColor: colors.bg,
             body: _MessageState(
-                message: 'تعذر تحميل حالة الحظر\n${blockSnapshot.error}'),
+                message: trf('تعذر تحميل حالة الحظر\n{0}', [blockSnapshot.error])),
           );
         }
         final blockState = blockSnapshot.data ??
@@ -844,7 +845,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            user?.displayName ?? 'محادثة',
+                            user?.displayName ?? tr('محادثة'),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -866,15 +867,15 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             actions: [
               PopupMenuButton<String>(
-                tooltip: 'خيارات المحادثة',
+                tooltip: tr('خيارات المحادثة'),
                 onSelected: _selectChatAction,
                 itemBuilder: (context) => [
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'profile',
                     child: ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: Icon(Icons.person_outline),
-                      title: Text('عرض الملف الشخصي'),
+                      title: Text(tr('عرض الملف الشخصي')),
                     ),
                   ),
                   PopupMenuItem(
@@ -885,8 +886,8 @@ class _ChatScreenState extends State<ChatScreen> {
                           ? Icons.person_add_alt_1
                           : Icons.block),
                       title: Text(blockState.blockedByMe
-                          ? 'إلغاء الحظر'
-                          : 'حظر المستخدم'),
+                          ? tr('إلغاء الحظر')
+                          : tr('حظر المستخدم')),
                     ),
                   ),
                 ],
@@ -903,8 +904,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   color: colors.surfaceHigh,
                   child: Text(
                     blockState.blockedByMe
-                        ? 'حظرت هذا المستخدم. ألغِ الحظر لإرسال الرسائل.'
-                        : 'لا يمكنك مراسلة هذا المستخدم.',
+                        ? tr('حظرت هذا المستخدم. ألغِ الحظر لإرسال الرسائل.')
+                        : tr('لا يمكنك مراسلة هذا المستخدم.'),
                     textAlign: TextAlign.center,
                     style: TextStyle(color: colors.textDim),
                   ),
@@ -915,7 +916,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   builder: (context, snapshot) {
                     if (snapshot.hasError) {
                       return _MessageState(
-                          message: 'تعذر تحميل المحادثة\n${snapshot.error}');
+                          message: trf('تعذر تحميل المحادثة\n{0}', [snapshot.error]));
                     }
                     if (!snapshot.hasData) {
                       return const AppLoading();
@@ -924,8 +925,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         .where((m) => !_hidden.contains(m.id))
                         .toList();
                     if (messages.isEmpty) {
-                      return const _MessageState(
-                        message: 'أرسل أول رسالة لبدء المحادثة',
+                      return _MessageState(
+                        message: tr('أرسل أول رسالة لبدء المحادثة'),
                         icon: Icons.waving_hand_outlined,
                       );
                     }
@@ -1083,12 +1084,12 @@ class _ChatScreenState extends State<ChatScreen> {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         IconButton(
-                          tooltip: 'إرسال صورة أو التقاط صورة',
+                          tooltip: tr('إرسال صورة أو التقاط صورة'),
                           onPressed: _sending ? null : _chooseImageSource,
                           icon: const Icon(Icons.add_circle_outline_rounded),
                         ),
                         IconButton(
-                          tooltip: 'الملصقات والرموز التعبيرية',
+                          tooltip: tr('الملصقات والرموز التعبيرية'),
                           onPressed: () {
                             FocusScope.of(context).unfocus();
                             showStickerSheet(
@@ -1107,8 +1108,8 @@ class _ChatScreenState extends State<ChatScreen> {
                             maxLength: 2000,
                             textInputAction: TextInputAction.send,
                             onSubmitted: (_) => _send(),
-                            decoration: const InputDecoration(
-                              hintText: 'اكتب رسالة...',
+                            decoration: InputDecoration(
+                              hintText: tr('اكتب رسالة...'),
                               counterText: '',
                               isDense: true,
                             ),
@@ -1153,7 +1154,7 @@ Future<void> _openNotification(
   if (!notification.read) {
     SocialService.markNotificationRead(notification.id).catchError((Object e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('تعذر تحديث الإشعار: $e')),
+        SnackBar(content: Text(trf('تعذر تحديث الإشعار: {0}', [e]))),
       );
     });
   }
@@ -1168,7 +1169,7 @@ Future<void> _openNotification(
   final postId = notification.postId;
   if (postId == null || postId.isEmpty) {
     messenger.showSnackBar(
-      const SnackBar(content: Text('تعذر فتح هذا الإشعار')),
+      SnackBar(content: Text(tr('تعذر فتح هذا الإشعار'))),
     );
     return;
   }
@@ -1178,14 +1179,14 @@ Future<void> _openNotification(
     post = await PostService.postById(postId);
   } catch (error) {
     messenger.showSnackBar(
-      SnackBar(content: Text('تعذر فتح المنشور: $error')),
+      SnackBar(content: Text(trf('تعذر فتح المنشور: {0}', [error]))),
     );
     return;
   }
   if (!context.mounted) return;
   if (post == null) {
     messenger.showSnackBar(
-      const SnackBar(content: Text('هذا المنشور لم يعد متاحاً')),
+      SnackBar(content: Text(tr('هذا المنشور لم يعد متاحاً'))),
     );
     return;
   }
@@ -1217,7 +1218,7 @@ class NotificationsScreen extends StatelessWidget {
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر تحديث الإشعارات: $error')),
+          SnackBar(content: Text(trf('تعذر تحديث الإشعارات: {0}', [error]))),
         );
       }
     }
@@ -1229,11 +1230,11 @@ class NotificationsScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: colors.bg,
       appBar: AppBar(
-        title: Text(title ?? 'الإشعارات'),
+        title: Text(title ?? tr('الإشعارات')),
         actions: [
           TextButton(
             onPressed: () => _markAllRead(context),
-            child: const Text('قراءة الكل'),
+            child: Text(tr('قراءة الكل')),
           ),
         ],
       ),
@@ -1242,7 +1243,7 @@ class NotificationsScreen extends StatelessWidget {
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return _MessageState(
-                message: 'تعذر تحميل الإشعارات\n${snapshot.error}');
+                message: trf('تعذر تحميل الإشعارات\n{0}', [snapshot.error]));
           }
           if (!snapshot.hasData) {
             return const AppLoading();
@@ -1253,8 +1254,8 @@ class NotificationsScreen extends StatelessWidget {
                   .where((n) => _matchesCategory(n, type!))
                   .toList();
           if (notifications.isEmpty) {
-            return const _MessageState(
-              message: 'لا توجد إشعارات بعد',
+            return _MessageState(
+              message: tr('لا توجد إشعارات بعد'),
               icon: Icons.notifications_none_rounded,
             );
           }
@@ -1326,7 +1327,7 @@ const _arabicMonths = [
 ];
 
 String _shortDate(DateTime d) {
-  final base = '${d.day} ${_arabicMonths[d.month - 1]}';
+  final base = '${d.day} ${tr(_arabicMonths[d.month - 1])}';
   return d.year == DateTime.now().year ? base : '$base ${d.year}';
 }
 
@@ -1340,7 +1341,7 @@ class ActivityScreen extends StatelessWidget {
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر تحديث الإشعارات: $error')),
+          SnackBar(content: Text(trf('تعذر تحديث الإشعارات: {0}', [error]))),
         );
       }
     }
@@ -1354,10 +1355,10 @@ class ActivityScreen extends StatelessWidget {
       child: Scaffold(
         backgroundColor: colors.bg,
         appBar: AppBar(
-          title: const Text('النشاط'),
+          title: Text(tr('النشاط')),
           actions: [
             IconButton(
-              tooltip: 'زيارات الملف الشخصي',
+              tooltip: tr('زيارات الملف الشخصي'),
               icon: const Icon(Icons.visibility_outlined),
               onPressed: () => rootNavigatorOf(context).push(
                 appRoute('profileVisits', const {},
@@ -1366,11 +1367,11 @@ class ActivityScreen extends StatelessWidget {
             ),
             TextButton(
               onPressed: () => _markAllRead(context),
-              child: const Text('قراءة الكل'),
+              child: Text(tr('قراءة الكل')),
             ),
           ],
-          bottom: const TabBar(
-            tabs: [Tab(text: 'متابعون جدد'), Tab(text: 'النشاط')],
+          bottom: TabBar(
+            tabs: [Tab(text: tr('متابعون جدد')), Tab(text: tr('النشاط'))],
           ),
         ),
         body: StreamBuilder<List<SocialNotification>>(
@@ -1378,7 +1379,7 @@ class ActivityScreen extends StatelessWidget {
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               return _MessageState(
-                  message: 'تعذر تحميل الإشعارات\n${snapshot.error}');
+                  message: trf('تعذر تحميل الإشعارات\n{0}', [snapshot.error]));
             }
             if (!snapshot.hasData) {
               return const AppLoading();
@@ -1429,7 +1430,7 @@ class _NewFollowersTabState extends State<_NewFollowersTab> {
                 Icon(Icons.person_add_alt_1_rounded,
                     size: 50, color: colors.textDim),
                 const SizedBox(height: 12),
-                Text('لا يوجد متابعون جدد',
+                Text(tr('لا يوجد متابعون جدد'),
                     style: TextStyle(color: colors.textDim)),
               ],
             ),
@@ -1446,7 +1447,7 @@ class _NewFollowersTabState extends State<_NewFollowersTab> {
           _NotificationTile(
             notification: n,
             subtitle:
-                '${n.type == 'followRequest' ? 'يريد متابعتك' : 'بدأ في متابعتك'}. ${_shortDate(n.createdAt)}',
+                '${n.type == 'followRequest' ? tr('يريد متابعتك') : tr('بدأ في متابعتك')}. ${_shortDate(n.createdAt)}',
             trailing: n.type == 'followRequest'
                 ? _FollowRequestActions(requesterUid: n.actorUid)
                 : _FollowBackButton(uid: n.actorUid),
@@ -1460,7 +1461,7 @@ class _NewFollowersTabState extends State<_NewFollowersTab> {
                   : Icons.keyboard_arrow_down_rounded,
               color: colors.textDim,
             ),
-            label: Text(_expanded ? 'عرض أقل' : 'عرض الكل',
+            label: Text(_expanded ? tr('عرض أقل') : tr('عرض الكل'),
                 style: TextStyle(color: colors.textDim)),
           ),
         const _SuggestedAccounts(),
@@ -1477,8 +1478,8 @@ class _ActivityListTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty) {
-      return const _MessageState(
-        message: 'لا يوجد نشاط جديد',
+      return _MessageState(
+        message: tr('لا يوجد نشاط جديد'),
         icon: Icons.notifications_none_rounded,
       );
     }
@@ -1504,8 +1505,8 @@ class _FollowBackButton extends StatelessWidget {
         case FollowState.none:
           final result = await PostService.follow(uid);
           if (result == FollowState.requested) {
-            messenger.showSnackBar(const SnackBar(
-                content: Text('تم إرسال طلب المتابعة، بانتظار الموافقة')));
+            messenger.showSnackBar(SnackBar(
+                content: Text(tr('تم إرسال طلب المتابعة، بانتظار الموافقة'))));
           }
         case FollowState.requested:
           await PostService.cancelFollowRequest(uid);
@@ -1514,7 +1515,7 @@ class _FollowBackButton extends StatelessWidget {
       }
     } catch (error) {
       messenger.showSnackBar(
-          SnackBar(content: Text('تعذر تنفيذ الإجراء: $error')));
+          SnackBar(content: Text(trf('تعذر تنفيذ الإجراء: {0}', [error]))));
     }
   }
 
@@ -1545,9 +1546,9 @@ class _FollowBackButton extends StatelessWidget {
           ),
           child: Text(
             switch (state) {
-              FollowState.none => 'رد المتابعة',
-              FollowState.requested => 'تم إرسال الطلب',
-              FollowState.following => 'مراسلة',
+              FollowState.none => tr('رد المتابعة'),
+              FollowState.requested => tr('تم إرسال الطلب'),
+              FollowState.following => tr('مراسلة'),
             },
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
           ),
@@ -1600,7 +1601,7 @@ class _SuggestedAccountsState extends State<_SuggestedAccounts> {
     final ranked = counts.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     final candidates = <String, String>{
-      for (final e in ranked) e.key: 'أشخاص قد تعرفهم',
+      for (final e in ranked) e.key: tr('أشخاص قد تعرفهم'),
     };
 
     // 2) تكملة من أصحاب أحدث الصور.
@@ -1609,7 +1610,7 @@ class _SuggestedAccountsState extends State<_SuggestedAccounts> {
         final recent = await PostService.stream(PostType.photo, limit: 30).first;
         for (final post in recent) {
           if (!known.contains(post.uid) && !candidates.containsKey(post.uid)) {
-            candidates[post.uid] = 'مقترح لك';
+            candidates[post.uid] = tr('مقترح لك');
           }
         }
       } catch (_) {}
@@ -1648,7 +1649,7 @@ class _SuggestedAccountsState extends State<_SuggestedAccounts> {
           children: [
             Padding(
               padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 4),
-              child: Text('حسابات مقترحة',
+              child: Text(tr('حسابات مقترحة'),
                   style: TextStyle(
                       color: colors.textDim, fontWeight: FontWeight.w700)),
             ),
@@ -1706,7 +1707,7 @@ class _SuggestionCard extends StatelessWidget {
                 ),
               ),
               IconButton(
-                tooltip: 'إخفاء',
+                tooltip: tr('إخفاء'),
                 onPressed: onDismiss,
                 icon: Icon(Icons.close_rounded, color: colors.textDim),
               ),
@@ -1787,7 +1788,7 @@ class ProfileVisitsScreen extends StatelessWidget {
       await UserService.updatePrivacy(profileVisits: value);
     } catch (error) {
       messenger.showSnackBar(
-          SnackBar(content: Text('تعذر حفظ الإعداد: $error')));
+          SnackBar(content: Text(trf('تعذر حفظ الإعداد: {0}', [error]))));
     }
   }
 
@@ -1803,7 +1804,7 @@ class ProfileVisitsScreen extends StatelessWidget {
         return Scaffold(
           backgroundColor: colors.bg,
           appBar: AppBar(
-            title: const Text('زيارات الملف الشخصي'),
+            title: Text(tr('زيارات الملف الشخصي')),
             actions: [
               Switch(
                 value: enabled,
@@ -1814,9 +1815,9 @@ class ProfileVisitsScreen extends StatelessWidget {
             ],
           ),
           body: !enabled
-              ? const _MessageState(
+              ? _MessageState(
                   message:
-                      'ميزة زيارات الملف الشخصي متوقفة.\nشغّلها من الزر بالأعلى لتعرف من زار ملفك ويرى الآخرون زياراتك لهم.',
+                      tr('ميزة زيارات الملف الشخصي متوقفة.\nشغّلها من الزر بالأعلى لتعرف من زار ملفك ويرى الآخرون زياراتك لهم.'),
                   icon: Icons.visibility_off_outlined,
                 )
               : StreamBuilder<List<ProfileVisit>>(
@@ -1824,7 +1825,7 @@ class ProfileVisitsScreen extends StatelessWidget {
                   builder: (context, snapshot) {
                     if (snapshot.hasError) {
                       return _MessageState(
-                          message: 'تعذر تحميل الزيارات\n${snapshot.error}');
+                          message: trf('تعذر تحميل الزيارات\n{0}', [snapshot.error]));
                     }
                     if (!snapshot.hasData) {
                       return const AppLoading();
@@ -1840,7 +1841,7 @@ class ProfileVisitsScreen extends StatelessWidget {
                                 Icon(Icons.visibility_outlined,
                                     size: 50, color: colors.textDim),
                                 const SizedBox(height: 12),
-                                Text('لا توجد زيارات بعد',
+                                Text(tr('لا توجد زيارات بعد'),
                                     style: TextStyle(color: colors.textDim)),
                               ],
                             ),
@@ -1849,7 +1850,7 @@ class ProfileVisitsScreen extends StatelessWidget {
                         Padding(
                           padding: const EdgeInsets.all(16),
                           child: Text(
-                            'قد تظهر هنا أسماء الأشخاص الذين شغّلوا سجل الزيارات لديهم وزاروا ملفك الشخصي خلال آخر 30 يوماً. بإمكانهم أيضاً رؤية متى تزور ملفهم الشخصي. يمكنك إيقاف هذا الإعداد في أي وقت.',
+                            tr('قد تظهر هنا أسماء الأشخاص الذين شغّلوا سجل الزيارات لديهم وزاروا ملفك الشخصي خلال آخر 30 يوماً. بإمكانهم أيضاً رؤية متى تزور ملفهم الشخصي. يمكنك إيقاف هذا الإعداد في أي وقت.'),
                             textAlign: TextAlign.center,
                             style: TextStyle(
                                 color: colors.textDim,
@@ -1886,7 +1887,7 @@ class _VisitTile extends StatelessWidget {
             profile: user,
             radius: 24,
           ),
-          title: Text(user?.displayName ?? 'مستخدم',
+          title: Text(user?.displayName ?? tr('مستخدم'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontWeight: FontWeight.w700)),
@@ -1926,7 +1927,7 @@ class _FollowRequestActionsState extends State<_FollowRequestActions> {
     try {
       await action();
     } catch (error) {
-      messenger.showSnackBar(SnackBar(content: Text('تعذر تنفيذ الإجراء: $error')));
+      messenger.showSnackBar(SnackBar(content: Text(trf('تعذر تنفيذ الإجراء: {0}', [error]))));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1939,7 +1940,7 @@ class _FollowRequestActionsState extends State<_FollowRequestActions> {
       stream: _pending,
       builder: (context, snapshot) {
         if (snapshot.data != true) {
-          return Text('تمت المعالجة',
+          return Text(tr('تمت المعالجة'),
               style: TextStyle(color: colors.textDim, fontSize: 12));
         }
         return Row(
@@ -1956,7 +1957,7 @@ class _FollowRequestActionsState extends State<_FollowRequestActions> {
                 minimumSize: const Size(0, 34),
                 padding: const EdgeInsets.symmetric(horizontal: 12),
               ),
-              child: const Text('قبول', style: TextStyle(fontSize: 12)),
+              child: Text(tr('قبول'), style: TextStyle(fontSize: 12)),
             ),
             const SizedBox(width: 6),
             OutlinedButton(
@@ -1968,7 +1969,7 @@ class _FollowRequestActionsState extends State<_FollowRequestActions> {
                 minimumSize: const Size(0, 34),
                 padding: const EdgeInsets.symmetric(horizontal: 12),
               ),
-              child: const Text('رفض', style: TextStyle(fontSize: 12)),
+              child: Text(tr('رفض'), style: TextStyle(fontSize: 12)),
             ),
           ],
         );

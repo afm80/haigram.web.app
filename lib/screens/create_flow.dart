@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../services/post_service.dart';
 import '../theme.dart';
 
+import '../l10n.dart';
 enum CreateKind { post, story, video }
 
 /// حدود الرفع للحفاظ على مجانية الخدمة.
@@ -14,9 +15,9 @@ int get maxPhotoBytes =>
     PostService.useRemoteMedia ? 3 * 1024 * 1024 : 3 * 1024 * 1024;
 
 String _kindTitle(CreateKind k) => switch (k) {
-      CreateKind.post => 'منشور جديد',
-      CreateKind.story => 'قصة جديدة',
-      CreateKind.video => 'فيديو جديد',
+      CreateKind.post => tr('منشور جديد'),
+      CreateKind.story => tr('قصة جديدة'),
+      CreateKind.video => tr('فيديو جديد'),
     };
 
 /// يفتح شاشة الإنشاء (كاميرا أو ملفات الجهاز) للنوع المطلوب.
@@ -83,7 +84,7 @@ void showCreateSheet(BuildContext context) {
                     borderRadius: BorderRadius.circular(2))),
             Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('إنشاء',
+              child: Text(tr('إنشاء'),
                   style: TextStyle(
                       color: colors.text,
                       fontSize: 16,
@@ -95,9 +96,9 @@ void showCreateSheet(BuildContext context) {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Row(
                 children: [
-                  tile('منشور', CreateKind.post),
-                  tile('قصة', CreateKind.story),
-                  tile('فيديو', CreateKind.video),
+                  tile(tr('منشور'), CreateKind.post),
+                  tile(tr('قصة'), CreateKind.story),
+                  tile(tr('فيديو'), CreateKind.video),
                 ],
               ),
             ),
@@ -140,7 +141,7 @@ Future<PickedMedia?> pickMedia(
       imageQuality: 60);
   if (f == null) return null;
   final bytes = await f.readAsBytes();
-  if (bytes.length > maxPhotoBytes) throw MediaError('الصورة كبيرة جداً');
+  if (bytes.length > maxPhotoBytes) throw MediaError(tr('الصورة كبيرة جداً'));
   return PickedMedia(bytes: bytes, ext: 'jpg', mime: 'image/jpeg', name: f.name);
 }
 
@@ -157,7 +158,7 @@ Future<(List<PickedMedia>, bool)> pickAlbumMedia(
   for (final f in files.take(max)) {
     final bytes = await f.readAsBytes();
     if (bytes.length > maxPhotoBytes) {
-      throw MediaError('إحدى الصور كبيرة جداً');
+      throw MediaError(tr('إحدى الصور كبيرة جداً'));
     }
     out.add(PickedMedia(
         bytes: bytes, ext: 'jpg', mime: 'image/jpeg', name: f.name));
@@ -198,7 +199,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
         if (truncated) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text(
-                  'الحد الأقصى ${PostService.maxAlbumImages} صور، تم أخذ أول ${PostService.maxAlbumImages}')));
+                  trf('الحد الأقصى {0} صور، تم أخذ أول {1}', [PostService.maxAlbumImages, PostService.maxAlbumImages]))));
         }
         Navigator.of(context).pushReplacement(MaterialPageRoute(
             builder: (_) => ComposeScreen(
@@ -221,7 +222,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
     } on MediaError catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
-      if (mounted) setState(() => _error = 'تعذر فتح الكاميرا أو الملفات: $e');
+      if (mounted) setState(() => _error = trf('تعذر فتح الكاميرا أو الملفات: {0}', [e]));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -276,8 +277,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
                             Text(
                               (kind == CreateKind.post &&
                                       PostService.useRemoteMedia)
-                                  ? 'التقط صورة أو اختر حتى ${PostService.maxAlbumImages} صور من ملفاتك'
-                                  : 'التقط صورة أو اختر من ملفاتك',
+                                  ? trf('التقط صورة أو اختر حتى {0} صور من ملفاتك', [PostService.maxAlbumImages])
+                                  : tr('التقط صورة أو اختر من ملفاتك'),
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                   fontSize: 16, color: colors.text),
@@ -301,7 +302,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  _sideButton(Icons.photo_library_rounded, 'ملفات الجهاز',
+                  _sideButton(Icons.photo_library_rounded, tr('ملفات الجهاز'),
                       () => _pick(ImageSource.gallery)),
                   GestureDetector(
                     onTap: () => _pick(ImageSource.camera),
@@ -409,13 +410,13 @@ class _ComposeScreenState extends State<ComposeScreen> {
       setState(() {
         _images.addAll(picked);
         _error = truncated
-            ? 'الحد الأقصى ${PostService.maxAlbumImages} صور'
+            ? trf('الحد الأقصى {0} صور', [PostService.maxAlbumImages])
             : null;
       });
     } on MediaError catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
-      if (mounted) setState(() => _error = 'تعذر اختيار الصور: $e');
+      if (mounted) setState(() => _error = trf('تعذر اختيار الصور: {0}', [e]));
     }
   }
 
@@ -432,15 +433,15 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
   String get _hint => switch (widget.kind) {
         CreateKind.post =>
-          _textOnly ? 'بماذا تفكر؟ أضف #هاشتاق' : 'اكتب وصفاً...',
-        CreateKind.story => 'أضف نصاً للقصة (اختياري)',
-        CreateKind.video => 'أضف وصفاً للفيديو (اختياري)',
+          _textOnly ? tr('بماذا تفكر؟ أضف #هاشتاق') : tr('اكتب وصفاً...'),
+        CreateKind.story => tr('أضف نصاً للقصة (اختياري)'),
+        CreateKind.video => tr('أضف وصفاً للفيديو (اختياري)'),
       };
 
   Future<void> _publish() async {
     final caption = _caption.text.trim();
     if (_textOnly && !_isVideoKind) {
-      setState(() => _error = 'أضف صورة أو رابط فيديو أولاً');
+      setState(() => _error = tr('أضف صورة أو رابط فيديو أولاً'));
       return;
     }
     final link = _allowVideo ? _videoLink.text.trim() : '';
@@ -448,16 +449,16 @@ class _ComposeScreenState extends State<ComposeScreen> {
     if (link.isNotEmpty) {
       videoId = PostService.youtubeId(link);
       if (videoId == null) {
-        setState(() => _error = 'رابط يوتيوب غير صالح');
+        setState(() => _error = tr('رابط يوتيوب غير صالح'));
         return;
       }
     }
     if (_isVideoKind && videoId == null) {
-      setState(() => _error = 'أضف رابط فيديو يوتيوب أولاً');
+      setState(() => _error = tr('أضف رابط فيديو يوتيوب أولاً'));
       return;
     }
     if (_textOnly && caption.isEmpty && videoId == null) {
-      setState(() => _error = 'اكتب شيئاً أو أضف رابط فيديو أولاً');
+      setState(() => _error = tr('اكتب شيئاً أو أضف رابط فيديو أولاً'));
       return;
     }
     setState(() {
@@ -501,13 +502,13 @@ class _ComposeScreenState extends State<ComposeScreen> {
       nav.popUntil((r) => r.isFirst);
       messenger.showSnackBar(SnackBar(
           content: Text(widget.kind == CreateKind.story
-              ? 'تمت إضافة القصة'
-              : 'تم النشر بنجاح')));
+              ? tr('تمت إضافة القصة')
+              : tr('تم النشر بنجاح'))));
     } catch (e) {
       if (mounted) {
         setState(() {
           _busy = false;
-          _error = 'فشل النشر: $e';
+          _error = trf('فشل النشر: {0}', [e]);
         });
       }
     }
@@ -566,7 +567,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
           TextButton(
             onPressed: _busy ? null : _publish,
             child: Text(
-              widget.kind == CreateKind.story ? 'إضافة' : 'مشاركة',
+              widget.kind == CreateKind.story ? tr('إضافة') : tr('مشاركة'),
               style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
             ),
           ),
@@ -598,7 +599,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
                   onPressed: _busy ? null : _addMore,
                   icon: const Icon(Icons.add_photo_alternate_outlined),
                   label: Text(
-                      'إضافة صور (${_images.length}/${PostService.maxAlbumImages})'),
+                      trf('إضافة صور ({0}/{1})', [_images.length, PostService.maxAlbumImages])),
                 ),
               ),
             const SizedBox(height: 16),
@@ -610,8 +611,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
                 textDirection: TextDirection.ltr,
                 decoration: InputDecoration(
                   hintText: _isVideoKind
-                      ? 'الصق رابط فيديو يوتيوب'
-                      : 'رابط فيديو يوتيوب (اختياري)',
+                      ? tr('الصق رابط فيديو يوتيوب')
+                      : tr('رابط فيديو يوتيوب (اختياري)'),
                   prefixIcon: const Icon(Icons.play_circle_outline_rounded),
                 ),
               ),
@@ -641,15 +642,15 @@ class _ComposeScreenState extends State<ComposeScreen> {
               Text(
                   _progress > 0
                       ? '${(_progress * 100).toStringAsFixed(0)}%'
-                      : 'جارٍ الرفع...',
+                      : tr('جارٍ الرفع...'),
                   textAlign: TextAlign.center),
             ],
             const SizedBox(height: 16),
             FilledButton(
               onPressed: _busy ? null : _publish,
               child: Text(widget.kind == CreateKind.story
-                  ? 'إضافة إلى قصتك'
-                  : 'مشاركة'),
+                  ? tr('إضافة إلى قصتك')
+                  : tr('مشاركة')),
             ),
           ],
         ),

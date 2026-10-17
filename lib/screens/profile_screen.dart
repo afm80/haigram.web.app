@@ -20,6 +20,7 @@ import 'social_screens.dart' show ChatScreen;
 import 'story_widgets.dart' show StoryViewer;
 import '../route_state.dart';
 
+import '../l10n.dart';
 /// تبويب الملف الشخصي للمستخدم الحالي.
 class ProfileScreen extends StatelessWidget {
   final ThemeMode themeMode;
@@ -123,13 +124,13 @@ class _ProfileViewState extends State<ProfileView> {
               padding: const EdgeInsets.all(32),
               child: EmptyState(
                   icon: Icons.person_off_outlined,
-                  title: 'تعذر تحميل الملف الشخصي',
+                  title: tr('تعذر تحميل الملف الشخصي'),
                   message: '${userSnap.error}'),
             );
           }
-          return const Padding(
+          return Padding(
               padding: EdgeInsets.all(48),
-              child: AppLoading(message: 'جارٍ تحميل الملف الشخصي...'));
+              child: AppLoading(message: tr('جارٍ تحميل الملف الشخصي...')));
         }
         if (widget.isMe) return _body(context, user, _Access.open);
         return StreamBuilder<ChatBlockState>(
@@ -160,20 +161,20 @@ class _ProfileViewState extends State<ProfileView> {
 
   Widget _accessMessage(_Access access) => switch (access) {
         _Access.loading => const AppLoading(),
-        _Access.privateLocked => const EmptyState(
+        _Access.privateLocked => EmptyState(
             icon: Icons.lock_outline_rounded,
-            title: 'هذا الحساب خاص',
+            title: tr('هذا الحساب خاص'),
             message:
-                'أرسل طلب متابعة، وعند موافقة صاحب الحساب ستشاهد منشوراته ومقاطعه.',
+                tr('أرسل طلب متابعة، وعند موافقة صاحب الحساب ستشاهد منشوراته ومقاطعه.'),
           ),
-        _Access.blockedByMe => const EmptyState(
+        _Access.blockedByMe => EmptyState(
             icon: Icons.block,
-            title: 'لقد حظرت هذا الحساب',
-            message: 'لن يتمكن من مراسلتك. يمكنك إلغاء الحظر من الزر أعلاه.',
+            title: tr('لقد حظرت هذا الحساب'),
+            message: tr('لن يتمكن من مراسلتك. يمكنك إلغاء الحظر من الزر أعلاه.'),
           ),
-        _Access.blockedByThem => const EmptyState(
+        _Access.blockedByThem => EmptyState(
             icon: Icons.person_off_outlined,
-            title: 'هذا الحساب غير متاح',
+            title: tr('هذا الحساب غير متاح'),
           ),
         _Access.open => const SizedBox.shrink(),
       };
@@ -385,7 +386,7 @@ class _Header extends StatelessWidget {
                       ),
                     );
                 return Tooltip(
-                  message: 'الإعدادات',
+                  message: tr('الإعدادات'),
                   child: Material(
                     type: MaterialType.transparency,
                     child: InkWell(
@@ -421,13 +422,13 @@ class _Header extends StatelessWidget {
                   children: [
                     Expanded(
                       child: _LiveStat(
-                        label: 'منشورات',
+                        label: tr('منشورات'),
                         load: () => PostService.countPosts(uid),
                       ),
                     ),
                     Expanded(
                       child: _LiveStat(
-                        label: 'متابعين',
+                        label: tr('متابعين'),
                         load: () => PostService.countFollowers(uid),
                         onTap: (isMe || access == _Access.open)
                             ? () => _showFollowSheet(context, uid, 0)
@@ -436,7 +437,7 @@ class _Header extends StatelessWidget {
                     ),
                     Expanded(
                       child: _LiveStat(
-                        label: 'أتابعه',
+                        label: tr('أتابعه'),
                         load: () => PostService.countFollowing(uid),
                         onTap: (isMe || access == _Access.open)
                             ? () => _showFollowSheet(context, uid, 1)
@@ -512,10 +513,10 @@ class _Header extends StatelessWidget {
     try {
       final uri = Uri.parse(url);
       if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-        messenger.showSnackBar(const SnackBar(content: Text('تعذر فتح الرابط')));
+        messenger.showSnackBar(SnackBar(content: Text(tr('تعذر فتح الرابط'))));
       }
     } catch (_) {
-      messenger.showSnackBar(const SnackBar(content: Text('تعذر فتح الرابط')));
+      messenger.showSnackBar(SnackBar(content: Text(tr('تعذر فتح الرابط'))));
     }
   }
 
@@ -620,7 +621,7 @@ class _Header extends StatelessWidget {
         Expanded(
           child: _pillButton(
               context,
-              'تعديل الملف الشخصي',
+              tr('تعديل الملف الشخصي'),
               () => rootNavigatorOf(context).push(appRoute(
                   'editProfile',
                   const {},
@@ -630,7 +631,7 @@ class _Header extends StatelessWidget {
         Expanded(
           child: _pillButton(
             context,
-            'مشاركة الملف الشخصي',
+            tr('مشاركة الملف الشخصي'),
             () => _showProfileShareSheet(context, u),
           ),
         ),
@@ -641,13 +642,13 @@ class _Header extends StatelessWidget {
   Widget _otherButtons(BuildContext context, AppUser u) {
     if (access == _Access.blockedByThem) return const SizedBox.shrink();
     if (access == _Access.blockedByMe) {
-      return _pillButton(context, 'إلغاء الحظر', () async {
+      return _pillButton(context, tr('إلغاء الحظر'), () async {
         final messenger = ScaffoldMessenger.of(context);
         try {
           await SocialService.setBlocked(uid, false);
         } catch (error) {
           messenger.showSnackBar(
-            SnackBar(content: Text('تعذر إلغاء الحظر: $error')),
+            SnackBar(content: Text(trf('تعذر إلغاء الحظر: {0}', [error]))),
           );
         }
       });
@@ -662,7 +663,7 @@ class _Header extends StatelessWidget {
           width: 42,
           height: 42,
           child: IconButton(
-            tooltip: 'مشاركة الملف الشخصي',
+            tooltip: tr('مشاركة الملف الشخصي'),
             style: IconButton.styleFrom(
               backgroundColor: context.appColors.surfaceHigh,
               foregroundColor: context.appColors.text,
@@ -724,17 +725,17 @@ class FollowActionButton extends StatelessWidget {
         case FollowState.requested:
           await PostService.cancelFollowRequest(uid);
           messenger.showSnackBar(
-              const SnackBar(content: Text('تم إلغاء طلب المتابعة')));
+              SnackBar(content: Text(tr('تم إلغاء طلب المتابعة'))));
         case FollowState.none:
           final result = await PostService.follow(uid);
           if (result == FollowState.requested) {
-            messenger.showSnackBar(const SnackBar(
-                content: Text('تم إرسال طلب المتابعة، بانتظار الموافقة')));
+            messenger.showSnackBar(SnackBar(
+                content: Text(tr('تم إرسال طلب المتابعة، بانتظار الموافقة'))));
           }
       }
     } catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text('تعذر تحديث المتابعة: $error')),
+        SnackBar(content: Text(trf('تعذر تحديث المتابعة: {0}', [error]))),
       );
     }
   }
@@ -746,7 +747,7 @@ class FollowActionButton extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Text(
-            'تعذر تحميل حالة المتابعة',
+            tr('تعذر تحميل حالة المتابعة'),
             style: TextStyle(color: context.appColors.textDim, fontSize: 11),
           );
         }
@@ -774,9 +775,9 @@ class FollowActionButton extends StatelessWidget {
         );
         final label = Text(
           switch (state) {
-            FollowState.following => 'إلغاء المتابعة',
-            FollowState.requested => 'تم إرسال الطلب',
-            FollowState.none => 'متابعة',
+            FollowState.following => tr('إلغاء المتابعة'),
+            FollowState.requested => tr('تم إرسال الطلب'),
+            FollowState.none => tr('متابعة'),
           },
           style: TextStyle(
               fontSize: compact ? 14 : 15, fontWeight: FontWeight.w600),
@@ -844,8 +845,8 @@ class _MessageActionButtonState extends State<_MessageActionButton> {
               ),
             )
           : const Icon(Icons.chat_bubble_outline_rounded, size: 18),
-      label: const Text(
-        'مراسلة',
+      label: Text(
+        tr('مراسلة'),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -877,7 +878,7 @@ Future<void> openChatWith(BuildContext context, String uid) async {
     );
   } catch (error) {
     messenger.showSnackBar(
-      SnackBar(content: Text('تعذر فتح المحادثة: $error')),
+      SnackBar(content: Text(trf('تعذر فتح المحادثة: {0}', [error]))),
     );
   }
 }
@@ -905,13 +906,13 @@ class _ProfileShareSheetState extends State<_ProfileShareSheet> {
     await Clipboard.setData(ClipboardData(text: widget.user.link));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم نسخ رابط الملف الشخصي')),
+      SnackBar(content: Text(tr('تم نسخ رابط الملف الشخصي'))),
     );
   }
 
   Uri _shareUri(String platform) {
     final link = widget.user.link;
-    final text = 'شاهد ملف @${widget.user.username} على Haigram';
+    final text = trf('شاهد ملف @{0} على Haigram', [widget.user.username]);
     return switch (platform) {
       'whatsapp' => Uri.https('wa.me', '/', {'text': '$text $link'}),
       'telegram' => Uri.https(
@@ -939,11 +940,11 @@ class _ProfileShareSheetState extends State<_ProfileShareSheet> {
         _shareUri(platform),
         mode: LaunchMode.externalApplication,
       );
-      if (!opened) throw StateError('تعذر فتح تطبيق المشاركة');
+      if (!opened) throw StateError(tr('تعذر فتح تطبيق المشاركة'));
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذرت المشاركة: $error')),
+          SnackBar(content: Text(trf('تعذرت المشاركة: {0}', [error]))),
         );
       }
     }
@@ -956,17 +957,17 @@ class _ProfileShareSheetState extends State<_ProfileShareSheet> {
       final conversationId = await SocialService.startConversation(friend.uid);
       await SocialService.sendMessage(
         conversationId,
-        'شاهد ملف @${widget.user.username} على Haigram\n${widget.user.link}',
+        trf('شاهد ملف @{0} على Haigram\n{1}', [widget.user.username, widget.user.link]),
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('تمت مشاركة الملف مع @${friend.username}')),
+        SnackBar(content: Text(trf('تمت مشاركة الملف مع @{0}', [friend.username]))),
       );
       Navigator.of(context).pop();
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذرت مشاركة الملف: $error')),
+          SnackBar(content: Text(trf('تعذرت مشاركة الملف: {0}', [error]))),
         );
       }
     } finally {
@@ -1031,7 +1032,7 @@ class _ProfileShareSheetState extends State<_ProfileShareSheet> {
               ),
               const SizedBox(height: 16),
               Text(
-                'مشاركة الملف الشخصي',
+                tr('مشاركة الملف الشخصي'),
                 style:
                     TextStyle(color: colors.text, fontWeight: FontWeight.w700),
               ),
@@ -1066,19 +1067,19 @@ class _ProfileShareSheetState extends State<_ProfileShareSheet> {
                 runSpacing: 4,
                 children: [
                   _socialOption(
-                    'واتساب',
+                    tr('واتساب'),
                     Icons.chat_rounded,
                     const Color(0xFF25D366),
                     () => _shareExternally('whatsapp'),
                   ),
                   _socialOption(
-                    'تلغرام',
+                    tr('تلغرام'),
                     Icons.send_rounded,
                     const Color(0xFF229ED9),
                     () => _shareExternally('telegram'),
                   ),
                   _socialOption(
-                    'فيسبوك',
+                    tr('فيسبوك'),
                     Icons.facebook,
                     const Color(0xFF1877F2),
                     () => _shareExternally('facebook'),
@@ -1090,7 +1091,7 @@ class _ProfileShareSheetState extends State<_ProfileShareSheet> {
                     () => _shareExternally('x'),
                   ),
                   _socialOption(
-                    'نسخ الرابط',
+                    tr('نسخ الرابط'),
                     Icons.copy_rounded,
                     colors.surfaceHigh,
                     _copyLink,
@@ -1101,7 +1102,7 @@ class _ProfileShareSheetState extends State<_ProfileShareSheet> {
               Align(
                 alignment: AlignmentDirectional.centerStart,
                 child: Text(
-                  'إرسال إلى الأصدقاء',
+                  tr('إرسال إلى الأصدقاء'),
                   style: TextStyle(
                       color: colors.text, fontWeight: FontWeight.w700),
                 ),
@@ -1114,7 +1115,7 @@ class _ProfileShareSheetState extends State<_ProfileShareSheet> {
                     if (snapshot.hasError) {
                       return Center(
                         child: Text(
-                          'تعذر تحميل الأصدقاء\n${snapshot.error}',
+                          trf('تعذر تحميل الأصدقاء\n{0}', [snapshot.error]),
                           textAlign: TextAlign.center,
                           style: TextStyle(color: colors.textDim),
                         ),
@@ -1127,7 +1128,7 @@ class _ProfileShareSheetState extends State<_ProfileShareSheet> {
                     if (friends.isEmpty) {
                       return Center(
                         child: Text(
-                          'ستظهر هنا الحسابات التي تتابعك وتتابعها.',
+                          tr('ستظهر هنا الحسابات التي تتابعك وتتابعها.'),
                           textAlign: TextAlign.center,
                           style: TextStyle(color: colors.textDim),
                         ),
@@ -1202,17 +1203,17 @@ class _FollowSheet extends StatelessWidget {
                 decoration: BoxDecoration(
                     color: context.appColors.textDim,
                     borderRadius: BorderRadius.circular(2))),
-            const TabBar(tabs: [Tab(text: 'متابعين'), Tab(text: 'أتابعه')]),
+            TabBar(tabs: [Tab(text: tr('متابعين')), Tab(text: tr('أتابعه'))]),
             Expanded(
               child: TabBarView(
                 children: [
                   _UserList(
                       loader: () => PostService.followerIdsOnce(uid),
-                      empty: 'لا يوجد متابعون بعد',
+                      empty: tr('لا يوجد متابعون بعد'),
                       outerContext: outerContext),
                   _UserList(
                       loader: () => PostService.followingIdsOnce(uid),
-                      empty: 'لا يتابع أحداً بعد',
+                      empty: tr('لا يتابع أحداً بعد'),
                       outerContext: outerContext),
                 ],
               ),
@@ -1252,8 +1253,8 @@ class _UserListState extends State<_UserList> {
         Padding(
           padding: const EdgeInsets.all(12),
           child: TextField(
-            decoration: const InputDecoration(
-                hintText: 'بحث', prefixIcon: Icon(Icons.search_rounded)),
+            decoration: InputDecoration(
+                hintText: tr('بحث'), prefixIcon: Icon(Icons.search_rounded)),
             onChanged: (v) => setState(() => _q = v.trim().toLowerCase()),
           ),
         ),
@@ -1263,7 +1264,7 @@ class _UserListState extends State<_UserList> {
             builder: (context, snap) {
               if (snap.hasError)
                 return Center(
-                    child: Text('تعذر التحميل\n${snap.error}',
+                    child: Text(trf('تعذر التحميل\n{0}', [snap.error]),
                         textAlign: TextAlign.center));
               if (!snap.hasData)
                 return const AppLoading();
@@ -1359,7 +1360,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       final Uint8List? bytes = await cropProfilePhoto(context, original);
       if (bytes == null) return;
       if (bytes.length > 150 * 1024) {
-        setState(() => _error = 'الصورة كبيرة جداً، جرّب صورة أخرى');
+        setState(() => _error = tr('الصورة كبيرة جداً، جرّب صورة أخرى'));
         return;
       }
       setState(() {
@@ -1367,7 +1368,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         _error = null;
       });
     } catch (e) {
-      setState(() => _error = 'تعذر اختيار الصورة: $e');
+      setState(() => _error = trf('تعذر اختيار الصورة: {0}', [e]));
     }
   }
 
@@ -1384,7 +1385,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             const SizedBox(height: 8),
             ListTile(
               leading: const Icon(Icons.photo_camera_outlined),
-              title: const Text('التقاط صورة'),
+              title: Text(tr('التقاط صورة')),
               onTap: () {
                 Navigator.pop(ctx);
                 _pickPhoto(ImageSource.camera);
@@ -1392,7 +1393,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('اختيار من ملفات الجهاز'),
+              title: Text(tr('اختيار من ملفات الجهاز')),
               onTap: () {
                 Navigator.pop(ctx);
                 _pickPhoto(ImageSource.gallery);
@@ -1402,7 +1403,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ListTile(
                 leading: const Icon(Icons.delete_outline_rounded,
                     color: AppColors.accent2),
-                title: const Text('إزالة الصورة'),
+                title: Text(tr('إزالة الصورة')),
                 onTap: () {
                   Navigator.pop(ctx);
                   setState(() => _photoB64 = null);
@@ -1461,7 +1462,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           ),
         ),
         TextButton(
-            onPressed: _photoMenu, child: const Text('تغيير الصورة الشخصية')),
+            onPressed: _photoMenu, child: Text(tr('تغيير الصورة الشخصية'))),
       ],
     );
   }
@@ -1475,7 +1476,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
     final website = UserService.normalizeWebsite(_website.text);
     if (website == null) {
-      setState(() => _error = 'الرابط غير صالح، مثال: example.com');
+      setState(() => _error = tr('الرابط غير صالح، مثال: example.com'));
       return;
     }
     setState(() {
@@ -1493,12 +1494,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     } on UsernameTaken {
       setState(() {
         _busy = false;
-        _error = 'اسم المستخدم محجوز، اختر اسماً آخر';
+        _error = tr('اسم المستخدم محجوز، اختر اسماً آخر');
       });
     } catch (e) {
       setState(() {
         _busy = false;
-        _error = 'تعذر الحفظ: $e';
+        _error = trf('تعذر الحفظ: {0}', [e]);
       });
     }
   }
@@ -1507,7 +1508,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('تعديل الملف الشخصي'),
+        title: Text(tr('تعديل الملف الشخصي')),
       ),
       body: SafeArea(
         child: ListView(
@@ -1515,15 +1516,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           children: [
             _photoPicker(),
             const SizedBox(height: 12),
-            Text('الاسم', style: TextStyle(color: context.appColors.textDim)),
+            Text(tr('الاسم'), style: TextStyle(color: context.appColors.textDim)),
             const SizedBox(height: 6),
             TextField(
                 controller: _name,
                 maxLength: 50,
-                decoration: const InputDecoration(
-                    hintText: 'اسمك كما يظهر لمتابعيك', counterText: '')),
+                decoration: InputDecoration(
+                    hintText: tr('اسمك كما يظهر لمتابعيك'), counterText: '')),
             const SizedBox(height: 16),
-            Text('اسم المستخدم',
+            Text(tr('اسم المستخدم'),
                 style: TextStyle(color: context.appColors.textDim)),
             const SizedBox(height: 6),
             TextField(
@@ -1536,21 +1537,21 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text('أحرف إنجليزية صغيرة وأرقام و _ و . (3 إلى 24 حرفاً)',
+              child: Text(tr('أحرف إنجليزية صغيرة وأرقام و _ و . (3 إلى 24 حرفاً)'),
                   style: TextStyle(
                       color: context.appColors.textDim, fontSize: 12)),
             ),
             const SizedBox(height: 16),
-            Text('النبذة', style: TextStyle(color: context.appColors.textDim)),
+            Text(tr('النبذة'), style: TextStyle(color: context.appColors.textDim)),
             const SizedBox(height: 6),
             TextField(
                 controller: _bio,
                 minLines: 3,
                 maxLines: 5,
                 maxLength: 150,
-                decoration: const InputDecoration(hintText: 'عرّف بنفسك')),
+                decoration: InputDecoration(hintText: tr('عرّف بنفسك'))),
             const SizedBox(height: 16),
-            Text('الرابط', style: TextStyle(color: context.appColors.textDim)),
+            Text(tr('الرابط'), style: TextStyle(color: context.appColors.textDim)),
             const SizedBox(height: 6),
             TextField(
               controller: _website,
@@ -1576,7 +1577,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('حفظ')),
+                    : Text(tr('حفظ'))),
           ],
         ),
       ),
@@ -1651,7 +1652,7 @@ class _LiveStatState extends State<_LiveStat> {
       number = Text(_compact(_value!), style: numberStyle);
     } else if (_error != null) {
       number = Tooltip(
-        message: 'تعذر تحميل الإحصائية: $_error',
+        message: trf('تعذر تحميل الإحصائية: {0}', [_error]),
         child: const Text('—', style: numberStyle),
       );
     } else {
@@ -1739,10 +1740,10 @@ void _showPinSheet(BuildContext context, Post post, bool pinned) {
           const SizedBox(height: 8),
           ListTile(
             leading: Icon(pinned ? Icons.push_pin_outlined : Icons.push_pin),
-            title: Text(pinned ? 'إلغاء التثبيت' : 'تثبيت في أعلى الملف'),
+            title: Text(pinned ? tr('إلغاء التثبيت') : tr('تثبيت في أعلى الملف')),
             subtitle: pinned
                 ? null
-                : Text('حتى ${UserService.maxPinned} منشورات أو مقاطع',
+                : Text(trf('حتى {0} منشورات أو مقاطع', [UserService.maxPinned]),
                     style: TextStyle(color: colors.textDim, fontSize: 12)),
             onTap: () async {
               Navigator.of(sheetContext).pop();
@@ -1752,7 +1753,7 @@ void _showPinSheet(BuildContext context, Post post, bool pinned) {
                 messenger.showSnackBar(SnackBar(
                   content: Text(error is PinLimitReached
                       ? '$error'
-                      : 'تعذر تحديث التثبيت: $error'),
+                      : trf('تعذر تحديث التثبيت: {0}', [error])),
                 ));
               }
             },
@@ -1821,7 +1822,7 @@ class _PostsTabState extends State<_PostsTab> {
       builder: (context, snap) {
         if (snap.hasError) {
           return Center(
-              child: Text('تعذر التحميل\n${snap.error}',
+              child: Text(trf('تعذر التحميل\n{0}', [snap.error]),
                   textAlign: TextAlign.center));
         }
         if (!snap.hasData) return const AppLoading();
@@ -1866,46 +1867,46 @@ class _PostsTabState extends State<_PostsTab> {
       case _ProfileTabKind.grid:
         return EmptyState(
           icon: Icons.photo_library_outlined,
-          title: me ? 'ابدأ بأول منشور' : 'لا توجد منشورات بعد',
+          title: me ? tr('ابدأ بأول منشور') : tr('لا توجد منشورات بعد'),
           message: me
-              ? 'شارك صورة وستظهر هنا في ملفك.'
-              : 'ستظهر صور هذا الحساب هنا.',
+              ? tr('شارك صورة وستظهر هنا في ملفك.')
+              : tr('ستظهر صور هذا الحساب هنا.'),
           action: me
-              ? const _CreateButton(
-                  label: 'أضف أول منشور', kind: CreateKind.post)
+              ? _CreateButton(
+                  label: tr('أضف أول منشور'), kind: CreateKind.post)
               : null,
         );
       case _ProfileTabKind.shorts:
         return EmptyState(
           icon: Icons.smart_display_outlined,
-          title: me ? 'ابدأ بأول Short' : 'لا توجد Shorts بعد',
+          title: me ? tr('ابدأ بأول Short') : tr('لا توجد Shorts بعد'),
           message: me
-              ? 'شارك رابط Short من يوتيوب وسيظهر هنا في ملفك.'
-              : 'ستظهر Shorts هذا الحساب هنا.',
+              ? tr('شارك رابط Short من يوتيوب وسيظهر هنا في ملفك.')
+              : tr('ستظهر Shorts هذا الحساب هنا.'),
           action: me
-              ? const _CreateButton(
-                  label: 'أضف أول Short', kind: CreateKind.video)
+              ? _CreateButton(
+                  label: tr('أضف أول Short'), kind: CreateKind.video)
               : null,
         );
       case _ProfileTabKind.videos:
         return EmptyState(
           icon: Icons.videocam_outlined,
-          title: me ? 'ابدأ بأول فيديو' : 'لا توجد فيديوهات بعد',
+          title: me ? tr('ابدأ بأول فيديو') : tr('لا توجد فيديوهات بعد'),
           message: me
-              ? 'شارك رابط فيديو من يوتيوب وسيظهر هنا في ملفك.'
-              : 'ستظهر فيديوهات هذا الحساب هنا.',
+              ? tr('شارك رابط فيديو من يوتيوب وسيظهر هنا في ملفك.')
+              : tr('ستظهر فيديوهات هذا الحساب هنا.'),
           action: me
-              ? const _CreateButton(
-                  label: 'أضف أول فيديو', kind: CreateKind.video)
+              ? _CreateButton(
+                  label: tr('أضف أول فيديو'), kind: CreateKind.video)
               : null,
         );
       case _ProfileTabKind.reposts:
         return EmptyState(
           icon: Icons.repeat_rounded,
-          title: me ? 'لم تعد نشر شيئاً بعد' : 'لا توجد إعادة نشر بعد',
+          title: me ? tr('لم تعد نشر شيئاً بعد') : tr('لا توجد إعادة نشر بعد'),
           message: me
-              ? 'ما تعيد نشره من منشورات الآخرين سيظهر هنا.'
-              : 'ستظهر هنا المنشورات التي أعاد هذا الحساب نشرها.',
+              ? tr('ما تعيد نشره من منشورات الآخرين سيظهر هنا.')
+              : tr('ستظهر هنا المنشورات التي أعاد هذا الحساب نشرها.'),
         );
     }
   }
@@ -2042,15 +2043,15 @@ class _SavedGrid extends StatelessWidget {
       builder: (context, snap) {
         if (snap.hasError)
           return Center(
-              child: Text('تعذر التحميل\n${snap.error}',
+              child: Text(trf('تعذر التحميل\n{0}', [snap.error]),
                   textAlign: TextAlign.center));
         if (!snap.hasData) return const AppLoading();
         final list = snap.data!;
         if (list.isEmpty) {
-          return const EmptyState(
+          return EmptyState(
               icon: Icons.bookmark_border_rounded,
-              title: 'قائمتك المحفوظة فارغة',
-              message: 'احفظ المنشورات التي تريد الرجوع إليها لاحقاً.');
+              title: tr('قائمتك المحفوظة فارغة'),
+              message: tr('احفظ المنشورات التي تريد الرجوع إليها لاحقاً.'));
         }
         return _PostGrid(list: list);
       },
@@ -2077,19 +2078,18 @@ class _ProfileMoreMenuState extends State<_ProfileMoreMenu> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(blocking ? 'حظر هذا الحساب؟' : 'إلغاء الحظر؟'),
+        title: Text(blocking ? tr('حظر هذا الحساب؟') : tr('إلغاء الحظر؟')),
         content: Text(blocking
-            ? 'لن يتمكن من مراسلتك أو رؤية منشوراتك في ملفك، وسيتم إلغاء '
-                'متابعتك له. يمكنك إلغاء الحظر في أي وقت.'
-            : 'سيتمكن من مراسلتك مجدداً إذا كنتما تتابعان بعضكما.'),
+            ? tr('لن يتمكن من مراسلتك أو رؤية منشوراتك في ملفك، وسيتم إلغاء متابعتك له. يمكنك إلغاء الحظر في أي وقت.')
+            : tr('سيتمكن من مراسلتك مجدداً إذا كنتما تتابعان بعضكما.')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('إلغاء'),
+            child: Text(tr('إلغاء')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(blocking ? 'حظر' : 'إلغاء الحظر'),
+            child: Text(blocking ? tr('حظر') : tr('إلغاء الحظر')),
           ),
         ],
       ),
@@ -2100,11 +2100,11 @@ class _ProfileMoreMenuState extends State<_ProfileMoreMenu> {
       await SocialService.setBlocked(widget.uid, blocking);
       PostService.notifyStatsChanged();
       messenger.showSnackBar(
-        SnackBar(content: Text(blocking ? 'تم حظر الحساب' : 'تم إلغاء الحظر')),
+        SnackBar(content: Text(blocking ? tr('تم حظر الحساب') : tr('تم إلغاء الحظر'))),
       );
     } catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text('تعذر تنفيذ العملية: $error')),
+        SnackBar(content: Text(trf('تعذر تنفيذ العملية: {0}', [error]))),
       );
     }
   }
@@ -2126,7 +2126,7 @@ class _ProfileMoreMenuState extends State<_ProfileMoreMenu> {
               padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
               child: Align(
                 alignment: AlignmentDirectional.centerStart,
-                child: Text('إبلاغ عن هذا الحساب',
+                child: Text(tr('إبلاغ عن هذا الحساب'),
                     style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -2138,24 +2138,24 @@ class _ProfileMoreMenuState extends State<_ProfileMoreMenu> {
               child: Align(
                 alignment: AlignmentDirectional.centerStart,
                 child: Text(
-                    'اختر السبب الأقرب. لن يعرف صاحب الحساب أنك من أبلغ.',
+                    tr('اختر السبب الأقرب. لن يعرف صاحب الحساب أنك من أبلغ.'),
                     style: TextStyle(fontSize: 12, color: colors.textDim)),
               ),
             ),
             for (final reason in SocialService.reportReasons.entries)
               ListTile(
-                title: Text(reason.value),
+                title: Text(tr(reason.value)),
                 trailing: const Icon(Icons.chevron_left_rounded),
                 onTap: () async {
                   Navigator.of(sheetContext).pop();
                   try {
                     await SocialService.reportUser(widget.uid, reason.key);
                     messenger.showSnackBar(
-                      const SnackBar(content: Text('تم إرسال البلاغ، شكراً لك')),
+                      SnackBar(content: Text(tr('تم إرسال البلاغ، شكراً لك'))),
                     );
                   } catch (error) {
                     messenger.showSnackBar(
-                      SnackBar(content: Text('تعذر إرسال البلاغ: $error')),
+                      SnackBar(content: Text(trf('تعذر إرسال البلاغ: {0}', [error]))),
                     );
                   }
                 },
@@ -2174,7 +2174,7 @@ class _ProfileMoreMenuState extends State<_ProfileMoreMenu> {
       builder: (context, snapshot) {
         final blockedByMe = snapshot.data?.blockedByMe ?? false;
         return PopupMenuButton<String>(
-          tooltip: 'المزيد',
+          tooltip: tr('المزيد'),
           icon: const Icon(Icons.more_vert_rounded),
           onSelected: (value) {
             if (value == 'report') {
@@ -2190,15 +2190,15 @@ class _ProfileMoreMenuState extends State<_ProfileMoreMenu> {
                 Icon(blockedByMe ? Icons.lock_open_rounded : Icons.block,
                     size: 20),
                 const SizedBox(width: 12),
-                Text(blockedByMe ? 'إلغاء الحظر' : 'حظر'),
+                Text(blockedByMe ? tr('إلغاء الحظر') : tr('حظر')),
               ]),
             ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'report',
               child: Row(children: [
                 Icon(Icons.flag_outlined, size: 20),
                 SizedBox(width: 12),
-                Text('إبلاغ'),
+                Text(tr('إبلاغ')),
               ]),
             ),
           ],

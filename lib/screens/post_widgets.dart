@@ -14,12 +14,13 @@ import 'explore_screen.dart' show ExploreSearchScreen;
 import 'share_sheet.dart';
 import 'yt_embed_stub.dart' if (dart.library.html) 'yt_embed_web.dart';
 
+import '../l10n.dart';
 String timeAgo(DateTime t) {
   final d = DateTime.now().difference(t);
-  if (d.inMinutes < 1) return 'الآن';
-  if (d.inMinutes < 60) return 'قبل ${d.inMinutes} د';
-  if (d.inHours < 24) return 'قبل ${d.inHours} س';
-  return 'قبل ${d.inDays} يوم';
+  if (d.inMinutes < 1) return tr('الآن');
+  if (d.inMinutes < 60) return trf('قبل {0} د', [d.inMinutes]);
+  if (d.inHours < 24) return trf('قبل {0} س', [d.inHours]);
+  return trf('قبل {0} يوم', [d.inDays]);
 }
 
 /// منشور بتصميم إنستغرام: رأس + وسائط + أزرار + إعجابات + وصف + تعليقات.
@@ -56,7 +57,7 @@ class _PostCardState extends State<PostCard> {
     try {
       await PostService.hidePost(p.id);
     } catch (error) {
-      messenger.showSnackBar(SnackBar(content: Text('تعذر الإخفاء: $error')));
+      messenger.showSnackBar(SnackBar(content: Text(trf('تعذر الإخفاء: {0}', [error]))));
     }
   }
 
@@ -65,7 +66,7 @@ class _PostCardState extends State<PostCard> {
         ClipboardData(text: PostService.postLink(widget.post)));
     if (mounted)
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('تم نسخ رابط المنشور')));
+          .showSnackBar(SnackBar(content: Text(tr('تم نسخ رابط المنشور'))));
   }
 
   @override
@@ -171,7 +172,7 @@ class _PostCardState extends State<PostCard> {
           builder: (context, liked, count, toggle) => count > 0
               ? Padding(
                   padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
-                  child: Text('$count إعجاب',
+                  child: Text(trf('{0} إعجاب', [count]),
                       style: TextStyle(
                           color: colors.text, fontWeight: FontWeight.w700)),
                 )
@@ -194,8 +195,8 @@ class _PostCardState extends State<PostCard> {
             onTap: () => showCommentsSheet(context, p),
             child: Text(
               p.comments > 0
-                  ? 'عرض كل ${p.comments} تعليقات'
-                  : 'أضف تعليقاً...',
+                  ? trf('عرض كل {0} تعليقات', [p.comments])
+                  : tr('أضف تعليقاً...'),
               style: TextStyle(color: context.appColors.textDim, fontSize: 14),
             ),
           ),
@@ -232,7 +233,7 @@ class _PostCardState extends State<PostCard> {
             const SizedBox(width: 6),
             Expanded(
               child: Text(
-                  'أعاد @${p.username} نشر منشور @${p.repostedFromUsername}',
+                  trf('أعاد @{0} نشر منشور @{1}', [p.username, p.repostedFromUsername]),
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: dim, fontSize: 12.5)),
             ),
@@ -247,10 +248,10 @@ class _PostCardState extends State<PostCard> {
     try {
       final posted = await PostService.toggleRepost(widget.post);
       messenger.showSnackBar(SnackBar(
-          content: Text(posted ? 'تمت إعادة النشر' : 'تم إلغاء إعادة النشر')));
+          content: Text(posted ? tr('تمت إعادة النشر') : tr('تم إلغاء إعادة النشر'))));
     } catch (error) {
       final text =
-          error is StateError ? error.message : 'تعذرت العملية: $error';
+          error is StateError ? error.message : trf('تعذرت العملية: {0}', [error]);
       messenger.showSnackBar(SnackBar(content: Text(text)));
     }
   }
@@ -295,21 +296,21 @@ class _PostCardState extends State<PostCard> {
               }
             },
             itemBuilder: (_) => [
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'link',
                 child: Row(children: [
                   Icon(Icons.link_rounded, size: 20),
                   SizedBox(width: 10),
-                  Text('نسخ رابط المنشور'),
+                  Text(tr('نسخ رابط المنشور')),
                 ]),
               ),
               if (p.uid != PostService.uidOrEmpty)
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'hide',
                   child: Row(children: [
                     Icon(Icons.visibility_off_outlined, size: 20),
                     SizedBox(width: 10),
-                    Text('غير مهتم'),
+                    Text(tr('غير مهتم')),
                   ]),
                 ),
               if (p.uid != PostService.uidOrEmpty)
@@ -319,16 +320,16 @@ class _PostCardState extends State<PostCard> {
                     Icon(Icons.flag_outlined,
                         size: 20, color: AppColors.brandPurple),
                     const SizedBox(width: 10),
-                    const Text('إبلاغ'),
+                    Text(tr('إبلاغ')),
                   ]),
                 ),
               if (p.uid == PostService.uidOrEmpty)
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'edit',
                   child: Row(children: [
                     Icon(Icons.edit_outlined, size: 20),
                     SizedBox(width: 10),
-                    Text('تعديل المنشور'),
+                    Text(tr('تعديل المنشور')),
                   ]),
                 ),
               if (p.uid == PostService.uidOrEmpty)
@@ -338,7 +339,7 @@ class _PostCardState extends State<PostCard> {
                     Icon(Icons.delete_outline_rounded,
                         size: 20, color: AppColors.brandPurple),
                     const SizedBox(width: 10),
-                    const Text('حذف المنشور'),
+                    Text(tr('حذف المنشور')),
                   ]),
                 ),
             ],
@@ -356,7 +357,7 @@ class _PostCardState extends State<PostCard> {
           LikeBuilder(
             post: p,
             builder: (context, liked, count, toggle) => IconButton(
-              tooltip: 'إعجاب',
+              tooltip: tr('إعجاب'),
               onPressed: toggle,
               icon: AnimatedScale(
                 scale: liked ? 1.12 : 1,
@@ -375,7 +376,7 @@ class _PostCardState extends State<PostCard> {
             ),
           ),
           IconButton(
-            tooltip: 'التعليقات',
+            tooltip: tr('التعليقات'),
             onPressed: () => showCommentsSheet(context, p),
             icon: Icon(
               Icons.mode_comment_outlined,
@@ -388,7 +389,7 @@ class _PostCardState extends State<PostCard> {
             builder: (context, s) {
               final reposted = s.data ?? false;
               return IconButton(
-                tooltip: reposted ? 'إلغاء إعادة النشر' : 'إعادة النشر',
+                tooltip: reposted ? tr('إلغاء إعادة النشر') : tr('إعادة النشر'),
                 onPressed: _toggleRepost,
                 icon: Icon(
                   Icons.repeat_rounded,
@@ -401,7 +402,7 @@ class _PostCardState extends State<PostCard> {
             },
           ),
           IconButton(
-            tooltip: 'مشاركة',
+            tooltip: tr('مشاركة'),
             onPressed: () => showPostShareSheet(context, widget.post),
             icon: const _SharePlaneIcon(),
           ),
@@ -411,7 +412,7 @@ class _PostCardState extends State<PostCard> {
             builder: (context, s) {
               final saved = s.data ?? false;
               return IconButton(
-                tooltip: saved ? 'إزالة من المحفوظات' : 'حفظ المنشور',
+                tooltip: saved ? tr('إزالة من المحفوظات') : tr('حفظ المنشور'),
                 onPressed: () => PostService.toggleSave(p.id, saved),
                 icon: Icon(
                   saved
@@ -448,10 +449,10 @@ class _HiddenStrip extends StatelessWidget {
           Icon(Icons.visibility_off_outlined, size: 20, color: colors.textDim),
           const SizedBox(width: 10),
           Expanded(
-            child: Text('تم إخفاء المنشور',
+            child: Text(tr('تم إخفاء المنشور'),
                 style: TextStyle(color: colors.textDim)),
           ),
-          TextButton(onPressed: onUndo, child: const Text('تراجع')),
+          TextButton(onPressed: onUndo, child: Text(tr('تراجع'))),
         ],
       ),
     );
@@ -478,7 +479,7 @@ Future<void> reportPostSheet(BuildContext context, Post post) async {
             padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
             child: Align(
               alignment: AlignmentDirectional.centerStart,
-              child: Text('إبلاغ عن هذا المنشور',
+              child: Text(tr('إبلاغ عن هذا المنشور'),
                   style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
@@ -489,25 +490,25 @@ Future<void> reportPostSheet(BuildContext context, Post post) async {
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
             child: Align(
               alignment: AlignmentDirectional.centerStart,
-              child: Text('اختر السبب الأقرب. لن يعرف صاحب المنشور أنك من أبلغ.',
+              child: Text(tr('اختر السبب الأقرب. لن يعرف صاحب المنشور أنك من أبلغ.'),
                   style: TextStyle(fontSize: 12, color: colors.textDim)),
             ),
           ),
           for (final reason in SocialService.reportReasons.entries)
             ListTile(
-              title: Text(reason.value),
+              title: Text(tr(reason.value)),
               trailing: const Icon(Icons.chevron_left_rounded),
               onTap: () async {
                 Navigator.of(sheetContext).pop();
                 try {
                   await SocialService.reportPost(
                       post.id, post.uid, reason.key);
-                  messenger.showSnackBar(const SnackBar(
-                      content: Text('تم إرسال البلاغ، شكراً لك')));
+                  messenger.showSnackBar(SnackBar(
+                      content: Text(tr('تم إرسال البلاغ، شكراً لك'))));
                   await PostService.hidePost(post.id);
                 } catch (error) {
                   messenger.showSnackBar(
-                      SnackBar(content: Text('تعذر إرسال البلاغ: $error')));
+                      SnackBar(content: Text(trf('تعذر إرسال البلاغ: {0}', [error]))));
                 }
               },
             ),
@@ -598,10 +599,10 @@ class _LinkTextState extends State<LinkText> {
     try {
       final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!ok) {
-        messenger.showSnackBar(const SnackBar(content: Text('تعذر فتح الرابط')));
+        messenger.showSnackBar(SnackBar(content: Text(tr('تعذر فتح الرابط'))));
       }
     } catch (_) {
-      messenger.showSnackBar(const SnackBar(content: Text('تعذر فتح الرابط')));
+      messenger.showSnackBar(SnackBar(content: Text(tr('تعذر فتح الرابط'))));
     }
   }
 
@@ -683,7 +684,7 @@ class _LinkTextState extends State<LinkText> {
             child: Padding(
               padding: const EdgeInsets.only(top: 4, bottom: 2),
               child: Text(
-                _expanded ? 'أقل' : 'المزيد',
+                _expanded ? tr('أقل') : tr('المزيد'),
                 style: TextStyle(
                     color: context.appColors.textDim,
                     fontSize: 14,
@@ -842,7 +843,7 @@ class PostDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('المنشور')),
+      appBar: AppBar(title: Text(tr('المنشور'))),
       body: SafeArea(
         child: StreamBuilder<Post?>(
           stream: PostService.postStream(post.id),
@@ -850,7 +851,7 @@ class PostDetailScreen extends StatelessWidget {
           builder: (context, snap) {
             final live = snap.data;
             if (live == null)
-              return const Center(child: Text('هذا المنشور لم يعد متاحاً'));
+              return Center(child: Text(tr('هذا المنشور لم يعد متاحاً')));
             return ListView(
                 children: [
                   PostCard(post: live, autoPlayVideo: true, expandText: true)
@@ -903,7 +904,7 @@ class PostImage extends StatelessWidget {
             Icon(Icons.broken_image_outlined,
                 color: context.appColors.textDim, size: 30),
             SizedBox(height: 6),
-            Text('تعذر تحميل الصورة',
+            Text(tr('تعذر تحميل الصورة'),
                 style:
                     TextStyle(color: context.appColors.textDim, fontSize: 12)),
           ],
@@ -1222,14 +1223,14 @@ class _ShortActionsBarState extends State<_ShortActionsBar> {
         const Spacer(),
         if (widget.showArrows) ...[
           IconButton(
-            tooltip: 'السابق',
+            tooltip: tr('السابق'),
             onPressed: widget.canUp ? widget.onUp : null,
             icon: const Icon(Icons.keyboard_arrow_up_rounded, size: 30),
             color: Colors.white,
             disabledColor: Colors.white24,
           ),
           IconButton(
-            tooltip: 'التالي',
+            tooltip: tr('التالي'),
             onPressed: widget.canDown ? widget.onDown : null,
             icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 30),
             color: Colors.white,
@@ -1316,7 +1317,7 @@ class _ShortsViewerState extends State<ShortsViewer> {
       case 'copy':
         await Clipboard.setData(ClipboardData(text: PostService.postLink(post)));
         unawaited(PostService.registerShare(post.id));
-        messenger.showSnackBar(const SnackBar(content: Text('تم نسخ الرابط')));
+        messenger.showSnackBar(SnackBar(content: Text(tr('تم نسخ الرابط'))));
       case 'share':
         Navigator.of(context).pop();
         showPostShareSheet(rootCtx, post);
@@ -1500,18 +1501,18 @@ class _ShortsViewerState extends State<ShortsViewer> {
                           _onMenu(v, post);
                         },
                         itemBuilder: (_) => [
-                          const PopupMenuItem(
-                              value: 'copy', child: Text('نسخ الرابط')),
-                          const PopupMenuItem(
-                              value: 'share', child: Text('مشاركة')),
-                          const PopupMenuItem(
-                              value: 'story', child: Text('إضافة إلى القصة')),
+                          PopupMenuItem(
+                              value: 'copy', child: Text(tr('نسخ الرابط'))),
+                          PopupMenuItem(
+                              value: 'share', child: Text(tr('مشاركة'))),
+                          PopupMenuItem(
+                              value: 'story', child: Text(tr('إضافة إلى القصة'))),
                           if (widget.fromProfile && mine)
-                            const PopupMenuItem(
-                                value: 'edit', child: Text('تعديل الوصف')),
+                            PopupMenuItem(
+                                value: 'edit', child: Text(tr('تعديل الوصف'))),
                           if (widget.fromProfile && mine)
-                            const PopupMenuItem(
-                                value: 'delete', child: Text('حذف')),
+                            PopupMenuItem(
+                                value: 'delete', child: Text(tr('حذف'))),
                         ],
                       ),
                     ],
@@ -1557,15 +1558,15 @@ Future<bool> _confirmDeleteShort(BuildContext dialogCtx, Post post) async {
   final ok = await showDialog<bool>(
     context: dialogCtx,
     builder: (ctx) => AlertDialog(
-      title: const Text('حذف الفيديو؟'),
-      content: const Text('لا يمكن التراجع عن هذا الإجراء.'),
+      title: Text(tr('حذف الفيديو؟')),
+      content: Text(tr('لا يمكن التراجع عن هذا الإجراء.')),
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('إلغاء')),
+            child: Text(tr('إلغاء'))),
         TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('حذف')),
+            child: Text(tr('حذف'))),
       ],
     ),
   );
@@ -1574,9 +1575,9 @@ Future<bool> _confirmDeleteShort(BuildContext dialogCtx, Post post) async {
   if (dialogCtx.mounted) Navigator.of(dialogCtx).pop();
   try {
     await PostService.deletePost(post);
-    messenger.showSnackBar(const SnackBar(content: Text('تم حذف الفيديو')));
+    messenger.showSnackBar(SnackBar(content: Text(tr('تم حذف الفيديو'))));
   } catch (error) {
-    messenger.showSnackBar(SnackBar(content: Text('تعذر الحذف: $error')));
+    messenger.showSnackBar(SnackBar(content: Text(trf('تعذر الحذف: {0}', [error]))));
   }
   return true;
 }
@@ -1608,15 +1609,15 @@ Future<void> editPostCaption(BuildContext context, Post post) async {
   if (result == null || result == post.caption) return;
   if (isText && !post.hasVideo && result.isEmpty) {
     messenger.showSnackBar(
-        const SnackBar(content: Text('لا يمكن ترك المنشور فارغاً')));
+        SnackBar(content: Text(tr('لا يمكن ترك المنشور فارغاً'))));
     return;
   }
   try {
     await PostService.updateCaption(post, result);
     messenger.showSnackBar(SnackBar(
-        content: Text('تم تعديل ${isText ? 'المنشور' : 'الوصف'}')));
+        content: Text(trf('تم تعديل {0}', [isText ? tr('المنشور') : tr('الوصف')]))));
   } catch (error) {
-    messenger.showSnackBar(SnackBar(content: Text('تعذر التعديل: $error')));
+    messenger.showSnackBar(SnackBar(content: Text(trf('تعذر التعديل: {0}', [error]))));
   }
 }
 
@@ -1630,24 +1631,24 @@ Future<void> deletePostWithConfirm(BuildContext context, Post post) async {
     context: rootCtx,
     barrierDismissible: false,
     builder: (ctx) => AlertDialog(
-      title: const Text('حذف المنشور؟'),
-      content: const Text('لا يمكن التراجع عن هذا الإجراء.'),
+      title: Text(tr('حذف المنشور؟')),
+      content: Text(tr('لا يمكن التراجع عن هذا الإجراء.')),
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('إلغاء')),
+            child: Text(tr('إلغاء'))),
         TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('حذف')),
+            child: Text(tr('حذف'))),
       ],
     ),
   );
   if (ok != true) return;
   try {
     await PostService.deletePost(post);
-    messenger.showSnackBar(const SnackBar(content: Text('تم حذف المنشور')));
+    messenger.showSnackBar(SnackBar(content: Text(tr('تم حذف المنشور'))));
   } catch (error) {
-    messenger.showSnackBar(SnackBar(content: Text('تعذر الحذف: $error')));
+    messenger.showSnackBar(SnackBar(content: Text(trf('تعذر الحذف: {0}', [error]))));
   }
 }
 
@@ -1691,7 +1692,7 @@ class _EditCaptionDialogState extends State<_EditCaptionDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                widget.isText ? 'تعديل المنشور' : 'تعديل الوصف',
+                widget.isText ? tr('تعديل المنشور') : tr('تعديل الوصف'),
                 style: const TextStyle(
                     fontSize: 18, fontWeight: FontWeight.w800),
               ),
@@ -1706,7 +1707,7 @@ class _EditCaptionDialogState extends State<_EditCaptionDialog> {
                   keyboardType: TextInputType.multiline,
                   decoration: InputDecoration(
                     hintText:
-                        widget.isText ? 'اكتب المنشور...' : 'اكتب وصفاً...',
+                        widget.isText ? tr('اكتب المنشور...') : tr('اكتب وصفاً...'),
                     border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14)),
                   ),
@@ -1718,7 +1719,7 @@ class _EditCaptionDialogState extends State<_EditCaptionDialog> {
                 children: [
                   TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('إلغاء')),
+                      child: Text(tr('إلغاء'))),
                   const SizedBox(width: 8),
                   // الثيم العام يجعل FilledButton بعرض كامل (Size.fromHeight)،
                   // وداخل Row يختفي الزر؛ لذا نحدّد حداً أدنى بعرض محدود.
@@ -1727,7 +1728,7 @@ class _EditCaptionDialogState extends State<_EditCaptionDialog> {
                           minimumSize: const Size(96, 44)),
                       onPressed: () =>
                           Navigator.pop(context, _controller.text.trim()),
-                      child: const Text('حفظ')),
+                      child: Text(tr('حفظ'))),
                 ],
               ),
             ],

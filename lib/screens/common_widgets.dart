@@ -12,6 +12,7 @@ import 'sticker_sheet.dart';
 import 'profile_screen.dart';
 import '../route_state.dart';
 
+import '../l10n.dart';
 /// يفتح ملف مستخدم (مثل تيك توك / إنستغرام).
 void openProfile(BuildContext context, String uid) {
   if (uid.isEmpty) return;
@@ -161,14 +162,14 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   void _post(String text,
       {String kind = 'text',
       Uint8List? imageBytes,
-      String failure = 'تعذر إرسال التعليق'}) {
+      String? failure}) {
     PostService.addComment(
       widget.post.id,
       text,
       ownerUid: widget.post.uid,
       kind: kind,
       imageBytes: imageBytes,
-    ).catchError((Object e) => _fail(failure, e));
+    ).catchError((Object e) => _fail(failure ?? tr('تعذر إرسال التعليق'), e));
   }
 
   /// يرسل ما في خانة الكتابة (نص/ملصق) والصورة المرفقة عند ضغط زر الإرسال فقط.
@@ -180,7 +181,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     setState(() => _pendingImage = null);
     if (image != null) {
       _post('📷 صورة',
-          kind: 'image', imageBytes: image, failure: 'تعذر إرسال الصورة');
+          kind: 'image', imageBytes: image, failure: tr('تعذر إرسال الصورة'));
     }
     if (t.isNotEmpty) {
       _post(t, kind: isSingleSticker(t) ? 'sticker' : 'text');
@@ -200,12 +201,12 @@ class _CommentsSheetState extends State<_CommentsSheet> {
       if (image == null) return;
       final bytes = await image.readAsBytes();
       if (bytes.length > 700 * 1024) {
-        _fail('تعذر إرفاق الصورة', 'حجم الصورة يجب ألا يتجاوز 700 كيلوبايت');
+        _fail(tr('تعذر إرفاق الصورة'), tr('حجم الصورة يجب ألا يتجاوز 700 كيلوبايت'));
         return;
       }
       if (mounted) setState(() => _pendingImage = bytes);
     } catch (e) {
-      _fail('تعذر إرفاق الصورة', e);
+      _fail(tr('تعذر إرفاق الصورة'), e);
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -219,7 +220,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
         child: ListTile(
           leading: Icon(Icons.delete_outline_rounded,
               color: context.appColors.text),
-          title: const Text('حذف التعليق'),
+          title: Text(tr('حذف التعليق')),
           onTap: () async {
             Navigator.pop(sheetContext);
             try {
@@ -227,7 +228,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
             } catch (error) {
               if (widget.outerContext.mounted) {
                 ScaffoldMessenger.of(widget.outerContext).showSnackBar(
-                  SnackBar(content: Text('تعذر حذف التعليق: $error')),
+                  SnackBar(content: Text(trf('تعذر حذف التعليق: {0}', [error]))),
                 );
               }
             }
@@ -243,7 +244,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     } catch (error) {
       if (widget.outerContext.mounted) {
         ScaffoldMessenger.of(widget.outerContext).showSnackBar(
-          SnackBar(content: Text('تعذر الإعجاب بالتعليق: $error')),
+          SnackBar(content: Text(trf('تعذر الإعجاب بالتعليق: {0}', [error]))),
         );
       }
     }
@@ -267,9 +268,9 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                 decoration: BoxDecoration(
                     color: context.appColors.textDim,
                     borderRadius: BorderRadius.circular(2))),
-            const Padding(
+            Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('التعليقات',
+              child: Text(tr('التعليقات'),
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
             ),
             Divider(
@@ -280,18 +281,18 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                 builder: (context, snap) {
                   if (snap.hasError) {
                     return Center(
-                        child: Text('تعذر تحميل التعليقات\n${snap.error}',
+                        child: Text(trf('تعذر تحميل التعليقات\n{0}', [snap.error]),
                             textAlign: TextAlign.center));
                   }
                   if (!snap.hasData) {
-                    return const AppLoading(message: 'جارٍ تحميل التعليقات...');
+                    return AppLoading(message: tr('جارٍ تحميل التعليقات...'));
                   }
                   final list = snap.data!;
                   if (list.isEmpty) {
-                    return const EmptyState(
+                    return EmptyState(
                       icon: Icons.mode_comment_outlined,
-                      title: 'لا توجد تعليقات بعد',
-                      message: 'ابدأ المحادثة وكن أول من يعلّق.',
+                      title: tr('لا توجد تعليقات بعد'),
+                      message: tr('ابدأ المحادثة وكن أول من يعلّق.'),
                     );
                   }
                   return ListView.builder(
@@ -375,8 +376,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                     children: [
                                       IconButton(
                                         tooltip: c.likedBy.contains(me)
-                                            ? 'إلغاء الإعجاب'
-                                            : 'إعجاب بالتعليق',
+                                            ? tr('إلغاء الإعجاب')
+                                            : tr('إعجاب بالتعليق'),
                                         visualDensity: VisualDensity.compact,
                                         constraints: const BoxConstraints(
                                             minWidth: 36, minHeight: 32),
@@ -433,7 +434,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                         radius: 17),
                     const SizedBox(width: 10),
                     IconButton(
-                      tooltip: 'الملصقات',
+                      tooltip: tr('الملصقات'),
                       visualDensity: VisualDensity.compact,
                       onPressed: () {
                         FocusScope.of(context).unfocus();
@@ -448,7 +449,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                           color: context.appColors.text),
                     ),
                     IconButton(
-                      tooltip: 'إرسال صورة',
+                      tooltip: tr('إرسال صورة'),
                       visualDensity: VisualDensity.compact,
                       onPressed: _sending ? null : _pickImage,
                       icon: Icon(Icons.image_outlined,
@@ -460,8 +461,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                         maxLength: 500,
                         textInputAction: TextInputAction.send,
                         onSubmitted: (_) => _send(),
-                        decoration: const InputDecoration(
-                          hintText: 'أضف تعليقاً...',
+                        decoration: InputDecoration(
+                          hintText: tr('أضف تعليقاً...'),
                           counterText: '',
                           isDense: true,
                           contentPadding: EdgeInsets.symmetric(
@@ -531,7 +532,7 @@ class _LikeBuilderState extends State<LikeBuilder> {
           _delta -= change;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر تسجيل الإعجاب: $error')),
+          SnackBar(content: Text(trf('تعذر تسجيل الإعجاب: {0}', [error]))),
         );
       }
     } finally {
@@ -585,7 +586,7 @@ class FullScreenImageViewer extends StatelessWidget {
         foregroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(
-          tooltip: 'إغلاق',
+          tooltip: tr('إغلاق'),
           icon: const Icon(Icons.close_rounded),
           onPressed: () => Navigator.of(context).pop(),
         ),

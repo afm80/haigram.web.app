@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemNavigator;
 
+import '../l10n.dart';
 import '../route_state.dart';
 import '../services/post_service.dart';
 import '../services/presence_service.dart';
@@ -45,7 +46,7 @@ class _HomeShellState extends State<HomeShell> {
               body: Center(
                   child: Padding(
                       padding: const EdgeInsets.all(24),
-                      child: Text('تعذر تحميل ملفك الشخصي\n${snap.error}',
+                      child: Text('${tr('تعذر تحميل ملفك الشخصي')}\n${snap.error}',
                           textAlign: TextAlign.center))));
         }
         if (!snap.hasData)
@@ -295,8 +296,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
       messenger.hideCurrentSnackBar();
       // رسالة صغيرة عائمة بأسلوب إنستغرام.
       messenger.showSnackBar(SnackBar(
-        content: const Text(
-          'اضغط مرة أخرى للخروج',
+        content: Text(
+          tr('اضغط مرة أخرى للخروج'),
           textAlign: TextAlign.center,
           style: TextStyle(color: Colors.white, fontSize: 13),
         ),
@@ -354,10 +355,10 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
             child: Row(
               children: [
                 _navItem(
-                    0, Icons.home_outlined, Icons.home_rounded, 'الرئيسية',
+                    0, Icons.home_outlined, Icons.home_rounded, tr('الرئيسية'),
                     foreground: navForeground, inactive: navInactive),
                 _navItem(1, Icons.explore_outlined, Icons.explore_rounded,
-                    'استكشف',
+                    tr('استكشف'),
                     foreground: navForeground, inactive: navInactive),
                 Expanded(child: Center(child: _createButton())),
                 StreamBuilder<int>(
@@ -366,14 +367,14 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
                     3,
                     Icons.chat_bubble_outline_rounded,
                     Icons.chat_bubble_rounded,
-                    'صندوق البريد',
+                    tr('صندوق البريد'),
                     foreground: navForeground,
                     inactive: navInactive,
                     badgeCount: snapshot.hasError ? -1 : (snapshot.data ?? 0),
                   ),
                 ),
                 _navItem(4, Icons.person_outline_rounded, Icons.person_rounded,
-                    'الملف الشخصي',
+                    tr('الملف الشخصي'),
                     foreground: navForeground, inactive: navInactive),
               ],
             ),
@@ -460,8 +461,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
                       right: -8,
                       child: Tooltip(
                         message: badgeCount < 0
-                            ? 'تعذر تحميل عدد الإشعارات'
-                            : '$badgeCount إشعار غير مقروء',
+                            ? tr('تعذر تحميل عدد الإشعارات')
+                            : '$badgeCount ${tr('إشعار غير مقروء')}',
                         child: Container(
                           constraints:
                               const BoxConstraints(minWidth: 15, minHeight: 15),

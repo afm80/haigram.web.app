@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import '../l10n.dart';
 import '../services/post_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
@@ -31,16 +32,16 @@ class SettingsScreen extends StatelessWidget {
     final shouldSignOut = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('تسجيل الخروج؟'),
-        content: const Text('هل تريد تسجيل الخروج من حسابك؟'),
+        title: Text(tr('تسجيل الخروج؟')),
+        content: Text(tr('هل تريد تسجيل الخروج من حسابك؟')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('إلغاء'),
+            child: Text(tr('إلغاء')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('تسجيل الخروج'),
+            child: Text(tr('تسجيل الخروج')),
           ),
         ],
       ),
@@ -60,7 +61,7 @@ class SettingsScreen extends StatelessWidget {
       RouteStore.clear();
     } catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text('تعذر تسجيل الخروج: $error')),
+        SnackBar(content: Text('${tr('تعذر تسجيل الخروج')}: $error')),
       );
     }
   }
@@ -71,8 +72,8 @@ class SettingsScreen extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'الإعدادات',
+        title: Text(
+          tr('الإعدادات'),
           style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
         ),
       ),
@@ -90,9 +91,11 @@ class SettingsScreen extends StatelessWidget {
                 secondary: Icon(
                   isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
                 ),
-                title: const Text('الوضع الداكن'),
+                title: Text(tr('الوضع الداكن')),
                 subtitle: Text(
-                  isDark ? 'المظهر الحالي: داكن' : 'المظهر الحالي: فاتح',
+                  isDark
+                      ? tr('المظهر الحالي: داكن')
+                      : tr('المظهر الحالي: فاتح'),
                   style: TextStyle(color: colors.textDim, fontSize: 12),
                 ),
                 value: isDark,
@@ -101,6 +104,34 @@ class SettingsScreen extends StatelessWidget {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            _SectionLabel('اللغة'),
+            Container(
+              decoration: BoxDecoration(
+                color: colors.surface,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  for (final lang in const [
+                    ['ar', 'العربية'],
+                    ['en', 'English'],
+                  ])
+                    ListTile(
+                      leading: const Icon(Icons.language_rounded),
+                      title: Text(lang[1]),
+                      trailing: AppLang.code.value == lang[0]
+                          ? const Icon(Icons.check_rounded,
+                              color: AppColors.brandPurple)
+                          : null,
+                      onTap: () => AppLang.code.value = lang[0],
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                ],
               ),
             ),
             const SizedBox(height: 24),
@@ -116,8 +147,8 @@ class SettingsScreen extends StatelessWidget {
               child: ListTile(
                 leading: const Icon(Icons.logout_rounded,
                     color: AppColors.brandPurple),
-                title: const Text(
-                  'تسجيل الخروج',
+                title: Text(
+                  tr('تسجيل الخروج'),
                   style: TextStyle(color: AppColors.brandPurple),
                 ),
                 onTap: () => _confirmSignOut(context),
@@ -142,7 +173,7 @@ class _SectionLabel extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
       child: Text(
-        text,
+        tr(text),
         style: TextStyle(
           fontSize: 13,
           fontWeight: FontWeight.w700,
@@ -185,7 +216,7 @@ class _PrivacySectionState extends State<_PrivacySection> {
       }
     } catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text('تعذر حفظ الإعداد: $error')),
+        SnackBar(content: Text('${tr('تعذر حفظ الإعداد')}: $error')),
       );
     }
   }
@@ -208,9 +239,9 @@ class _PrivacySectionState extends State<_PrivacySection> {
             children: [
               SwitchListTile(
                 secondary: const Icon(Icons.lock_outline_rounded),
-                title: const Text('حساب خاص'),
+                title: Text(tr('حساب خاص')),
                 subtitle: Text(
-                  'منشوراتك ومقاطعك تظهر لمتابعيك فقط، ومن يريد متابعتك يرسل طلباً تقبله أنت',
+                  tr('منشوراتك ومقاطعك تظهر لمتابعيك فقط، ومن يريد متابعتك يرسل طلباً تقبله أنت'),
                   style: dim(),
                 ),
                 value: user?.isPrivate ?? false,
@@ -224,9 +255,9 @@ class _PrivacySectionState extends State<_PrivacySection> {
               Divider(height: 1, color: colors.text.withOpacity(0.08)),
               SwitchListTile(
                 secondary: const Icon(Icons.favorite_border_rounded),
-                title: const Text('إخفاء الإعجابات'),
+                title: Text(tr('إخفاء الإعجابات')),
                 subtitle: Text(
-                  'لا يرى الآخرون تبويب الإعجابات في ملفك',
+                  tr('لا يرى الآخرون تبويب الإعجابات في ملفك'),
                   style: dim(),
                 ),
                 value: user?.hideLikes ?? false,
@@ -240,9 +271,9 @@ class _PrivacySectionState extends State<_PrivacySection> {
               Divider(height: 1, color: colors.text.withOpacity(0.08)),
               SwitchListTile(
                 secondary: const Icon(Icons.visibility_outlined),
-                title: const Text('زيارات الملف الشخصي'),
+                title: Text(tr('زيارات الملف الشخصي')),
                 subtitle: Text(
-                  'تعرف من زار ملفك خلال 30 يوماً، ويرى الآخرون زياراتك لهم. تعمل عندما يفعّلها الطرفان',
+                  tr('تعرف من زار ملفك خلال 30 يوماً، ويرى الآخرون زياراتك لهم. تعمل عندما يفعّلها الطرفان'),
                   style: dim(),
                 ),
                 value: user?.profileVisits ?? true,
@@ -256,8 +287,8 @@ class _PrivacySectionState extends State<_PrivacySection> {
               Divider(height: 1, color: colors.text.withOpacity(0.08)),
               ListTile(
                 leading: const Icon(Icons.bookmark_border_rounded),
-                title: const Text('المحفوظات'),
-                subtitle: Text('خاصة بك دائماً ولا يراها أحد', style: dim()),
+                title: Text(tr('المحفوظات')),
+                subtitle: Text(tr('خاصة بك دائماً ولا يراها أحد'), style: dim()),
               ),
             ],
           ),

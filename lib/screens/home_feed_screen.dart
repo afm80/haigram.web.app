@@ -10,6 +10,7 @@ import 'common_widgets.dart';
 import 'post_widgets.dart';
 import 'story_widgets.dart';
 
+import '../l10n.dart';
 /// يزداد عند الضغط على أيقونة الرئيسية وأنت فيها: تمرير للأعلى وتحديث.
 final ValueNotifier<int> homeRefreshTick = ValueNotifier<int>(0);
 
@@ -256,7 +257,7 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
               if (_error != null) {
                 return Padding(
                   padding: const EdgeInsets.all(28),
-                  child: Text('تعذر تحميل المنشورات\n$_error',
+                  child: Text(trf('تعذر تحميل المنشورات\n{0}', [_error]),
                       textAlign: TextAlign.center),
                 );
               }
@@ -265,16 +266,16 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
               }
               if (_loading) return const SizedBox.shrink();
               return following
-                  ? const EmptyState(
+                  ? EmptyState(
                       icon: Icons.people_outline_rounded,
-                      title: 'لا جديد من متابَعيك',
+                      title: tr('لا جديد من متابَعيك'),
                       message:
-                          'تابع حسابات لترى منشوراتها هنا.',
+                          tr('تابع حسابات لترى منشوراتها هنا.'),
                     )
-                  : const EmptyState(
+                  : EmptyState(
                       icon: Icons.photo_library_outlined,
-                      title: 'لا توجد منشورات بعد',
-                      message: 'شارك أول صورة أو خاطرة مع مجتمعنا.',
+                      title: tr('لا توجد منشورات بعد'),
+                      message: tr('شارك أول صورة أو خاطرة مع مجتمعنا.'),
                     );
             },
           );
@@ -322,8 +323,8 @@ class _FeedModeBar extends StatelessWidget {
     }
 
     return Row(children: [
-      item('للجميع', _FeedMode.all),
-      item('المتابَعون', _FeedMode.following),
+      item(tr('للجميع'), _FeedMode.all),
+      item(tr('المتابَعون'), _FeedMode.following),
     ]);
   }
 }

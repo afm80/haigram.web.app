@@ -13,6 +13,7 @@ import '../theme.dart';
 import 'common_widgets.dart';
 import 'post_widgets.dart' show PostImage;
 
+import '../l10n.dart';
 /// رابط مشاركة المنشور (?p=).
 String postShareLink(Post post) => PostService.postLink(post);
 
@@ -51,12 +52,12 @@ class _PostShareSheetState extends State<_PostShareSheet> {
   String _query = '';
 
   Post get _post => widget.post;
-  String get _noun => 'المنشور';
+  String get _noun => AppLang.isEn ? 'the post' : tr('المنشور');
   String get _link => postShareLink(_post);
 
   String get _shareText {
     final caption = _post.caption.trim();
-    final intro = 'شاهد هذا المنشور من @${_post.username} على Haigram';
+    final intro = trf('شاهد هذا المنشور من @{0} على Haigram', [_post.username]);
     return [if (caption.isNotEmpty) caption, intro, _link].join('\n');
   }
 
@@ -93,7 +94,7 @@ class _PostShareSheetState extends State<_PostShareSheet> {
         await action();
         _toast(success);
       } catch (error) {
-        _toast('تعذر تنفيذ العملية: $error');
+        _toast(trf('تعذر تنفيذ العملية: {0}', [error]));
       }
     }());
   }
@@ -120,10 +121,10 @@ class _PostShareSheetState extends State<_PostShareSheet> {
     Navigator.pop(context);
     if (sent == friends.length) {
       _toast(sent == 1
-          ? 'تم إرسال $_noun إلى @${friends.first.username}'
-          : 'تم إرسال $_noun إلى $sent أصدقاء');
+          ? trf('تم إرسال {0} إلى @{1}', [_noun, friends.first.username])
+          : trf('تم إرسال {0} إلى {1} أصدقاء', [_noun, sent]));
     } else {
-      _toast('تعذر إرسال $_noun إلى بعض الأصدقاء: $lastError');
+      _toast(trf('تعذر إرسال {0} إلى بعض الأصدقاء: {1}', [_noun, lastError]));
     }
   }
 
@@ -143,10 +144,10 @@ class _PostShareSheetState extends State<_PostShareSheet> {
     Navigator.pop(context);
     try {
       final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!opened) throw StateError('تعذر فتح تطبيق المشاركة');
+      if (!opened) throw StateError(tr('تعذر فتح تطبيق المشاركة'));
       unawaited(PostService.registerShare(_post.id));
     } catch (error) {
-      _toast('تعذرت المشاركة: $error');
+      _toast(trf('تعذرت المشاركة: {0}', [error]));
     }
   }
 
@@ -154,7 +155,7 @@ class _PostShareSheetState extends State<_PostShareSheet> {
     Navigator.pop(context);
     await Clipboard.setData(ClipboardData(text: _link));
     unawaited(PostService.registerShare(_post.id));
-    _toast('تم نسخ رابط $_noun');
+    _toast(trf('تم نسخ رابط {0}', [_noun]));
   }
 
   Future<void> _systemShare() async {
@@ -163,13 +164,13 @@ class _PostShareSheetState extends State<_PostShareSheet> {
       final result = await Share.share(_shareText, subject: 'Haigram');
       if (result.status == ShareResultStatus.unavailable) {
         await Clipboard.setData(ClipboardData(text: _link));
-        _toast('تم نسخ رابط $_noun');
+        _toast(trf('تم نسخ رابط {0}', [_noun]));
       }
       if (result.status != ShareResultStatus.dismissed) {
         unawaited(PostService.registerShare(_post.id));
       }
     } catch (error) {
-      _toast('تعذرت المشاركة: $error');
+      _toast(trf('تعذرت المشاركة: {0}', [error]));
     }
   }
 
@@ -308,7 +309,7 @@ class _PostShareSheetState extends State<_PostShareSheet> {
       future: _friends,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return _hint('تعذر تحميل الأصدقاء');
+          return _hint(tr('تعذر تحميل الأصدقاء'));
         }
         if (!snapshot.hasData) {
           return const SizedBox(
@@ -324,7 +325,7 @@ class _PostShareSheetState extends State<_PostShareSheet> {
         }
         final friends = snapshot.data!;
         if (friends.isEmpty) {
-          return _hint('تابع بعض الحسابات أو دعهم يتابعونك لتظهر هنا وترسل لهم $_noun.',
+          return _hint(trf('تابع بعض الحسابات أو دعهم يتابعونك لتظهر هنا وترسل لهم {0}.', [_noun]),
               color: colors.textDim);
         }
         final q = _query.trim().toLowerCase();
@@ -347,7 +348,7 @@ class _PostShareSheetState extends State<_PostShareSheet> {
                   filled: true,
                   fillColor: colors.surfaceHigh,
                   prefixIcon: const Icon(Icons.search_rounded),
-                  hintText: 'بحث',
+                  hintText: tr('بحث'),
                   contentPadding: const EdgeInsets.symmetric(vertical: 10),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
@@ -360,7 +361,7 @@ class _PostShareSheetState extends State<_PostShareSheet> {
               constraints: BoxConstraints(
                   maxHeight: MediaQuery.sizeOf(context).height * 0.34),
               child: shown.isEmpty
-                  ? _hint('لا نتائج', color: colors.textDim)
+                  ? _hint(tr('لا نتائج'), color: colors.textDim)
                   : GridView.builder(
                       shrinkWrap: true,
                       padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -407,7 +408,7 @@ class _PostShareSheetState extends State<_PostShareSheet> {
               maxLength: 200,
               decoration: InputDecoration(
                 counterText: '',
-                hintText: 'أضف رسالة...',
+                hintText: tr('أضف رسالة...'),
                 filled: true,
                 fillColor: colors.surfaceHigh,
                 contentPadding:
@@ -436,7 +437,7 @@ class _PostShareSheetState extends State<_PostShareSheet> {
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: Colors.white),
                   )
-                : Text('إرسال${_selected.length > 1 ? ' (${_selected.length})' : ''}'),
+                : Text(trf('إرسال{0}', [_selected.length > 1 ? ' (${_selected.length})' : ''])),
           ),
         ],
       ),
@@ -453,19 +454,19 @@ class _PostShareSheetState extends State<_PostShareSheet> {
     const white = Colors.white;
     return _row([
       _item(
-        label: 'واتساب',
+        label: tr('واتساب'),
         background: const Color(0xFF25D366),
         icon: _icon(Icons.chat_rounded, white),
         onTap: () => _openExternal('whatsapp'),
       ),
       _item(
-        label: 'تلغرام',
+        label: tr('تلغرام'),
         background: const Color(0xFF229ED9),
         icon: _icon(Icons.send_rounded, white),
         onTap: () => _openExternal('telegram'),
       ),
       _item(
-        label: 'فيسبوك',
+        label: tr('فيسبوك'),
         background: const Color(0xFF1877F2),
         icon: _icon(Icons.facebook, white),
         onTap: () => _openExternal('facebook'),
@@ -477,18 +478,18 @@ class _PostShareSheetState extends State<_PostShareSheet> {
         onTap: () => _openExternal('x'),
       ),
       _item(
-        label: 'رسالة SMS',
+        label: tr('رسالة SMS'),
         background: const Color(0xFF34C759),
         icon: _icon(Icons.sms_rounded, white),
         onTap: () => _openExternal('sms'),
       ),
       _item(
-        label: 'نسخ الرابط',
+        label: tr('نسخ الرابط'),
         icon: _icon(Icons.link_rounded),
         onTap: _copyLink,
       ),
       _item(
-        label: 'المزيد',
+        label: tr('المزيد'),
         icon: _icon(Icons.more_horiz_rounded),
         onTap: _systemShare,
       ),
@@ -502,19 +503,19 @@ class _PostShareSheetState extends State<_PostShareSheet> {
         final saved = snapshot.data ?? false;
         return _row([
           _item(
-            label: saved ? 'إزالة الحفظ' : 'حفظ',
+            label: saved ? tr('إزالة الحفظ') : tr('حفظ'),
             icon: _icon(
               saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
               saved ? context.appColors.reaction : null,
             ),
             onTap: () => _runAndClose(
               () => PostService.toggleSave(_post.id, saved),
-              saved ? 'تمت الإزالة من المحفوظات' : 'تم الحفظ',
+              saved ? tr('تمت الإزالة من المحفوظات') : tr('تم الحفظ'),
             ),
           ),
           if (_post.type == PostType.photo || _post.hasVideo)
             _item(
-              label: 'أضف إلى قصتي',
+              label: tr('أضف إلى قصتي'),
               icon: _icon(Icons.add_circle_outline_rounded),
               onTap: _addToStory,
             ),
@@ -541,7 +542,7 @@ class _PostShareSheetState extends State<_PostShareSheet> {
                     const SizedBox(width: 48),
                     Expanded(
                       child: Text(
-                        'مشاركة إلى',
+                        tr('مشاركة إلى'),
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: colors.text,
@@ -551,7 +552,7 @@ class _PostShareSheetState extends State<_PostShareSheet> {
                       ),
                     ),
                     IconButton(
-                      tooltip: 'إغلاق',
+                      tooltip: tr('إغلاق'),
                       onPressed: () => Navigator.pop(context),
                       icon: Icon(Icons.close_rounded, color: colors.textDim),
                     ),
@@ -588,7 +589,7 @@ Future<void> showAddToStoryDialog(BuildContext rootContext, Post post,
           .clamp(200.0, 480.0)
           .toDouble();
       return AlertDialog(
-        title: const Text('إضافة إلى قصتك'),
+        title: Text(tr('إضافة إلى قصتك')),
         content: SizedBox(
           width: 300,
           child: Column(
@@ -617,7 +618,7 @@ Future<void> showAddToStoryDialog(BuildContext rootContext, Post post,
                           decoration: BoxDecoration(
                               color: const Color(0x99000000),
                               borderRadius: BorderRadius.circular(14)),
-                          child: Text('من @${post.username}',
+                          child: Text(trf('من @{0}', [post.username]),
                               style: const TextStyle(
                                   color: Colors.white, fontSize: 12.5)),
                         ),
@@ -627,7 +628,7 @@ Future<void> showAddToStoryDialog(BuildContext rootContext, Post post,
                 ),
               ),
               const SizedBox(height: 10),
-              const Text('ستظهر في قصتك لمدة 24 ساعة مع ذكر صاحبها.',
+              Text(tr('ستظهر في قصتك لمدة 24 ساعة مع ذكر صاحبها.'),
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 12.5)),
             ],
@@ -636,10 +637,10 @@ Future<void> showAddToStoryDialog(BuildContext rootContext, Post post,
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('إلغاء')),
+              child: Text(tr('إلغاء'))),
           FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('نشر في قصتي')),
+              child: Text(tr('نشر في قصتي'))),
         ],
       );
     },
@@ -647,8 +648,8 @@ Future<void> showAddToStoryDialog(BuildContext rootContext, Post post,
   if (ok != true) return;
   try {
     await PostService.shareToStory(post);
-    messenger.showSnackBar(const SnackBar(content: Text('تمت الإضافة إلى قصتك')));
+    messenger.showSnackBar(SnackBar(content: Text(tr('تمت الإضافة إلى قصتك'))));
   } catch (error) {
-    messenger.showSnackBar(SnackBar(content: Text('تعذرت الإضافة: $error')));
+    messenger.showSnackBar(SnackBar(content: Text(trf('تعذرت الإضافة: {0}', [error]))));
   }
 }

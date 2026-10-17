@@ -14,6 +14,7 @@ import 'post_widgets.dart';
 import 'profile_screen.dart';
 import '../route_state.dart';
 
+import '../l10n.dart';
 /// يتذكر القصص التي شوهدت خلال الجلسة (لتحويل الحلقة إلى رمادية).
 class StoryViewed {
   static final Set<String> _seen = {};
@@ -98,7 +99,7 @@ class _StoriesBarState extends State<StoriesBar> {
   Widget _myItem(StoryGroup? mine, VoidCallback open) {
     final me = PostService.uidOrEmpty;
     return _cell(
-      label: 'قصتك',
+      label: tr('قصتك'),
       child: GestureDetector(
         onTap:
             mine == null ? () => startCreate(context, CreateKind.story) : open,
@@ -344,14 +345,14 @@ class _StoryViewerState extends State<StoryViewer>
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('حذف القصة؟'),
+        title: Text(tr('حذف القصة؟')),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('إلغاء')),
+              child: Text(tr('إلغاء'))),
           TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('حذف')),
+              child: Text(tr('حذف'))),
         ],
       ),
     );
@@ -381,9 +382,9 @@ class _StoryViewerState extends State<StoryViewer>
                 height: 4,
                 decoration: BoxDecoration(
                     color: Colors.grey, borderRadius: BorderRadius.circular(2))),
-            const Padding(
+            Padding(
               padding: EdgeInsets.all(14),
-              child: Text('المشاهدون',
+              child: Text(tr('المشاهدون'),
                   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
             ),
             Expanded(
@@ -396,7 +397,7 @@ class _StoryViewerState extends State<StoryViewer>
                         child: Text(
                             snap.connectionState == ConnectionState.waiting
                                 ? ''
-                                : 'لا توجد مشاهدات بعد',
+                                : tr('لا توجد مشاهدات بعد'),
                             style:
                                 TextStyle(color: context.appColors.textDim)));
                   }
@@ -423,11 +424,11 @@ class _StoryViewerState extends State<StoryViewer>
     try {
       final id = await SocialService.startConversation(_group.uid);
       await SocialService.sendMessage(id, 'ردّ على القصة: $text');
-      messenger.showSnackBar(const SnackBar(
-          content: Text('تم إرسال ردّك'), duration: Duration(seconds: 2)));
+      messenger.showSnackBar(SnackBar(
+          content: Text(tr('تم إرسال ردّك')), duration: Duration(seconds: 2)));
     } catch (_) {
-      messenger.showSnackBar(const SnackBar(
-          content: Text('تعذّر إرسال الردّ'), duration: Duration(seconds: 2)));
+      messenger.showSnackBar(SnackBar(
+          content: Text(tr('تعذّر إرسال الردّ')), duration: Duration(seconds: 2)));
     }
   }
 
@@ -669,7 +670,7 @@ class _StoryViewerState extends State<StoryViewer>
             ),
             ListTile(
               leading: const Icon(Icons.delete_outline, color: Colors.white),
-              title: const Text('حذف القصة',
+              title: Text(tr('حذف القصة'),
                   style: TextStyle(color: Colors.white, fontSize: 16)),
               onTap: () {
                 Navigator.pop(context);
@@ -678,7 +679,7 @@ class _StoryViewerState extends State<StoryViewer>
             ),
             ListTile(
               leading: const Icon(Icons.visibility_outlined, color: Colors.white),
-              title: const Text('المشاهدون',
+              title: Text(tr('المشاهدون'),
                   style: TextStyle(color: Colors.white, fontSize: 16)),
               onTap: () {
                 Navigator.pop(context);
@@ -687,7 +688,7 @@ class _StoryViewerState extends State<StoryViewer>
             ),
             ListTile(
               leading: const Icon(Icons.close, color: Colors.white),
-              title: const Text('إلغاء',
+              title: Text(tr('إلغاء'),
                   style: TextStyle(color: Colors.white, fontSize: 16)),
               onTap: () => Navigator.pop(context),
             ),
@@ -707,7 +708,7 @@ class _StoryViewerState extends State<StoryViewer>
         decoration: BoxDecoration(
             color: const Color(0x99000000),
             borderRadius: BorderRadius.circular(16)),
-        child: Text('من @${story.sharedFromUsername}',
+        child: Text(trf('من @{0}', [story.sharedFromUsername]),
             style: const TextStyle(color: Colors.white, fontSize: 13)),
       ),
     );
@@ -786,13 +787,13 @@ class _StoryViewerState extends State<StoryViewer>
                 cursorColor: Colors.white,
                 textInputAction: TextInputAction.send,
                 onSubmitted: (_) => _sendReply(),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   isCollapsed: true,
                   border: InputBorder.none,
                   enabledBorder: InputBorder.none,
                   focusedBorder: InputBorder.none,
                   filled: false,
-                  hintText: 'إرسال رسالة...',
+                  hintText: tr('إرسال رسالة...'),
                   hintStyle: TextStyle(color: Colors.white70, fontSize: 15),
                 ),
                 maxLength: 500,

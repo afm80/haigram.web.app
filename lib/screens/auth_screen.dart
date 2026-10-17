@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../firebase_options.dart';
+import '../l10n.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
+import 'language_button.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -47,7 +49,7 @@ class _AuthScreenState extends State<AuthScreen> {
       setState(() => _error = _msg(e.code));
     } catch (e) {
       debugPrint('Auth error: $e');
-      setState(() => _error = 'تعذر تسجيل الدخول: $e');
+      setState(() => _error = '${tr('تعذر تسجيل الدخول')}: $e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -56,27 +58,27 @@ class _AuthScreenState extends State<AuthScreen> {
   String _msg(String code) {
     switch (code) {
       case 'invalid-email':
-        return 'البريد الإلكتروني غير صحيح';
+        return tr('البريد الإلكتروني غير صحيح');
       case 'user-not-found':
       case 'wrong-password':
       case 'invalid-credential':
-        return 'البريد أو كلمة المرور غير صحيحة';
+        return tr('البريد أو كلمة المرور غير صحيحة');
       case 'email-already-in-use':
-        return 'هذا البريد مستخدم مسبقاً';
+        return tr('هذا البريد مستخدم مسبقاً');
       case 'weak-password':
-        return 'كلمة المرور ضعيفة (6 أحرف على الأقل)';
+        return tr('كلمة المرور ضعيفة (6 أحرف على الأقل)');
       case 'popup-closed-by-user':
-        return 'تم إغلاق نافذة تسجيل الدخول';
+        return tr('تم إغلاق نافذة تسجيل الدخول');
       case 'account-exists-with-different-credential':
-        return 'هذا البريد مسجّل بطريقة دخول أخرى';
+        return tr('هذا البريد مسجّل بطريقة دخول أخرى');
       case 'network-request-failed':
-        return 'تحقق من اتصال الإنترنت';
+        return tr('تحقق من اتصال الإنترنت');
       case 'too-many-requests':
-        return 'محاولات كثيرة، حاول مرة أخرى بعد قليل';
+        return tr('محاولات كثيرة، حاول مرة أخرى بعد قليل');
       case 'missing-email':
-        return 'اكتب بريدك الإلكتروني أولاً';
+        return tr('اكتب بريدك الإلكتروني أولاً');
       default:
-        return 'تعذر تسجيل الدخول ($code)';
+        return '${tr('تعذر تسجيل الدخول')} ($code)';
     }
   }
 
@@ -90,7 +92,7 @@ class _AuthScreenState extends State<AuthScreen> {
             return;
           }
           if (!await UserService.isAvailable(username)) {
-            setState(() => _error = 'اسم المستخدم محجوز، اختر اسماً آخر');
+            setState(() => _error = tr('اسم المستخدم محجوز، اختر اسماً آخر'));
             return;
           }
           UserService.pendingUsername = username;
@@ -115,15 +117,15 @@ class _AuthScreenState extends State<AuthScreen> {
         final email = _email.text.trim();
         if (email.isEmpty) {
           setState(() =>
-              _error = 'اكتب بريدك الإلكتروني أولاً ثم اضغط «نسيت كلمة المرور»');
+              _error = tr('اكتب بريدك الإلكتروني أولاً ثم اضغط «نسيت كلمة المرور»'));
           return;
         }
         if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
-          setState(() => _error = 'البريد الإلكتروني غير صحيح');
+          setState(() => _error = tr('البريد الإلكتروني غير صحيح'));
           return;
         }
         final auth = FirebaseAuth.instance;
-        await auth.setLanguageCode('ar'); // لتصل الرسالة بالعربية
+        await auth.setLanguageCode(AppLang.isEn ? 'en' : 'ar'); // لغة رسالة البريد
         try {
           await auth.sendPasswordResetEmail(email: email);
         } on FirebaseAuthException catch (e) {
@@ -131,7 +133,7 @@ class _AuthScreenState extends State<AuthScreen> {
           if (e.code != 'user-not-found') rethrow;
         }
         setState(() => _info =
-            'إن كان هذا البريد مسجّلاً لدينا فقد أرسلنا إليه رابط إعادة تعيين كلمة المرور. تحقق من صندوق الوارد ومن البريد غير الهام (Spam).');
+            tr('إن كان هذا البريد مسجّلاً لدينا فقد أرسلنا إليه رابط إعادة تعيين كلمة المرور. تحقق من صندوق الوارد ومن البريد غير الهام (Spam).'));
       });
 
   Future<void> _google() => _run(() async {
@@ -219,20 +221,20 @@ class _AuthScreenState extends State<AuthScreen> {
                                     controller: _name,
                                     textCapitalization:
                                         TextCapitalization.words,
-                                    decoration: const InputDecoration(
-                                        hintText: 'الاسم',
-                                        prefixIcon:
-                                            Icon(Icons.person_outline_rounded)),
+                                    decoration: InputDecoration(
+                                        hintText: tr('الاسم'),
+                                        prefixIcon: const Icon(
+                                            Icons.person_outline_rounded)),
                                   ),
                                   const SizedBox(height: 12),
                                   TextField(
                                     controller: _username,
                                     textDirection: TextDirection.ltr,
                                     autocorrect: false,
-                                    decoration: const InputDecoration(
-                                        hintText: 'اسم المستخدم',
+                                    decoration: InputDecoration(
+                                        hintText: tr('اسم المستخدم'),
                                         prefixText: '@',
-                                        prefixIcon: Icon(
+                                        prefixIcon: const Icon(
                                             Icons.alternate_email_rounded)),
                                   ),
                                   const SizedBox(height: 12),
@@ -241,10 +243,10 @@ class _AuthScreenState extends State<AuthScreen> {
                                   controller: _email,
                                   keyboardType: TextInputType.emailAddress,
                                   autofillHints: const [AutofillHints.email],
-                                  decoration: const InputDecoration(
-                                      hintText: 'البريد الإلكتروني',
-                                      prefixIcon:
-                                          Icon(Icons.mail_outline_rounded)),
+                                  decoration: InputDecoration(
+                                      hintText: tr('البريد الإلكتروني'),
+                                      prefixIcon: const Icon(
+                                          Icons.mail_outline_rounded)),
                                 ),
                                 const SizedBox(height: 12),
                                 TextField(
@@ -254,13 +256,13 @@ class _AuthScreenState extends State<AuthScreen> {
                                       ? const [AutofillHints.newPassword]
                                       : const [AutofillHints.password],
                                   decoration: InputDecoration(
-                                    hintText: 'كلمة المرور',
+                                    hintText: tr('كلمة المرور'),
                                     prefixIcon:
                                         const Icon(Icons.lock_outline_rounded),
                                     suffixIcon: IconButton(
                                       tooltip: _obscurePassword
-                                          ? 'إظهار كلمة المرور'
-                                          : 'إخفاء كلمة المرور',
+                                          ? tr('إظهار كلمة المرور')
+                                          : tr('إخفاء كلمة المرور'),
                                       onPressed: () => setState(() =>
                                           _obscurePassword = !_obscurePassword),
                                       icon: Icon(_obscurePassword
@@ -275,7 +277,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                     alignment: AlignmentDirectional.centerStart,
                                     child: TextButton(
                                       onPressed: _busy ? null : _forgotPassword,
-                                      child: const Text('نسيت كلمة المرور؟'),
+                                      child: Text(tr('نسيت كلمة المرور؟')),
                                     ),
                                   ),
                               ],
@@ -298,7 +300,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                       ? null
                                       : () => setState(
                                           () => _rememberMe = !_rememberMe),
-                                  child: const Text('تذكرني على هذا الجهاز'),
+                                  child: Text(tr('تذكرني على هذا الجهاز')),
                                 ),
                               ],
                             ),
@@ -359,7 +361,9 @@ class _AuthScreenState extends State<AuthScreen> {
                                 : AnimatedSwitcher(
                                     duration: const Duration(milliseconds: 180),
                                     child: Text(
-                                      _register ? 'إنشاء حساب' : 'تسجيل الدخول',
+                                      _register
+                                          ? tr('إنشاء حساب')
+                                          : tr('تسجيل الدخول'),
                                       key: ValueKey(_register),
                                     ),
                                   ),
@@ -368,7 +372,7 @@ class _AuthScreenState extends State<AuthScreen> {
                           OutlinedButton.icon(
                             onPressed: _busy ? null : _google,
                             icon: const Icon(Icons.g_mobiledata, size: 32),
-                            label: const Text('المتابعة بحساب Google'),
+                            label: Text(tr('المتابعة بحساب Google')),
                             style: OutlinedButton.styleFrom(
                               minimumSize: const Size.fromHeight(52),
                               backgroundColor: context.appColors.surfaceHigh,
@@ -388,8 +392,8 @@ class _AuthScreenState extends State<AuthScreen> {
                               duration: const Duration(milliseconds: 180),
                               child: Text(
                                 _register
-                                    ? 'لديك حساب؟ سجّل الدخول'
-                                    : 'ليس لديك حساب؟ أنشئ حساباً',
+                                    ? tr('لديك حساب؟ سجّل الدخول')
+                                    : tr('ليس لديك حساب؟ أنشئ حساباً'),
                                 key: ValueKey('register-$_register'),
                               ),
                             ),
@@ -398,6 +402,16 @@ class _AuthScreenState extends State<AuthScreen> {
                       ),
                     ),
                   ),
+                ),
+              ),
+            ),
+            const PositionedDirectional(
+              top: 0,
+              end: 0,
+              child: SafeArea(
+                child: Padding(
+                  padding: EdgeInsets.all(8),
+                  child: LanguageButton(),
                 ),
               ),
             ),

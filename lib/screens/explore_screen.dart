@@ -11,6 +11,7 @@ import 'common_widgets.dart';
 import 'post_widgets.dart';
 import '../route_state.dart';
 
+import '../l10n.dart';
 /// عدد أعمدة الشبكة حسب عرض الشاشة.
 int _gridColumns(BuildContext context) {
   final width = MediaQuery.sizeOf(context).width;
@@ -145,8 +146,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
               readOnly: true,
               showCursor: false,
               onTap: _openSearch,
-              decoration: const InputDecoration(
-                hintText: 'ابحث بالاسم أو اسم المستخدم أو هاشتاق',
+              decoration: InputDecoration(
+                hintText: tr('ابحث بالاسم أو اسم المستخدم أو هاشتاق'),
                 prefixIcon: Icon(Icons.search_rounded),
               ),
             ),
@@ -164,7 +165,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       children: [
                         Padding(
                           padding: const EdgeInsets.all(28),
-                          child: Text('تعذر تحميل الاستكشاف\n${snap.error}',
+                          child: Text(trf('تعذر تحميل الاستكشاف\n{0}', [snap.error]),
                               textAlign: TextAlign.center),
                         ),
                       ],
@@ -173,10 +174,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   if (!snap.hasData) {
                     return ListView(
                       padding: listPadding,
-                      children: const [
+                      children: [
                         Padding(
                           padding: EdgeInsets.only(top: 60),
-                          child: AppLoading(message: 'جارٍ الاستكشاف...'),
+                          child: AppLoading(message: tr('جارٍ الاستكشاف...')),
                         ),
                       ],
                     );
@@ -242,9 +243,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   ? Icons.videocam_outlined
                   : Icons.photo_library_outlined,
               title: _filter == _ExploreFilter.videos
-                  ? 'لا توجد فيديوهات بعد'
-                  : 'لا توجد صور بعد',
-              message: 'ستظهر هنا أحدث ما يشاركه المستخدمون.',
+                  ? tr('لا توجد فيديوهات بعد')
+                  : tr('لا توجد صور بعد'),
+              message: tr('ستظهر هنا أحدث ما يشاركه المستخدمون.'),
             ),
           )
         else
@@ -267,10 +268,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   Widget _filterBar() {
-    const labels = {
-      _ExploreFilter.all: 'الكل',
-      _ExploreFilter.photos: 'صور',
-      _ExploreFilter.videos: 'فيديوهات',
+    final labels = {
+      _ExploreFilter.all: tr('الكل'),
+      _ExploreFilter.photos: tr('صور'),
+      _ExploreFilter.videos: tr('فيديوهات'),
     };
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
@@ -428,7 +429,7 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
                       textInputAction: TextInputAction.search,
                       onSubmitted: (q) => _run(q, remember: true),
                       decoration: InputDecoration(
-                        hintText: 'ابحث بالاسم أو اسم المستخدم أو هاشتاق',
+                        hintText: tr('ابحث بالاسم أو اسم المستخدم أو هاشتاق'),
                         prefixIcon: const Icon(Icons.search_rounded),
                         suffixIcon: _search.text.isEmpty
                             ? null
@@ -447,7 +448,7 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
                     padding: const EdgeInsetsDirectional.only(start: 4),
                     child: TextButton(
                       onPressed: () => Navigator.of(context).maybePop(),
-                      child: const Text('إلغاء'),
+                      child: Text(tr('إلغاء')),
                     ),
                   ),
                 ],
@@ -490,10 +491,10 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
         children: [
           if (_recent.isNotEmpty) ...[
             _sectionTitle(
-              'عمليات البحث السابقة',
+              tr('عمليات البحث السابقة'),
               trailing: TextButton(
                 onPressed: _clearRecent,
-                child: const Text('مسح الكل'),
+                child: Text(tr('مسح الكل')),
               ),
             ),
             for (final q in _recent)
@@ -517,14 +518,14 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
               if (snap.hasError) {
                 return Padding(
                   padding: const EdgeInsets.all(28),
-                  child: Text('تعذر تحميل المحتوى الرائج\n${snap.error}',
+                  child: Text(trf('تعذر تحميل المحتوى الرائج\n{0}', [snap.error]),
                       textAlign: TextAlign.center),
                 );
               }
               if (!snap.hasData) {
-                return const Padding(
+                return Padding(
                   padding: EdgeInsets.only(top: 40),
-                  child: AppLoading(message: 'جارٍ استكشاف المحتوى...'),
+                  child: AppLoading(message: tr('جارٍ استكشاف المحتوى...')),
                 );
               }
               final tags = snap.data!.keys.toList();
@@ -532,7 +533,7 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _sectionTitle('الهاشتاقات الرائجة'),
+                  _sectionTitle(tr('الهاشتاقات الرائجة')),
                   Wrap(
                     spacing: 8,
                     runSpacing: 0,
@@ -562,16 +563,16 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
       builder: (context, snap) {
         if (snap.hasError) {
           return Center(
-              child: Text('تعذر البحث\n${snap.error}',
+              child: Text(trf('تعذر البحث\n{0}', [snap.error]),
                   textAlign: TextAlign.center));
         }
-        if (!snap.hasData) return const AppLoading(message: 'جارٍ البحث...');
+        if (!snap.hasData) return AppLoading(message: tr('جارٍ البحث...'));
         final (users, posts) = snap.data!;
         if (users.isEmpty && posts.isEmpty) {
-          return const EmptyState(
+          return EmptyState(
             icon: Icons.search_off_rounded,
-            title: 'لم نعثر على نتائج',
-            message: 'جرّب اسماً أو كلمة بحث مختلفة.',
+            title: tr('لم نعثر على نتائج'),
+            message: tr('جرّب اسماً أو كلمة بحث مختلفة.'),
           );
         }
         // الاختيار التلقائي: الحسابات إن وُجدت وإلا المنشورات.
@@ -584,14 +585,14 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
                 children: [
                   _choiceChip(
                     context,
-                    label: 'الحسابات (${users.length})',
+                    label: trf('الحسابات ({0})', [users.length]),
                     selected: tab == 0,
                     onTap: () => setState(() => _resultTab = 0),
                   ),
                   const SizedBox(width: 8),
                   _choiceChip(
                     context,
-                    label: 'المنشورات (${posts.length})',
+                    label: trf('المنشورات ({0})', [posts.length]),
                     selected: tab == 1,
                     onTap: () => setState(() => _resultTab = 1),
                   ),
@@ -609,9 +610,9 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
 
   Widget _usersList(List<AppUser> users) {
     if (users.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Icons.person_search_outlined,
-        title: 'لا توجد حسابات مطابقة',
+        title: tr('لا توجد حسابات مطابقة'),
       );
     }
     return ListView(
@@ -636,9 +637,9 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
   /// المنشورات كشبكة مصغّرة (بدل بطاقات كاملة تطيل الصفحة).
   Widget _postsGrid(List<Post> posts) {
     if (posts.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Icons.image_search_outlined,
-        title: 'لا توجد منشورات مطابقة',
+        title: tr('لا توجد منشورات مطابقة'),
       );
     }
     return GridView.builder(
