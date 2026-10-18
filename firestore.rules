@@ -2,6 +2,12 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // حساب الأدمن الوحيد (لوحة التحكم): يقرأ كل المنشورات والبلاغات ويحذفها.
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.uid == '7M8bvw0UUiR8Ouxx28nq4i4spQF3';
+    }
+
     function followsAfter(followerUid, followedUid) {
       return existsAfter(/databases/$(database)/documents/users/$(followerUid)/following/$(followedUid));
     }
@@ -118,7 +124,8 @@ service cloud.firestore {
       // الحساب الخاص: منشوراته لصاحبه ولمتابعيه فقط (تُفرض هنا في الخادم لا في الواجهة).
       // قواعد القراءة ليست فلتراً: استعلامات القوائم يجب أن تحمل where('authorPrivate', '==', false)
       // أو تقيّد uid بنفسي/بمن أتابعه، وإلا يرفضها Firestore كاملة.
-      allow read: if request.auth != null && canReadPost(resource.data);
+      allow read: if request.auth != null
+        && (isAdmin() || canReadPost(resource.data));
       allow create: if request.auth != null
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.caption.size() <= 500
@@ -163,7 +170,8 @@ service cloud.firestore {
             && request.resource.data.shares == resource.data.get('shares', 0) + 1)
         ))
       );
-      allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
+      allow delete: if request.auth != null
+        && (isAdmin() || resource.data.uid == request.auth.uid);
 
       match /likes/{uid} {
         // مستند إعجابي أنا يُقرأ دائماً (بلا قراءة إضافية)، وإعجابات غيري تتبع قابلية قراءة المنشور.
@@ -426,7 +434,7 @@ service cloud.firestore {
       allow delete: if request.auth != null && request.auth.uid == uid;
     }
 
-    // البلاغات: الإنشاء فقط من المستخدم المسجّل، والقراءة من لوحة Firebase (المشرف).
+    // البلاغات: الإنشاء فقط من المستخدم المسجّل، والقراءة والحذف للأدمن فقط (لوحة التحكم).
     match /reports/{reportId} {
       allow create: if request.auth != null
         && request.resource.data.keys().hasOnly([
@@ -448,7 +456,8 @@ service cloud.firestore {
         && request.resource.data.details is string
         && request.resource.data.details.size() <= 300
         && request.resource.data.createdAt == request.time;
-      allow read, update, delete: if false;
+      allow read, delete: if isAdmin();
+      allow update: if false;
     }
 
     match /presence/{uid} {
