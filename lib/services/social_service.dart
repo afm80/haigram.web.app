@@ -5,7 +5,6 @@ import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 
 import '../l10n.dart';
@@ -115,9 +114,6 @@ class ChatMessage {
   final String? replyToText;
   final String? replyToSenderUid;
   final Map<String, String> reactions;
-  final String? attachmentUrl;
-  final String? attachmentName;
-  final String? contentType;
 
   /// رابط الصورة عند استعمال Cloudinary/Storage (وضع التجربة يستعمل [imageBytes]).
   final String? imageUrl;
@@ -135,9 +131,6 @@ class ChatMessage {
     this.replyToText,
     this.replyToSenderUid,
     this.reactions = const {},
-    this.attachmentUrl,
-    this.attachmentName,
-    this.contentType,
     this.imageUrl,
   });
 
@@ -167,9 +160,6 @@ class ChatMessage {
               ) ??
               const <String, String>{},
         ),
-        attachmentUrl: data['attachmentUrl'] as String?,
-        attachmentName: data['attachmentName'] as String?,
-        contentType: data['contentType'] as String?,
       );
     } catch (_) {
       return null;
@@ -747,58 +737,6 @@ class SocialService {
     );
   }
 
-  static Future<void> sendAttachment(
-    String conversationId, {
-    required Uint8List bytes,
-    required String fileName,
-    required String contentType,
-    required String kind,
-    String? replyToMessageId,
-    String? replyToText,
-    String? replyToSenderUid,
-  }) async {
-    if (!const {'video', 'audio', 'file'}.contains(kind)) {
-      throw ArgumentError.value(kind, 'kind', tr('نوع مرفق غير صالح'));
-    }
-    if (bytes.isEmpty || bytes.length > 20 * 1024 * 1024) {
-      throw ArgumentError(tr('يجب ألا يتجاوز حجم المرفق 20 ميغابايت'));
-    }
-    final safeName = fileName
-        .split(RegExp(r'[/\\]'))
-        .last
-        .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
-    if (safeName.isEmpty || safeName.length > 160) {
-      throw ArgumentError(tr('اسم الملف غير صالح'));
-    }
-
-    final reference = FirebaseStorage.instance.ref().child(
-          'chats/$conversationId/$_uid/${DateTime.now().microsecondsSinceEpoch}_$safeName',
-        );
-    await reference.putData(
-      bytes,
-      SettableMetadata(contentType: contentType),
-    );
-    final url = await reference.getDownloadURL();
-    try {
-      await _sendChatMessage(
-        conversationId,
-        text: safeName,
-        kind: kind,
-        attachmentUrl: url,
-        attachmentName: safeName,
-        contentType: contentType,
-        replyToMessageId: replyToMessageId,
-        replyToText: replyToText,
-        replyToSenderUid: replyToSenderUid,
-      );
-    } catch (_) {
-      try {
-        await reference.delete();
-      } catch (_) {}
-      rethrow;
-    }
-  }
-
   // ===== «حذف لديّ فقط»: معرّفات الرسائل المخفية عن المستخدم الحالي =====
   static DocumentReference<Map<String, dynamic>> _hiddenDoc(
           String conversationId) =>
@@ -879,9 +817,6 @@ class SocialService {
     required String kind,
     Uint8List? imageBytes,
     String? imageUrl,
-    String? attachmentUrl,
-    String? attachmentName,
-    String? contentType,
     String? replyToMessageId,
     String? replyToText,
     String? replyToSenderUid,
@@ -938,11 +873,6 @@ class SocialService {
           messageData['imageUrl'] = imageUrl;
         } else if (imageBytes != null) {
           messageData['image'] = Blob(imageBytes);
-        }
-        if (attachmentUrl != null) {
-          messageData['attachmentUrl'] = attachmentUrl;
-          messageData['attachmentName'] = attachmentName;
-          messageData['contentType'] = contentType;
         }
         // الردّ على رسالة الطرف الآخر يجعل المحادثة «مقبولة» للطرفين.
         final acceptsNow =
