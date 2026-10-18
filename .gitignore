@@ -7,4 +7,5 @@ build/
 .vscode/
 *.iml
 .firebase/
+functions/node_modules/
 web/ffmpeg/ffmpeg-core.wasm
