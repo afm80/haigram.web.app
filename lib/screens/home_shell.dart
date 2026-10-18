@@ -464,9 +464,10 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
                           tr('الملف الشخصي'),
                           foreground: navForeground,
                           inactive: navInactive,
+                          showLabel: false,
                           iconBuilder: (selected) => Container(
-                            width: 25,
-                            height: 25,
+                            width: 30,
+                            height: 30,
                             padding: const EdgeInsets.all(1.5),
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
@@ -481,7 +482,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
                               uid: profile?.uid ?? '',
                               fallbackName: profile?.username ?? '',
                               profile: profile,
-                              radius: 9.5,
+                              radius: 12,
                             ),
                           ),
                         );
@@ -547,6 +548,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     required Color foreground,
     required Color inactive,
     int badgeCount = 0,
+    bool showLabel = true,
     Widget Function(bool selected)? iconBuilder,
   }) {
     final selected = _index == i;
@@ -599,15 +601,17 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
                     ),
                 ],
               ),
+              if (showLabel) ...[
               const SizedBox(height: 1),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  color: selected ? foreground : inactive,
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: selected ? foreground : inactive,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
