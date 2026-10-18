@@ -4,6 +4,7 @@ import '../theme.dart';
 import 'sticker_data.dart';
 
 import '../l10n.dart';
+
 /// رابط صورة Twemoji الملوّنة (مفتوحة الترخيص CC-BY 4.0) للإيموجي [emoji].
 /// تظهر بألوانها على كل الأجهزة والمتصفحات دون الاعتماد على خط النظام.
 String stickerImageUrl(String emoji) {
@@ -33,7 +34,7 @@ class StickerGlyph extends StatelessWidget {
         height: size,
         cacheWidth: (size * 3).round(),
         fit: BoxFit.contain,
-        filterQuality: FilterQuality.medium,
+        filterQuality: FilterQuality.high,
         gaplessPlayback: true,
         errorBuilder: (_, __, ___) => Center(child: fallback),
         loadingBuilder: (_, child, progress) =>
@@ -83,49 +84,92 @@ class _StickerSheetState extends State<_StickerSheet> {
       builder: (context, scrollController) => Container(
         decoration: BoxDecoration(
           color: colors.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.12),
+              blurRadius: 18,
+              offset: const Offset(0, -8),
+            ),
+          ],
         ),
         child: Column(
           children: [
             const SizedBox(height: 8),
             Container(
-              width: 40,
+              width: 42,
               height: 4,
               decoration: BoxDecoration(
-                color: colors.textDim.withOpacity(0.4),
+                color: colors.textDim.withOpacity(0.42),
                 borderRadius: BorderRadius.circular(4),
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      tr('الملصقات'),
+                      style: TextStyle(
+                        color: colors.text,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: colors.surfaceHigh,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.auto_awesome_rounded,
+                      size: 18,
+                      color: colors.textDim,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
             SizedBox(
-              height: 48,
+              height: 54,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
                 itemCount: stickerCategories.length,
                 itemBuilder: (context, i) {
                   final selected = i == _index;
                   return GestureDetector(
                     onTap: () => setState(() => _index = i),
-                    child: Container(
-                      width: 44,
-                      margin: const EdgeInsets.symmetric(
-                          horizontal: 3, vertical: 4),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      width: 52,
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: selected
-                            ? colors.textDim.withOpacity(0.18)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(12),
+                            ? AppColors.brandPurple.withOpacity(0.12)
+                            : colors.surfaceHigh,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: selected
+                              ? AppColors.brandPurple.withOpacity(0.35)
+                              : Colors.transparent,
+                          width: 1.2,
+                        ),
                       ),
-                      child: StickerGlyph(stickerCategories[i].icon, size: 26),
+                      child: StickerGlyph(stickerCategories[i].icon, size: 28),
                     ),
                   );
                 },
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 8),
               child: Align(
                 alignment: AlignmentDirectional.centerStart,
                 child: Text(
@@ -133,7 +177,7 @@ class _StickerSheetState extends State<_StickerSheet> {
                   style: TextStyle(
                     color: colors.textDim,
                     fontSize: 13,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
@@ -142,23 +186,36 @@ class _StickerSheetState extends State<_StickerSheet> {
               child: GridView.builder(
                 key: ValueKey(_index),
                 controller: scrollController,
-                padding: const EdgeInsets.fromLTRB(10, 0, 10, 16),
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 18),
                 gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 52,
-                  mainAxisSpacing: 4,
-                  crossAxisSpacing: 4,
+                  maxCrossAxisExtent: 74,
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10,
                 ),
                 itemCount: category.items.length,
                 itemBuilder: (context, i) {
                   final sticker = category.items[i];
-                  return InkWell(
-                    borderRadius: BorderRadius.circular(10),
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      widget.onPick(sticker);
-                    },
-                    child: Center(
-                      child: StickerGlyph(sticker, size: 34),
+                  return Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        widget.onPick(sticker);
+                      },
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: colors.surfaceHigh,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: colors.textDim.withOpacity(0.08),
+                            width: 1,
+                          ),
+                        ),
+                        child: Center(
+                          child: StickerGlyph(sticker, size: 42),
+                        ),
+                      ),
                     ),
                   );
                 },

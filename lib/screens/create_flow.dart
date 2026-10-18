@@ -8,6 +8,7 @@ import '../theme.dart';
 
 import '../l10n.dart';
 import '../net_error.dart';
+
 enum CreateKind { post, story, video }
 
 /// حدود الرفع للحفاظ على مجانية الخدمة.
@@ -32,79 +33,157 @@ void startCreate(BuildContext context, CreateKind kind) {
 
 /// الشريط السفلي الصغير: منشور / قصة (مثل إنستغرام).
 void showCreateSheet(BuildContext context) {
-  final colors = context.appColors;
   showModalBottomSheet(
     context: context,
     useRootNavigator: true,
-    backgroundColor: colors.surface,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black54,
     shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
     builder: (ctx) {
-      Widget tile(String title, CreateKind kind) => Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: () {
-                final navigator = Navigator.of(ctx);
-                navigator.pop();
-                navigator.push<void>(
-                  MaterialPageRoute(
-                    fullscreenDialog: true,
-                    builder: (_) => kind == CreateKind.video
-                        ? ComposeScreen(kind: kind)
-                        : CaptureScreen(kind: kind),
+      final colors = ctx.appColors;
+
+      void open(CreateKind kind) {
+        final navigator = Navigator.of(ctx);
+        navigator.pop();
+        navigator.push<void>(
+          MaterialPageRoute(
+            fullscreenDialog: true,
+            builder: (_) => kind == CreateKind.video
+                ? ComposeScreen(kind: kind)
+                : CaptureScreen(kind: kind),
+          ),
+        );
+      }
+
+      Widget option({
+        required String title,
+        required IconData icon,
+        required CreateKind kind,
+      }) =>
+          SizedBox(
+            width: 88,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => open(kind),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 58,
+                        height: 58,
+                        decoration: BoxDecoration(
+                          color: colors.surfaceHigh,
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(icon, color: colors.text, size: 26),
+                      ),
+                      const SizedBox(height: 7),
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: colors.text,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
-                );
-              },
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                    color: colors.surfaceHigh,
-                    borderRadius: BorderRadius.circular(14)),
-                child: Text(
-                  title,
-                  style: TextStyle(
-                      fontSize: 15,
-                      color: colors.text,
-                      fontWeight: FontWeight.w600),
                 ),
               ),
             ),
           );
+
       return SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            Container(
-                width: 40,
+        top: false,
+        child: Container(
+          decoration: BoxDecoration(
+            color: colors.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.18),
+                blurRadius: 24,
+                offset: const Offset(0, -6),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 9),
+              Container(
+                width: 38,
                 height: 4,
                 decoration: BoxDecoration(
-                    color: colors.textDim,
-                    borderRadius: BorderRadius.circular(2))),
-            Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text(tr('إنشاء'),
-                  style: TextStyle(
-                      color: colors.text,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700)),
-            ),
-            Divider(height: 1, color: colors.text.withOpacity(0.12)),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                children: [
-                  tile(tr('منشور'), CreateKind.post),
-                  tile(tr('قصة'), CreateKind.story),
-                  tile(tr('فيديو'), CreateKind.video),
-                ],
+                  color: colors.textDim.withOpacity(0.55),
+                  borderRadius: BorderRadius.circular(3),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-          ],
+              SizedBox(
+                height: 56,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Text(
+                      tr('إنشاء'),
+                      style: TextStyle(
+                        color: colors.text,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    PositionedDirectional(
+                      end: 8,
+                      child: IconButton(
+                        tooltip: tr('إغلاق'),
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        icon: Icon(Icons.close_rounded,
+                            color: colors.text, size: 22),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Divider(height: 1, color: colors.text.withOpacity(0.10)),
+              SizedBox(
+                height: 104,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    children: [
+                      option(
+                        title: tr('منشور'),
+                        icon: Icons.grid_on_outlined,
+                        kind: CreateKind.post,
+                      ),
+                      option(
+                        title: tr('قصة'),
+                        icon: Icons.add_circle_outline_rounded,
+                        kind: CreateKind.story,
+                      ),
+                      option(
+                        title: tr('فيديو'),
+                        icon: Icons.movie_creation_outlined,
+                        kind: CreateKind.video,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+            ],
+          ),
         ),
       );
     },
@@ -143,7 +222,8 @@ Future<PickedMedia?> pickMedia(
   if (f == null) return null;
   final bytes = await f.readAsBytes();
   if (bytes.length > maxPhotoBytes) throw MediaError(tr('الصورة كبيرة جداً'));
-  return PickedMedia(bytes: bytes, ext: 'jpg', mime: 'image/jpeg', name: f.name);
+  return PickedMedia(
+      bytes: bytes, ext: 'jpg', mime: 'image/jpeg', name: f.name);
 }
 
 /// يختار عدة صور دفعة واحدة (حتى [max]) من ملفات الجهاز لألبوم.
@@ -199,8 +279,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
         }
         if (truncated) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text(
-                  trf('الحد الأقصى {0} صور، تم أخذ أول {1}', [PostService.maxAlbumImages, PostService.maxAlbumImages]))));
+              content: Text(trf('الحد الأقصى {0} صور، تم أخذ أول {1}',
+                  [PostService.maxAlbumImages, PostService.maxAlbumImages]))));
         }
         Navigator.of(context).pushReplacement(MaterialPageRoute(
             builder: (_) => ComposeScreen(
@@ -223,8 +303,9 @@ class _CaptureScreenState extends State<CaptureScreen> {
     } on MediaError catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
-      if (mounted) setState(() => _error =
-          friendlyError(e, fallback: tr('تعذر فتح الكاميرا أو الملفات')));
+      if (mounted)
+        setState(() => _error =
+            friendlyError(e, fallback: tr('تعذر فتح الكاميرا أو الملفات')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -251,7 +332,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
                           textAlign: TextAlign.center,
                           style: TextStyle(
                               color: colors.text,
-                              fontSize: 17, fontWeight: FontWeight.w700))),
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700))),
                   const SizedBox(width: 48),
                 ],
               ),
@@ -259,43 +341,39 @@ class _CaptureScreenState extends State<CaptureScreen> {
             Expanded(
               child: Center(
                 child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 32),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 110,
-                              height: 110,
-                              decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  gradient: LinearGradient(colors: [
-                                    AppColors.accent,
-                                    AppColors.accent2
-                                  ])),
-                              child: const Icon(Icons.photo_camera_rounded,
-                                  size: 52, color: Colors.white),
-                            ),
-                            const SizedBox(height: 20),
-                            Text(
-                              (kind == CreateKind.post &&
-                                      PostService.useRemoteMedia)
-                                  ? trf('التقط صورة أو اختر حتى {0} صور من ملفاتك', [PostService.maxAlbumImages])
-                                  : tr('التقط صورة أو اختر من ملفاتك'),
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                  fontSize: 16, color: colors.text),
-                            ),
-                            if (_error != null)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 16),
-                                child: Text(_error!,
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                        color: colors.text)),
-                              ),
-                          ],
-                        ),
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 110,
+                        height: 110,
+                        decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(
+                                colors: [AppColors.accent, AppColors.accent2])),
+                        child: const Icon(Icons.photo_camera_rounded,
+                            size: 52, color: Colors.white),
                       ),
+                      const SizedBox(height: 20),
+                      Text(
+                        (kind == CreateKind.post && PostService.useRemoteMedia)
+                            ? trf('التقط صورة أو اختر حتى {0} صور من ملفاتك',
+                                [PostService.maxAlbumImages])
+                            : tr('التقط صورة أو اختر من ملفاتك'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 16, color: colors.text),
+                      ),
+                      if (_error != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 16),
+                          child: Text(_error!,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: colors.text)),
+                        ),
+                    ],
+                  ),
+                ),
               ),
             ),
             Padding(
@@ -317,8 +395,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                           border: Border.all(color: colors.text, width: 4)),
                       child: Container(
                         decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.white),
+                            shape: BoxShape.circle, color: Colors.white),
                         child: _busy
                             ? const Padding(
                                 padding: EdgeInsets.all(18),
@@ -374,10 +451,7 @@ class ComposeScreen extends StatefulWidget {
   final PickedMedia? media; // null = منشور نصي فقط
   final List<PickedMedia> extraMedia; // صور إضافية لألبوم (بعد الأولى)
   const ComposeScreen(
-      {super.key,
-      required this.kind,
-      this.media,
-      this.extraMedia = const []});
+      {super.key, required this.kind, this.media, this.extraMedia = const []});
 
   @override
   State<ComposeScreen> createState() => _ComposeScreenState();
@@ -418,7 +492,9 @@ class _ComposeScreenState extends State<ComposeScreen> {
     } on MediaError catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
-      if (mounted) setState(() => _error = friendlyError(e, fallback: tr('تعذر اختيار الصور')));
+      if (mounted)
+        setState(
+            () => _error = friendlyError(e, fallback: tr('تعذر اختيار الصور')));
     }
   }
 
@@ -487,8 +563,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
           CreateKind.video => PostType.photo,
         };
         if (_images.length > 1 && type == PostType.photo) {
-          await PostService.publishAlbum(
-              [for (final img in _images) img.bytes],
+          await PostService.publishAlbum([for (final img in _images) img.bytes],
               mime: m.mime,
               ext: m.ext,
               caption: caption,
@@ -586,8 +661,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
                         maxHeight: MediaQuery.of(context).size.height * 0.5),
-                    child: Image.memory(_images.first.bytes,
-                        fit: BoxFit.contain),
+                    child:
+                        Image.memory(_images.first.bytes, fit: BoxFit.contain),
                   ),
                 ),
               ),
@@ -600,8 +675,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
                 child: TextButton.icon(
                   onPressed: _busy ? null : _addMore,
                   icon: const Icon(Icons.add_photo_alternate_outlined),
-                  label: Text(
-                      trf('إضافة صور ({0}/{1})', [_images.length, PostService.maxAlbumImages])),
+                  label: Text(trf('إضافة صور ({0}/{1})',
+                      [_images.length, PostService.maxAlbumImages])),
                 ),
               ),
             const SizedBox(height: 16),

@@ -1,9 +1,18 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
-import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:record/record.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/post_service.dart';
 import '../services/presence_service.dart';
@@ -19,6 +28,7 @@ import '../route_state.dart';
 
 import '../l10n.dart';
 import '../net_error.dart';
+
 /// صندوق البريد (على طريقة تيكتوك): صف الأصدقاء، ثم المتابعون والإعجابات
 /// والتعليقات، ثم المحادثات.
 class InboxScreen extends StatelessWidget {
@@ -54,7 +64,7 @@ class InboxScreen extends StatelessWidget {
                   stories: stories,
                   error: storySnapshot.error,
                 ),
-                const _ActivitySummaryTile(),
+                const _NotificationsSummaryTile(),
                 Padding(
                   padding: EdgeInsetsDirectional.fromSTEB(16, 14, 16, 6),
                   child: Text(tr('المحادثات'),
@@ -269,7 +279,8 @@ class _LastMessagePreviewState extends State<_LastMessagePreview> {
   Widget build(BuildContext context) {
     final colors = context.appColors;
     final c = widget.conversation;
-    final hidden = c.lastMessageId.isNotEmpty && _hidden.contains(c.lastMessageId);
+    final hidden =
+        c.lastMessageId.isNotEmpty && _hidden.contains(c.lastMessageId);
     final text = hidden
         ? tr('تم حذف الرسالة')
         : c.lastMessage.isEmpty
@@ -318,7 +329,8 @@ Future<bool> _confirmAndClearChat(
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(friendlyError(error, fallback: tr('تعذر حذف المحادثة')))),
+            content:
+                Text(friendlyError(error, fallback: tr('تعذر حذف المحادثة')))),
       );
     }
     return false;
@@ -347,31 +359,20 @@ String _dayLabel(DateTime t) {
   return '${l.year}/${_two(l.month)}/${_two(l.day)}';
 }
 
-/// صف واحد «النشاط والمتابعون الجدد» (على طريقة تيكتوك) يفتح صفحة النشاط.
-class _ActivitySummaryTile extends StatefulWidget {
-  const _ActivitySummaryTile();
+/// مدخل موحد للإشعارات، يعرض أحدث حدث ويفتح القائمة الزمنية الكاملة.
+class _NotificationsSummaryTile extends StatefulWidget {
+  const _NotificationsSummaryTile();
 
   @override
-  State<_ActivitySummaryTile> createState() => _ActivitySummaryTileState();
+  State<_NotificationsSummaryTile> createState() =>
+      _NotificationsSummaryTileState();
 }
 
-class _ActivitySummaryTileState extends State<_ActivitySummaryTile> {
+class _NotificationsSummaryTileState extends State<_NotificationsSummaryTile> {
   late final Stream<List<SocialNotification>> _notifications =
       SocialService.notifications();
 
   String _summary(List<SocialNotification> all) {
-    final names = <String>[];
-    for (final n in all) {
-      if ((n.type == 'follow' || n.type == 'followRequest') &&
-          !names.contains(n.actorUsername)) {
-        names.add(n.actorUsername);
-      }
-    }
-    if (names.length == 1) return trf('@{0} بدأ بمتابعتك', [names[0]]);
-    if (names.length == 2) return trf('@{0} و @{1} يتابعانك', [names[0], names[1]]);
-    if (names.length > 2) {
-      return trf('@{0} و @{1} و {2} آخرين يتابعونك', [names[0], names[1], names.length - 2]);
-    }
     if (all.isNotEmpty) {
       return '@${all.first.actorUsername} ${_notificationMessage(all.first)}';
     }
@@ -394,9 +395,10 @@ class _ActivitySummaryTileState extends State<_ActivitySummaryTile> {
           leading: const CircleAvatar(
             radius: 22,
             backgroundColor: AppColors.brandPurple,
-            child: Icon(Icons.bolt_rounded, color: Colors.white, size: 24),
+            child: Icon(Icons.notifications_none_rounded,
+                color: Colors.white, size: 24),
           ),
-          title: Text(tr('النشاط والمتابعون الجدد'),
+          title: Text(tr('الإشعارات'),
               style: TextStyle(fontWeight: FontWeight.w700)),
           subtitle: Text(
             _summary(all),
@@ -428,7 +430,8 @@ class _ActivitySummaryTileState extends State<_ActivitySummaryTile> {
                 )
               : Icon(Icons.chevron_left_rounded, color: colors.textDim),
           onTap: () => rootNavigatorOf(context).push(
-            appRoute('activity', const {}, (_) => const ActivityScreen()),
+            appRoute(
+                'notifications', const {}, (_) => const NotificationsScreen()),
           ),
         );
       },
@@ -452,7 +455,9 @@ String _notificationMessage(SocialNotification notification) {
       return tr('أعجب بمنشورك');
     case 'comment':
       final text = notification.commentText;
-      return text == null || text.isEmpty ? tr('علّق على منشورك') : trf('علّق: {0}', [text]);
+      return text == null || text.isEmpty
+          ? tr('علّق على منشورك')
+          : trf('علّق: {0}', [text]);
     default:
       return tr('لديك إشعار جديد');
   }
@@ -499,8 +504,7 @@ class _FollowingRailState extends State<_FollowingRail> {
         if (mounted) openProfile(context, user.uid);
         return;
       }
-      final conversationId =
-          await SocialService.startConversation(user.uid);
+      final conversationId = await SocialService.startConversation(user.uid);
       if (!mounted) return;
       await rootNavigatorOf(context).push<void>(
         appRoute<void>(
@@ -515,7 +519,9 @@ class _FollowingRailState extends State<_FollowingRail> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر فتح المحادثة')))),
+          SnackBar(
+              content: Text(
+                  friendlyError(error, fallback: tr('تعذر فتح المحادثة')))),
         );
       }
     }
@@ -555,7 +561,8 @@ class _FollowingRailState extends State<_FollowingRail> {
               child: Text(
                 widget.error == null
                     ? tr('تابع أصدقاءك لتظهر حساباتهم هنا')
-                    : friendlyError(widget.error, fallback: tr('تعذر تحميل القصص')),
+                    : friendlyError(widget.error,
+                        fallback: tr('تعذر تحميل القصص')),
                 style: TextStyle(color: context.appColors.textDim),
               ),
             );
@@ -613,8 +620,7 @@ class _FollowingRailState extends State<_FollowingRail> {
                             showOnline: true,
                             hasStory: storyIndex >= 0,
                             storySeen: storyIndex >= 0 &&
-                                StoryViewed.allSeen(
-                                    widget.stories[storyIndex]),
+                                StoryViewed.allSeen(widget.stories[storyIndex]),
                           ),
                           const SizedBox(height: 4),
                           Text(
@@ -676,7 +682,9 @@ class _FriendsScreenState extends State<_FriendsScreen> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر بدء المحادثة')))),
+          SnackBar(
+              content: Text(
+                  friendlyError(error, fallback: tr('تعذر بدء المحادثة')))),
         );
       }
     } finally {
@@ -697,8 +705,7 @@ class _FriendsScreenState extends State<_FriendsScreen> {
             return ErrorState(
                 error: snapshot.error,
                 title: tr('تعذر تحميل قائمة الأصدقاء'),
-                onRetry: () =>
-                    setState(() => _friends = _loadFriends()));
+                onRetry: () => setState(() => _friends = _loadFriends()));
           }
           if (!snapshot.hasData) {
             return const AppLoading();
@@ -706,8 +713,8 @@ class _FriendsScreenState extends State<_FriendsScreen> {
           final friends = snapshot.data!;
           if (friends.isEmpty) {
             return _MessageState(
-              message:
-                  tr('لا يوجد أصدقاء متبادلون بعد\nتابعوا بعضكما لتبدآ المحادثة'),
+              message: tr(
+                  'لا يوجد أصدقاء متبادلون بعد\nتابعوا بعضكما لتبدآ المحادثة'),
               icon: Icons.people_outline_rounded,
             );
           }
@@ -741,6 +748,75 @@ class _FriendsScreenState extends State<_FriendsScreen> {
   }
 }
 
+class _PendingChatAttachment {
+  final Uint8List bytes;
+  final String name;
+  final String contentType;
+  final String kind;
+
+  const _PendingChatAttachment({
+    required this.bytes,
+    required this.name,
+    required this.contentType,
+    required this.kind,
+  });
+}
+
+class _VoiceMessageControl extends StatefulWidget {
+  final String url;
+  final Color foregroundColor;
+
+  const _VoiceMessageControl({
+    required this.url,
+    required this.foregroundColor,
+  });
+
+  @override
+  State<_VoiceMessageControl> createState() => _VoiceMessageControlState();
+}
+
+class _VoiceMessageControlState extends State<_VoiceMessageControl> {
+  final _player = AudioPlayer();
+  StreamSubscription<PlayerState>? _stateSub;
+  bool _playing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _stateSub = _player.onPlayerStateChanged.listen((state) {
+      if (mounted) setState(() => _playing = state == PlayerState.playing);
+    });
+    _player.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => _playing = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    _stateSub?.cancel();
+    _player.dispose();
+    super.dispose();
+  }
+
+  Future<void> _toggle() async {
+    try {
+      if (_playing) {
+        await _player.pause();
+      } else {
+        await _player.play(UrlSource(widget.url));
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+        tooltip: _playing ? tr('إيقاف الصوت') : tr('تشغيل الرسالة الصوتية'),
+        onPressed: _toggle,
+        icon: Icon(_playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
+        color: widget.foregroundColor,
+      );
+}
+
 class ChatScreen extends StatefulWidget {
   final String conversationId;
   final String otherUid;
@@ -757,10 +833,27 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final _text = TextEditingController();
+  final _messageFocus = FocusNode();
   final _picker = ImagePicker();
   final _scroll = ScrollController();
+  final _audioRecorder = AudioRecorder();
+  final _recordedAudio = BytesBuilder(copy: false);
+  Timer? _draftTimer;
   late final Stream<ChatBlockState> _blockState;
+  StreamSubscription<Map<String, DateTime>>? _typingSub;
+  StreamSubscription<RemoteMessage>? _chatPushSub;
+  Map<String, DateTime> _typingUsers = const {};
+  ChatMessage? _replyTarget;
+  DateTime? _readAtWhenOpened;
+  bool _capturedReadAtWhenOpened = false;
   bool _sending = false;
+  bool _draftRestored = false;
+  bool _isRecording = false;
+  String? _failedText;
+  Uint8List? _failedImage;
+  _PendingChatAttachment? _pendingAttachment;
+  _PendingChatAttachment? _failedAttachment;
+  StreamSubscription<Uint8List>? _audioRecordingSub;
   Uint8List? _pendingImage; // صورة مرفقة بانتظار الإرسال اليدوي
   Set<String> _hidden = const {};
   StreamSubscription<Set<String>>? _hiddenSub;
@@ -837,9 +930,36 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       },
       onError: (_) {},
     );
+    _typingSub = SocialService.typingState(widget.conversationId).listen(
+      (typing) {
+        if (mounted) setState(() => _typingUsers = typing);
+      },
+      onError: (_) {},
+    );
+    SocialService.registerChatPushNotifications().catchError((_) {});
+    _chatPushSub = SocialService.foregroundChatMessages.listen((message) {
+      final notification = message.notification;
+      if (!mounted || notification == null) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(notification.body ?? tr('رسالة جديدة')),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    });
+    _messageFocus.addListener(_syncTypingState);
+    _text.addListener(_syncTypingState);
+    _text.addListener(_scheduleDraftSave);
+    _restoreDraft();
     _scroll.addListener(_onScroll);
     _chatSub = SocialService.chatStream(widget.conversationId).listen(
       (data) {
+        if (!_capturedReadAtWhenOpened) {
+          _capturedReadAtWhenOpened = true;
+          final readAt = data?['readAt'];
+          final value = readAt is Map ? readAt[SocialService.currentUid] : null;
+          if (value is Timestamp) _readAtWhenOpened = value.toDate();
+        }
         if (mounted) setState(() => _chatData = data);
       },
       onError: (_) {},
@@ -856,8 +976,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _messagesSub?.cancel();
     _chatSub?.cancel();
     _hiddenSub?.cancel();
+    _typingSub?.cancel();
+    _chatPushSub?.cancel();
+    _messageFocus.removeListener(_syncTypingState);
+    _text.removeListener(_syncTypingState);
+    _text.removeListener(_scheduleDraftSave);
+    _draftTimer?.cancel();
+    _saveDraft();
+    _messageFocus.dispose();
     _scroll.dispose();
     _text.dispose();
+    _audioRecordingSub?.cancel();
+    _audioRecorder.dispose();
     super.dispose();
   }
 
@@ -867,6 +997,44 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (foreground == _foreground) return;
     _foreground = foreground;
     if (foreground) _markRead();
+  }
+
+  void _syncTypingState() {
+    if (!mounted) return;
+    final shouldType = _messageFocus.hasFocus && _text.text.trim().isNotEmpty;
+    SocialService.setTyping(widget.conversationId, isTyping: shouldType)
+        .catchError((_) {});
+  }
+
+  String get _draftKey =>
+      'chat_draft_${SocialService.currentUid}_${widget.conversationId}';
+
+  Future<void> _restoreDraft() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      final draft = preferences.getString(_draftKey);
+      if (draft != null && _text.text.isEmpty) _text.text = draft;
+      _draftRestored = true;
+    } catch (_) {}
+  }
+
+  void _scheduleDraftSave() {
+    if (!_draftRestored) return;
+    _draftTimer?.cancel();
+    _draftTimer = Timer(const Duration(milliseconds: 350), _saveDraft);
+  }
+
+  Future<void> _saveDraft() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final draft = _text.text;
+      if (draft.trim().isEmpty) {
+        await preferences.remove(_draftKey);
+      } else {
+        await preferences.setString(_draftKey, draft);
+      }
+    } catch (_) {}
   }
 
   void _subscribeMessages() {
@@ -963,25 +1131,180 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _showMessageSearch() async {
+    final controller = TextEditingController();
+    var generation = 0;
+    var loading = false;
+    Object? error;
+    var results = <ChatMessage>[];
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(tr('بحث في المحادثة')),
+          content: SizedBox(
+            width: 420,
+            height: MediaQuery.sizeOf(context).height * 0.55,
+            child: Column(
+              children: [
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  textInputAction: TextInputAction.search,
+                  decoration: InputDecoration(
+                    hintText: tr('اكتب كلمة للبحث'),
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    suffixIcon: IconButton(
+                      tooltip: tr('مسح'),
+                      onPressed: () {
+                        controller.clear();
+                        setDialogState(() {
+                          generation++;
+                          results = [];
+                          loading = false;
+                          error = null;
+                        });
+                      },
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ),
+                  onChanged: (value) async {
+                    final request = ++generation;
+                    if (value.trim().isEmpty) {
+                      setDialogState(() {
+                        results = [];
+                        loading = false;
+                        error = null;
+                      });
+                      return;
+                    }
+                    setDialogState(() {
+                      loading = true;
+                      error = null;
+                    });
+                    try {
+                      final found = await SocialService.searchMessages(
+                          widget.conversationId, value);
+                      if (!dialogContext.mounted || request != generation) {
+                        return;
+                      }
+                      setDialogState(() {
+                        results = found;
+                        loading = false;
+                      });
+                    } catch (searchError) {
+                      if (!dialogContext.mounted || request != generation) {
+                        return;
+                      }
+                      setDialogState(() {
+                        error = searchError;
+                        loading = false;
+                      });
+                    }
+                  },
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: loading
+                      ? const Center(
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : error != null
+                          ? Center(child: Text(tr('تعذر البحث في المحادثة')))
+                          : results.isEmpty
+                              ? Center(
+                                  child: Text(
+                                      controller.text.trim().isEmpty
+                                          ? tr('اكتب كلمة للبحث')
+                                          : tr('لا توجد نتائج'),
+                                      textAlign: TextAlign.center))
+                              : ListView.builder(
+                                  itemCount: results.length,
+                                  itemBuilder: (context, index) {
+                                    final message = results[index];
+                                    return ListTile(
+                                      dense: true,
+                                      leading: Icon(message.kind == 'image'
+                                          ? Icons.image_outlined
+                                          : Icons.chat_bubble_outline_rounded),
+                                      title: Text(
+                                        message.text,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        textDirection:
+                                            SocialService.inferTextDirection(
+                                                message.text),
+                                      ),
+                                      subtitle: Text(
+                                        '${_dayLabel(message.createdAt)} · ${_clock(message.createdAt)}',
+                                      ),
+                                      trailing: IconButton(
+                                        tooltip: tr('نسخ الرسالة'),
+                                        onPressed: () {
+                                          Clipboard.setData(ClipboardData(
+                                              text: message.text));
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(SnackBar(
+                                                  content: Text(
+                                                      tr('تم نسخ الرسالة'))));
+                                        },
+                                        icon: const Icon(Icons.copy_rounded),
+                                      ),
+                                    );
+                                  },
+                                ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(tr('إغلاق')),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+  }
+
   /// يرسل الصورة المرفقة ثم النص (بهذا الترتيب) عند ضغط زر الإرسال فقط.
   /// رفع الصورة هو الجزء البطيء، لذلك يُعطَّل الزر أثناءه فقط.
   Future<void> _send() async {
     if (_sending) return;
     final text = _text.text.trim();
     final image = _pendingImage;
-    if (text.isEmpty && image == null) return;
+    final attachment = _pendingAttachment;
+    final replyTarget = _replyTarget;
+    if (text.isEmpty && image == null && attachment == null) return;
     _text.clear();
-    setState(() => _pendingImage = null);
+    setState(() {
+      _pendingImage = null;
+      _pendingAttachment = null;
+      _failedText = null;
+      _failedImage = null;
+      _failedAttachment = null;
+    });
 
     if (image != null) {
       setState(() => _sending = true);
       try {
-        await SocialService.sendImage(widget.conversationId, image);
+        await SocialService.sendImage(
+          widget.conversationId,
+          image,
+          replyToMessageId: replyTarget?.id,
+          replyToText: replyTarget?.text,
+          replyToSenderUid: replyTarget?.senderUid,
+        );
       } catch (e) {
-        // نُعيد ما كتبه المستخدم كما هو ولا نُرسل النص وحده.
         if (mounted) {
           if (_pendingImage == null) setState(() => _pendingImage = image);
           if (_text.text.isEmpty) _text.text = text;
+          setState(() {
+            _failedImage = image;
+            _failedText = text.isEmpty ? null : text;
+          });
         }
         _showError(tr('تعذر إرسال الصورة'), e);
         return;
@@ -990,14 +1313,73 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
     }
 
+    if (attachment != null) {
+      setState(() => _sending = true);
+      try {
+        await SocialService.sendAttachment(
+          widget.conversationId,
+          bytes: attachment.bytes,
+          fileName: attachment.name,
+          contentType: attachment.contentType,
+          kind: attachment.kind,
+          replyToMessageId: replyTarget?.id,
+          replyToText: replyTarget?.text,
+          replyToSenderUid: replyTarget?.senderUid,
+        );
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _pendingAttachment ??= attachment;
+            _failedAttachment = attachment;
+          });
+          if (_text.text.isEmpty) _text.text = text;
+        }
+        _showError(tr('تعذر إرسال المرفق'), e);
+        return;
+      } finally {
+        if (mounted) setState(() => _sending = false);
+      }
+    }
+
     if (text.isNotEmpty) {
       final sending = isSingleSticker(text) && !_firstMessageToStranger
-          ? SocialService.sendSticker(widget.conversationId, text)
-          : SocialService.sendMessage(widget.conversationId, text);
-      sending.catchError((Object e) {
-        if (mounted && _text.text.isEmpty) _text.text = text;
+          ? SocialService.sendSticker(
+              widget.conversationId,
+              text,
+              replyToMessageId: replyTarget?.id,
+              replyToText: replyTarget?.text,
+              replyToSenderUid: replyTarget?.senderUid,
+            )
+          : SocialService.sendMessage(
+              widget.conversationId,
+              text,
+              replyToMessageId: replyTarget?.id,
+              replyToText: replyTarget?.text,
+              replyToSenderUid: replyTarget?.senderUid,
+            );
+      try {
+        await sending;
+        if (mounted) {
+          setState(() {
+            _replyTarget = null;
+            _failedText = null;
+            _failedImage = null;
+            _failedAttachment = null;
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          if (_text.text.isEmpty) _text.text = text;
+          setState(() {
+            _failedText = text;
+            _failedImage = null;
+            _failedAttachment = null;
+          });
+        }
         _showError(tr('تعذر إرسال الرسالة'), e);
-      });
+      }
+    } else if (mounted) {
+      setState(() => _replyTarget = null);
     }
   }
 
@@ -1038,21 +1420,24 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       final bytes = await image.readAsBytes();
       if (!mounted) return;
       if (bytes.length > 700 * 1024) {
-        _showError(tr('تعذر إرفاق الصورة'), tr('حجم الصورة يجب ألا يتجاوز 700 كيلوبايت'));
+        _showError(tr('تعذر إرفاق الصورة'),
+            tr('حجم الصورة يجب ألا يتجاوز 700 كيلوبايت'));
         return;
       }
       setState(() => _pendingImage = bytes);
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر إرفاق الصورة')))),
+          SnackBar(
+              content: Text(
+                  friendlyError(error, fallback: tr('تعذر إرفاق الصورة')))),
         );
       }
     }
   }
 
-  Future<void> _chooseImageSource() async {
-    final source = await showModalBottomSheet<ImageSource>(
+  Future<void> _chooseAttachment() async {
+    final choice = await showModalBottomSheet<String>(
       context: context,
       builder: (sheetContext) => SafeArea(
         child: Column(
@@ -1061,18 +1446,157 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             ListTile(
               leading: const Icon(Icons.photo_library_outlined),
               title: Text(tr('اختيار من المعرض')),
-              onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
+              onTap: () => Navigator.pop(sheetContext, 'image'),
             ),
             ListTile(
               leading: const Icon(Icons.camera_alt_outlined),
               title: Text(tr('التقاط صورة')),
-              onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
+              onTap: () => Navigator.pop(sheetContext, 'camera'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.video_library_outlined),
+              title: Text(tr('اختيار فيديو')),
+              onTap: () => Navigator.pop(sheetContext, 'video'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.attach_file_rounded),
+              title: Text(tr('اختيار ملف')),
+              onTap: () => Navigator.pop(sheetContext, 'file'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.mic_none_rounded),
+              title: Text(tr('تسجيل رسالة صوتية')),
+              onTap: () => Navigator.pop(sheetContext, 'voice'),
             ),
           ],
         ),
       ),
     );
-    if (source != null) await _pickImage(source);
+    switch (choice) {
+      case 'image':
+        await _pickImage(ImageSource.gallery);
+      case 'camera':
+        await _pickImage(ImageSource.camera);
+      case 'video':
+        await _pickAttachment(videoOnly: true);
+      case 'file':
+        await _pickAttachment();
+      case 'voice':
+        await _startVoiceRecording();
+    }
+  }
+
+  String _contentTypeForName(String name) {
+    final extension = name.split('.').last.toLowerCase();
+    return switch (extension) {
+      'mp4' => 'video/mp4',
+      'mov' => 'video/quicktime',
+      'm4v' => 'video/x-m4v',
+      'webm' => 'video/webm',
+      'mp3' => 'audio/mpeg',
+      'm4a' => 'audio/mp4',
+      'aac' => 'audio/aac',
+      'wav' => 'audio/wav',
+      'ogg' || 'opus' => 'audio/ogg',
+      'pdf' => 'application/pdf',
+      'txt' => 'text/plain',
+      'zip' => 'application/zip',
+      'doc' => 'application/msword',
+      'docx' =>
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      _ => 'application/octet-stream',
+    };
+  }
+
+  Future<void> _pickAttachment({bool videoOnly = false}) async {
+    if (_sending || _firstMessageToStranger) return;
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: videoOnly ? FileType.video : FileType.any,
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) return;
+      final file = result.files.single;
+      final bytes = file.bytes;
+      if (bytes == null || bytes.isEmpty) {
+        _showError(tr('تعذر قراءة الملف'), StateError(file.name));
+        return;
+      }
+      if (bytes.length > 20 * 1024 * 1024) {
+        _showError(tr('تعذر إرفاق الملف'),
+            tr('يجب ألا يتجاوز حجم المرفق 20 ميغابايت'));
+        return;
+      }
+      final contentType = _contentTypeForName(file.name);
+      final kind = contentType.startsWith('video/')
+          ? 'video'
+          : contentType.startsWith('audio/')
+              ? 'audio'
+              : 'file';
+      setState(() {
+        _pendingAttachment = _PendingChatAttachment(
+          bytes: bytes,
+          name: file.name,
+          contentType: contentType,
+          kind: kind,
+        );
+      });
+    } catch (error) {
+      _showError(tr('تعذر إرفاق الملف'), error);
+    }
+  }
+
+  Future<void> _startVoiceRecording() async {
+    if (_sending || _isRecording || _firstMessageToStranger) return;
+    try {
+      if (!await _audioRecorder.hasPermission()) {
+        _showError(tr('لم يتم السماح باستخدام الميكروفون'),
+            StateError(tr('تحقق من أذونات الميكروفون')));
+        return;
+      }
+      _recordedAudio.clear();
+      final stream = await _audioRecorder.startStream(RecordConfig(
+        encoder: kIsWeb ? AudioEncoder.opus : AudioEncoder.aacLc,
+        sampleRate: 48000,
+        numChannels: 1,
+      ));
+      _audioRecordingSub = stream.listen(
+        _recordedAudio.add,
+        onError: (Object error) {
+          if (mounted) _showError(tr('تعذر تسجيل الصوت'), error);
+        },
+      );
+      if (mounted) setState(() => _isRecording = true);
+    } catch (error) {
+      _showError(tr('تعذر بدء التسجيل'), error);
+    }
+  }
+
+  Future<void> _finishVoiceRecording() async {
+    try {
+      await _audioRecorder.stop();
+      await _audioRecordingSub?.cancel();
+      _audioRecordingSub = null;
+      final bytes = _recordedAudio.takeBytes();
+      if (mounted) setState(() => _isRecording = false);
+      if (bytes.isEmpty) {
+        _showError(tr('لم يتم تسجيل صوت'), StateError('empty recording'));
+        return;
+      }
+      final isWeb = kIsWeb;
+      setState(() {
+        _pendingAttachment = _PendingChatAttachment(
+          bytes: bytes,
+          name:
+              'voice_${DateTime.now().millisecondsSinceEpoch}.${isWeb ? 'webm' : 'm4a'}',
+          contentType: isWeb ? 'audio/webm' : 'audio/mp4',
+          kind: 'audio',
+        );
+      });
+    } catch (error) {
+      if (mounted) setState(() => _isRecording = false);
+      _showError(tr('تعذر إنهاء التسجيل'), error);
+    }
   }
 
   Future<void> _selectChatAction(String action) async {
@@ -1115,13 +1639,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-                content: Text(blocking ? tr('تم حظر المستخدم') : tr('تم إلغاء الحظر'))),
+                content: Text(
+                    blocking ? tr('تم حظر المستخدم') : tr('تم إلغاء الحظر'))),
           );
         }
       } catch (error) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر تحديث الحظر')))),
+            SnackBar(
+                content: Text(
+                    friendlyError(error, fallback: tr('تعذر تحديث الحظر')))),
           );
         }
       }
@@ -1148,6 +1675,35 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            ListTile(
+              leading: const Icon(Icons.add_reaction_outlined),
+              title: Text(tr('إضافة تفاعل')),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _showReactionPicker(message);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.reply_rounded),
+              title: Text(tr('رد')),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                if (mounted) setState(() => _replyTarget = message);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.copy_rounded),
+              title: Text(tr('نسخ الرسالة')),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                Clipboard.setData(ClipboardData(text: message.text));
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(tr('تم نسخ الرسالة'))),
+                  );
+                }
+              },
+            ),
             if (mine)
               ListTile(
                 leading: const Icon(Icons.delete_forever_rounded,
@@ -1182,6 +1738,97 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> _showReactionPicker(ChatMessage message) async {
+    const reactions = ['❤️', '😂', '😮', '😢', '👏', '🔥', '👍', '🙏'];
+    final selected = await showModalBottomSheet<String?>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
+          child: Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              for (final reaction in reactions)
+                IconButton(
+                  tooltip: reaction,
+                  onPressed: () => Navigator.pop(sheetContext, reaction),
+                  icon: Text(reaction, style: const TextStyle(fontSize: 28)),
+                ),
+              IconButton(
+                tooltip: tr('إزالة التفاعل'),
+                onPressed: () => Navigator.pop(sheetContext, ''),
+                icon: const Icon(Icons.close_rounded),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected == null || !mounted) return;
+    try {
+      await SocialService.setMessageReaction(
+        widget.conversationId,
+        message.id,
+        selected.isEmpty ? null : selected,
+      );
+    } catch (error) {
+      _showError(tr('تعذر تحديث التفاعل'), error);
+    }
+  }
+
+  Widget _messageBody(String text, {required bool mine}) {
+    final style = TextStyle(
+      color: mine ? Colors.white : context.appColors.text,
+      fontSize: 15,
+      height: 1.35,
+    );
+    final linkPattern = RegExp(r'https?://\S+|www\.\S+');
+    final matches = linkPattern.allMatches(text);
+    if (matches.isEmpty) {
+      return Text(
+        text,
+        textDirection: SocialService.inferTextDirection(text),
+        style: style,
+      );
+    }
+
+    final spans = <TextSpan>[];
+    var cursor = 0;
+    for (final match in matches) {
+      if (match.start > cursor) {
+        spans.add(TextSpan(
+          text: text.substring(cursor, match.start),
+          style: style,
+        ));
+      }
+      final url = text.substring(match.start, match.end);
+      spans.add(TextSpan(
+        text: url,
+        style: style.copyWith(
+          color: mine ? Colors.white : AppColors.brandPurple,
+          decoration: TextDecoration.underline,
+        ),
+        recognizer: TapGestureRecognizer()
+          ..onTap = () => launchUrl(Uri.parse(url)),
+      ));
+      cursor = match.end;
+    }
+    if (cursor < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(cursor),
+        style: style,
+      ));
+    }
+
+    return RichText(
+      textAlign: TextAlign.start,
+      textDirection: SocialService.inferTextDirection(text),
+      text: TextSpan(children: spans, style: style),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.appColors;
@@ -1192,8 +1839,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           return Scaffold(
             backgroundColor: colors.bg,
             body: ErrorState(
-                error: blockSnapshot.error,
-                title: tr('تعذر تحميل حالة الحظر')),
+                error: blockSnapshot.error, title: tr('تعذر تحميل حالة الحظر')),
           );
         }
         final blockState = blockSnapshot.data ??
@@ -1243,6 +1889,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               },
             ),
             actions: [
+              IconButton(
+                tooltip: tr('بحث في المحادثة'),
+                onPressed: _showMessageSearch,
+                icon: const Icon(Icons.search_rounded),
+              ),
               PopupMenuButton<String>(
                 tooltip: tr('خيارات المحادثة'),
                 onSelected: _selectChatAction,
@@ -1326,14 +1977,31 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         icon: Icons.waving_hand_outlined,
                       );
                     }
+                    int? unreadDividerAfter;
+                    for (var i = 0; i < messages.length; i++) {
+                      final message = messages[messages.length - 1 - i];
+                      if (message.senderUid != SocialService.currentUid &&
+                          (_readAtWhenOpened == null ||
+                              message.createdAt.isAfter(_readAtWhenOpened!))) {
+                        unreadDividerAfter = i;
+                      }
+                    }
+                    final unreadDividerPosition = unreadDividerAfter == null
+                        ? null
+                        : unreadDividerAfter + 1;
                     return ListView.builder(
                       controller: _scroll,
                       reverse: true,
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 12),
-                      itemCount: messages.length + (_loadingMore ? 1 : 0),
+                      itemCount: messages.length +
+                          (unreadDividerPosition == null ? 0 : 1) +
+                          (_loadingMore ? 1 : 0),
                       itemBuilder: (context, index) {
-                        if (index == messages.length) {
+                        if (_loadingMore &&
+                            index ==
+                                messages.length +
+                                    (unreadDividerPosition == null ? 0 : 1)) {
                           return const Padding(
                             padding: EdgeInsets.all(12),
                             child: Center(
@@ -1346,27 +2014,60 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             ),
                           );
                         }
-                        final message = messages[messages.length - 1 - index];
+                        if (index == unreadDividerPosition) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            child: Center(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: colors.surfaceHigh,
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: Text(
+                                  tr('رسائل غير مقروءة'),
+                                  style: TextStyle(
+                                    color: colors.textDim,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                        final messageIndex = unreadDividerPosition != null &&
+                                index > unreadDividerPosition
+                            ? index - 1
+                            : index;
+                        final message =
+                            messages[messages.length - 1 - messageIndex];
                         final mine =
                             message.senderUid == SocialService.currentUid;
                         final sticker = message.kind == 'sticker';
                         // مقروءة/مسلَّمة: إيصال المحادثة (readAt/deliveredAt)
                         // أو الحقول القديمة في الرسالة نفسها (رسائل سابقة).
-                        final isRead = message.readBy.contains(widget.otherUid) ||
-                            (otherRead != null &&
-                                !message.createdAt.isAfter(otherRead));
+                        final isRead =
+                            message.readBy.contains(widget.otherUid) ||
+                                (otherRead != null &&
+                                    !message.createdAt.isAfter(otherRead));
                         final isDelivered = isRead ||
                             message.deliveredTo.contains(widget.otherUid) ||
                             (otherDelivered != null &&
                                 !message.createdAt.isAfter(otherDelivered));
-                          final bubble = GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onLongPress: () =>
-                                _showMessageActions(message, mine),
-                            child: Container(
+                        final reactionCounts = <String, int>{};
+                        for (final reaction in message.reactions.values) {
+                          reactionCounts.update(reaction, (count) => count + 1,
+                              ifAbsent: () => 1);
+                        }
+                        final bubble = GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onLongPress: () => _showMessageActions(message, mine),
+                          child: Container(
                             constraints: BoxConstraints(
-                                maxWidth:
-                                    MediaQuery.sizeOf(context).width * (mine ? 0.78 : 0.70)),
+                                maxWidth: MediaQuery.sizeOf(context).width *
+                                    (mine ? 0.78 : 0.70)),
                             margin: const EdgeInsets.symmetric(vertical: 4),
                             padding: sticker
                                 ? const EdgeInsets.symmetric(
@@ -1390,6 +2091,59 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
+                                if (message.replyToMessageId != null &&
+                                    (message.replyToText ?? '')
+                                        .trim()
+                                        .isNotEmpty)
+                                  Container(
+                                    width: double.infinity,
+                                    margin: const EdgeInsets.only(bottom: 6),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: mine
+                                          ? Colors.white.withOpacity(0.12)
+                                          : colors.surface,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: mine
+                                            ? Colors.white.withOpacity(0.2)
+                                            : colors.surfaceHigh,
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          tr('ردّ على رسالة'),
+                                          style: TextStyle(
+                                            color: mine
+                                                ? Colors.white70
+                                                : colors.textDim,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          message.replyToText ?? '',
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: mine
+                                                ? Colors.white
+                                                : colors.text,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                          textDirection:
+                                              SocialService.inferTextDirection(
+                                                  message.replyToText ?? ''),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 if (message.kind == 'image' &&
                                     (message.imageUrl != null ||
                                         message.imageBytes != null))
@@ -1438,16 +2192,40 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                             ),
                                     ),
                                   )
-                                else if (sticker)
-                                  StickerGlyph(message.text, size: 56)
-                                else
-                                  Text(
-                                    message.text,
-                                    style: TextStyle(
-                                      color: mine ? Colors.white : colors.text,
-                                      fontSize: sticker ? 38 : 15,
+                                else if (message.kind == 'audio' &&
+                                    message.attachmentUrl != null)
+                                  _VoiceMessageControl(
+                                    url: message.attachmentUrl!,
+                                    foregroundColor:
+                                        mine ? Colors.white : colors.text,
+                                  )
+                                else if ((message.kind == 'video' ||
+                                        message.kind == 'file') &&
+                                    message.attachmentUrl != null)
+                                  TextButton.icon(
+                                    onPressed: () => launchUrl(
+                                      Uri.parse(message.attachmentUrl!),
+                                      mode: LaunchMode.externalApplication,
                                     ),
-                                  ),
+                                    icon: Icon(message.kind == 'video'
+                                        ? Icons.play_circle_outline_rounded
+                                        : Icons.download_rounded),
+                                    label: Flexible(
+                                      child: Text(
+                                        message.attachmentName ?? message.text,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    style: TextButton.styleFrom(
+                                      foregroundColor:
+                                          mine ? Colors.white : colors.text,
+                                    ),
+                                  )
+                                else if (sticker)
+                                  StickerGlyph(message.text, size: 72)
+                                else
+                                  _messageBody(message.text, mine: mine),
                                 if (!sticker) const SizedBox(height: 3),
                                 if (mine)
                                   Row(
@@ -1484,10 +2262,38 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                       fontSize: 10,
                                     ),
                                   ),
+                                if (reactionCounts.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 5),
+                                    child: Wrap(
+                                      spacing: 4,
+                                      children: [
+                                        for (final reaction
+                                            in reactionCounts.entries)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: mine
+                                                  ? Colors.white
+                                                      .withOpacity(0.16)
+                                                  : colors.surface,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            child: Text(
+                                              '${reaction.key} ${reaction.value}',
+                                              style:
+                                                  const TextStyle(fontSize: 11),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
                               ],
                             ),
-                            ),
-                          );
+                          ),
+                        );
                         final row = Align(
                           alignment: mine
                               ? AlignmentDirectional.centerEnd
@@ -1500,9 +2306,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                   children: [
                                     // النقر على صورة المرسل يفتح حسابه.
                                     Padding(
-                                      padding:
-                                          const EdgeInsetsDirectional.only(
-                                              end: 6, bottom: 4),
+                                      padding: const EdgeInsetsDirectional.only(
+                                          end: 6, bottom: 4),
                                       child: UserAvatar(
                                         uid: message.senderUid,
                                         radius: 14,
@@ -1515,8 +2320,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                 ),
                         );
                         // فاصل التاريخ فوق أول رسالة في كل يوم.
-                        final previous = index + 1 < messages.length
-                            ? messages[messages.length - 2 - index]
+                        final previous = messageIndex + 1 < messages.length
+                            ? messages[messages.length - 2 - messageIndex]
                             : null;
                         if (previous != null &&
                             _sameDay(previous.createdAt, message.createdAt)) {
@@ -1549,6 +2354,26 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   },
                 ),
               ),
+              if (_typingUsers.keys
+                  .any((uid) => uid != SocialService.currentUid))
+                SafeArea(
+                  top: false,
+                  child: Container(
+                    width: double.infinity,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    color: colors.surfaceHigh,
+                    child: Text(
+                      tr('يكتب الآن…'),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: colors.textDim,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
               if (!blockState.blocked && _waitingForReply)
                 SafeArea(
                   top: false,
@@ -1574,10 +2399,121 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       style: TextStyle(color: colors.textDim, fontSize: 12),
                     ),
                   ),
+                if (_failedText != null ||
+                    _failedImage != null ||
+                    _failedAttachment != null)
+                  Container(
+                    margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: colors.surfaceHigh,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            tr('تعذر إرسال الرسالة'),
+                            style: TextStyle(color: colors.textDim),
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: _sending
+                              ? null
+                              : () {
+                                  setState(() {
+                                    if (_failedImage != null) {
+                                      _pendingImage ??= _failedImage;
+                                    }
+                                    if (_failedAttachment != null) {
+                                      _pendingAttachment ??= _failedAttachment;
+                                    }
+                                    if (_failedText != null &&
+                                        _text.text.isEmpty) {
+                                      _text.text = _failedText!;
+                                    }
+                                  });
+                                  _send();
+                                },
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: Text(tr('إعادة المحاولة')),
+                        ),
+                      ],
+                    ),
+                  ),
                 if (_pendingImage != null)
                   PendingImagePreview(
                     bytes: _pendingImage!,
                     onRemove: () => setState(() => _pendingImage = null),
+                  ),
+                if (_pendingAttachment != null)
+                  ListTile(
+                    dense: true,
+                    leading: Icon(_pendingAttachment!.kind == 'video'
+                        ? Icons.video_file_outlined
+                        : _pendingAttachment!.kind == 'audio'
+                            ? Icons.audio_file_outlined
+                            : Icons.attach_file_rounded),
+                    title: Text(
+                      _pendingAttachment!.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                        '${(_pendingAttachment!.bytes.length / (1024 * 1024)).toStringAsFixed(1)} MB'),
+                    trailing: IconButton(
+                      tooltip: tr('إزالة المرفق'),
+                      onPressed: () => setState(() {
+                        _pendingAttachment = null;
+                        _failedAttachment = null;
+                      }),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ),
+                if (_isRecording)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.fiber_manual_record,
+                            color: Colors.red, size: 14),
+                        const SizedBox(width: 8),
+                        Text(tr('جارٍ تسجيل رسالة صوتية')),
+                      ],
+                    ),
+                  ),
+                if (_replyTarget != null)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: colors.surfaceHigh,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${tr('رد على')}: ${_replyTarget!.text}',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style:
+                                TextStyle(color: colors.textDim, fontSize: 12),
+                            textDirection: SocialService.inferTextDirection(
+                                _replyTarget!.text),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => setState(() => _replyTarget = null),
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                          tooltip: tr('إلغاء الرد'),
+                        ),
+                      ],
+                    ),
                   ),
                 SafeArea(
                   top: false,
@@ -1590,7 +2526,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                           tooltip: tr('إرسال صورة أو التقاط صورة'),
                           onPressed: (_sending || _firstMessageToStranger)
                               ? null
-                              : _chooseImageSource,
+                              : _chooseAttachment,
                           icon: const Icon(Icons.add_circle_outline_rounded),
                         ),
                         IconButton(
@@ -1608,6 +2544,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         Expanded(
                           child: TextField(
                             controller: _text,
+                            focusNode: _messageFocus,
                             minLines: 1,
                             maxLines: 4,
                             maxLength: 2000,
@@ -1622,7 +2559,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         ),
                         const SizedBox(width: 5),
                         IconButton.filled(
-                          onPressed: _sending ? null : _send,
+                          onPressed: _sending
+                              ? null
+                              : _isRecording
+                                  ? _finishVoiceRecording
+                                  : _send,
                           style: IconButton.styleFrom(
                               backgroundColor: AppColors.accent),
                           icon: _sending
@@ -1631,8 +2572,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                   height: 18,
                                   child: CircularProgressIndicator(
                                       strokeWidth: 2, color: Colors.white))
-                              : const Icon(Icons.send_rounded,
-                                  color: Colors.white),
+                              : Icon(
+                                  _isRecording
+                                      ? Icons.stop_rounded
+                                      : Icons.send_rounded,
+                                  color: Colors.white,
+                                ),
                         ),
                       ],
                     ),
@@ -1659,7 +2604,9 @@ Future<void> _openNotification(
   if (!notification.read) {
     SocialService.markNotificationRead(notification.id).catchError((Object e) {
       messenger.showSnackBar(
-        SnackBar(content: Text(friendlyError(e, fallback: tr('تعذر تحديث الإشعار')))),
+        SnackBar(
+            content:
+                Text(friendlyError(e, fallback: tr('تعذر تحديث الإشعار')))),
       );
     });
   }
@@ -1684,7 +2631,9 @@ Future<void> _openNotification(
     post = await PostService.postById(postId);
   } catch (error) {
     messenger.showSnackBar(
-      SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر فتح المنشور')))),
+      SnackBar(
+          content:
+              Text(friendlyError(error, fallback: tr('تعذر فتح المنشور')))),
     );
     return;
   }
@@ -1723,7 +2672,9 @@ class NotificationsScreen extends StatelessWidget {
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر تحديث الإشعارات')))),
+          SnackBar(
+              content: Text(
+                  friendlyError(error, fallback: tr('تعذر تحديث الإشعارات')))),
         );
       }
     }
@@ -1827,8 +2778,18 @@ class _NotificationTile extends StatelessWidget {
 }
 
 const _arabicMonths = [
-  'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
-  'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
+  'يناير',
+  'فبراير',
+  'مارس',
+  'أبريل',
+  'مايو',
+  'يونيو',
+  'يوليو',
+  'أغسطس',
+  'سبتمبر',
+  'أكتوبر',
+  'نوفمبر',
+  'ديسمبر',
 ];
 
 String _shortDate(DateTime d) {
@@ -1846,7 +2807,9 @@ class ActivityScreen extends StatelessWidget {
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر تحديث الإشعارات')))),
+          SnackBar(
+              content: Text(
+                  friendlyError(error, fallback: tr('تعذر تحديث الإشعارات')))),
         );
       }
     }
@@ -1990,8 +2953,8 @@ class _ActivityListTab extends StatelessWidget {
     }
     return ListView.separated(
       itemCount: items.length,
-      separatorBuilder: (_, __) => Divider(
-          height: 1, indent: 76, color: context.appColors.surfaceHigh),
+      separatorBuilder: (_, __) =>
+          Divider(height: 1, indent: 76, color: context.appColors.surfaceHigh),
       itemBuilder: (context, index) =>
           _NotificationTile(notification: items[index]),
     );
@@ -2019,8 +2982,9 @@ class _FollowBackButton extends StatelessWidget {
           await openChatWith(context, uid);
       }
     } catch (error) {
-      messenger.showSnackBar(
-          SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر تنفيذ الإجراء')))));
+      messenger.showSnackBar(SnackBar(
+          content:
+              Text(friendlyError(error, fallback: tr('تعذر تنفيذ الإجراء')))));
     }
   }
 
@@ -2046,8 +3010,8 @@ class _FollowBackButton extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14),
             backgroundColor: red ? AppColors.brandPurple : colors.surfaceHigh,
             foregroundColor: red ? Colors.white : colors.text,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
           child: Text(
             switch (state) {
@@ -2112,7 +3076,8 @@ class _SuggestedAccountsState extends State<_SuggestedAccounts> {
     // 2) تكملة من أصحاب أحدث الصور.
     if (candidates.length < _maxSuggestions) {
       try {
-        final recent = await PostService.stream(PostType.photo, limit: 30).first;
+        final recent =
+            await PostService.stream(PostType.photo, limit: 30).first;
         for (final post in recent) {
           if (!known.contains(post.uid) && !candidates.containsKey(post.uid)) {
             candidates[post.uid] = tr('مقترح لك');
@@ -2162,8 +3127,7 @@ class _SuggestedAccountsState extends State<_SuggestedAccounts> {
               _SuggestionCard(
                 key: ValueKey(item.user.uid),
                 suggestion: item,
-                onDismiss: () =>
-                    setState(() => _dismissed.add(item.user.uid)),
+                onDismiss: () => setState(() => _dismissed.add(item.user.uid)),
               ),
           ],
         );
@@ -2241,10 +3205,7 @@ class _SuggestionThumbsState extends State<_SuggestionThumbs> {
   Future<List<Post>> _load() async {
     try {
       final posts = await PostService.profilePosts(widget.uid, limit: 8).first;
-      return posts
-          .where((p) => p.type == PostType.photo)
-          .take(4)
-          .toList();
+      return posts.where((p) => p.type == PostType.photo).take(4).toList();
     } catch (_) {
       return const <Post>[];
     }
@@ -2292,8 +3253,9 @@ class ProfileVisitsScreen extends StatelessWidget {
     try {
       await UserService.updatePrivacy(profileVisits: value);
     } catch (error) {
-      messenger.showSnackBar(
-          SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر حفظ الإعداد')))));
+      messenger.showSnackBar(SnackBar(
+          content:
+              Text(friendlyError(error, fallback: tr('تعذر حفظ الإعداد')))));
     }
   }
 
@@ -2321,8 +3283,8 @@ class ProfileVisitsScreen extends StatelessWidget {
           ),
           body: !enabled
               ? _MessageState(
-                  message:
-                      tr('ميزة زيارات الملف الشخصي متوقفة.\nشغّلها من الزر بالأعلى لتعرف من زار ملفك ويرى الآخرون زياراتك لهم.'),
+                  message: tr(
+                      'ميزة زيارات الملف الشخصي متوقفة.\nشغّلها من الزر بالأعلى لتعرف من زار ملفك ويرى الآخرون زياراتك لهم.'),
                   icon: Icons.visibility_off_outlined,
                 )
               : StreamBuilder<List<ProfileVisit>>(
@@ -2433,7 +3395,9 @@ class _FollowRequestActionsState extends State<_FollowRequestActions> {
     try {
       await action();
     } catch (error) {
-      messenger.showSnackBar(SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر تنفيذ الإجراء')))));
+      messenger.showSnackBar(SnackBar(
+          content:
+              Text(friendlyError(error, fallback: tr('تعذر تنفيذ الإجراء')))));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

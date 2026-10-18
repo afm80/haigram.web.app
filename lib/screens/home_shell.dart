@@ -1,7 +1,10 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemNavigator;
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 import '../l10n.dart';
 import '../net_error.dart';
@@ -12,6 +15,7 @@ import '../services/social_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
 import 'create_flow.dart';
+import 'common_widgets.dart' show UserAvatar;
 import 'explore_screen.dart';
 import 'home_feed_screen.dart';
 import 'social_screens.dart';
@@ -36,6 +40,35 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   late Future<AppUser> _profile = UserService.ensureProfile();
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _blockedAccountSub;
+  bool _blockedSignOutStarted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return;
+    _blockedAccountSub = FirebaseFirestore.instance
+        .collection('blockedUsers')
+        .doc(uid)
+        .snapshots()
+        .listen((snapshot) {
+      if (!snapshot.exists || _blockedSignOutStarted) return;
+      _blockedSignOutStarted = true;
+      RouteStore.clear();
+      UserService.me = null;
+      FirebaseAuth.instance.signOut().catchError((Object error) {
+        debugPrint('Unable to sign out blocked account: $error');
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _blockedAccountSub?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,8 +84,7 @@ class _HomeShellState extends State<HomeShell> {
                       setState(() => _profile = UserService.ensureProfile())));
         }
         if (!snap.hasData)
-          return const Scaffold(
-              body: Center(child: HaigramLogo(size: 96)));
+          return const Scaffold(body: Center(child: HaigramLogo(size: 96)));
         return _Tabs(
           themeMode: widget.themeMode,
           onThemeModeChanged: widget.onThemeModeChanged,
@@ -85,14 +117,16 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   // التبويبات التي زرتها قبل الحالي (الأحدث في النهاية) ليعيدك الرجوع إليها.
   final List<int> _tabHistory = [];
   Timer? _presenceHeartbeat;
+  StreamSubscription<RemoteMessage>? _pushOpenedSub;
   final _selectedTab = ValueNotifier<int>(0);
-  final _tabNavigators =
-      List.generate(5, (_) => GlobalKey<NavigatorState>());
+  final _tabNavigators = List.generate(5, (_) => GlobalKey<NavigatorState>());
   // يحفظ الصفحات المفتوحة في كل تبويب لاستعادتها بعد تحديث المتصفح.
   final _routeObservers = List.generate(5, (tab) => TabRouteObserver(tab));
   // يلغي نافذة «اضغط مرة أخرى للخروج» عند فتح أي صفحة داخل تبويب.
   late final _pushObservers =
       List.generate(5, (_) => _PushObserver(_disarmExit));
+  late final Stream<AppUser?> _currentProfile =
+      UserService.profileStream(UserService.me?.uid ?? '');
   late final Stream<int> _unreadNotificationCount =
       SocialService.unreadNotificationCount();
 
@@ -100,6 +134,15 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _pushOpenedSub = FirebaseMessaging.onMessageOpenedApp.listen(
+      _openChatFromPush,
+    );
+    FirebaseMessaging.instance.getInitialMessage().then((message) {
+      if (message == null) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _openChatFromPush(message);
+      });
+    }).catchError((Object _) {});
     _updatePresence(true);
     _presenceHeartbeat = Timer.periodic(
       const Duration(minutes: 1),
@@ -115,6 +158,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _presenceHeartbeat?.cancel();
+    _pushOpenedSub?.cancel();
     _exitTimer?.cancel();
     _updatePresence(false);
     _selectedTab.dispose();
@@ -157,9 +201,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   }
 
   Future<void> _restore(SavedNavState saved) async {
-    final tab = (saved.tab >= 0 && saved.tab < _tabNavigators.length)
-        ? saved.tab
-        : 0;
+    final tab =
+        (saved.tab >= 0 && saved.tab < _tabNavigators.length) ? saved.tab : 0;
     RouteStore.setTab(tab, persist: false);
     setState(() => _index = tab);
     _selectedTab.value = tab;
@@ -236,22 +279,30 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
         return appRoute<void>(
           'settings',
           const {},
-          (_) => SettingsScreen(
-              onThemeModeChanged: widget.onThemeModeChanged),
+          (_) => SettingsScreen(onThemeModeChanged: widget.onThemeModeChanged),
         );
     }
     return null;
   }
 
   Future<void> _openDeepLink() async {
+    final chatId = Uri.base.queryParameters['chat'];
+    final senderUid = Uri.base.queryParameters['from'];
+    if (chatId != null &&
+        chatId.isNotEmpty &&
+        senderUid != null &&
+        senderUid.isNotEmpty) {
+      _pushChatRoute(chatId, senderUid);
+      return;
+    }
     final u = Uri.base.queryParameters['u'];
     if (u != null && u.isNotEmpty) {
       final user = await UserService.byUsername(u);
       if (!mounted || user == null) return;
       _tabNavigators[0].currentState?.push<void>(
-        appRoute<void>('user', {'uid': user.uid},
-            (_) => UserProfileScreen(uid: user.uid)),
-      );
+            appRoute<void>('user', {'uid': user.uid},
+                (_) => UserProfileScreen(uid: user.uid)),
+          );
       return;
     }
     final postId = Uri.base.queryParameters['p'];
@@ -259,11 +310,32 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
       final post = await PostService.postById(postId);
       if (!mounted || post == null) return;
       _tabNavigators[0].currentState?.push<void>(
-        appRoute<void>('post', {'id': post.id},
-            (_) => PostDetailScreen(post: post)),
-      );
+            appRoute<void>(
+                'post', {'id': post.id}, (_) => PostDetailScreen(post: post)),
+          );
       return;
     }
+  }
+
+  void _openChatFromPush(RemoteMessage message) {
+    final chatId = message.data['conversationId'];
+    final senderUid = message.data['senderUid'];
+    if (chatId is String &&
+        chatId.isNotEmpty &&
+        senderUid is String &&
+        senderUid.isNotEmpty) {
+      _pushChatRoute(chatId, senderUid);
+    }
+  }
+
+  void _pushChatRoute(String chatId, String otherUid) {
+    _tabNavigators[0].currentState?.push<void>(
+          appRoute<void>(
+            'chat',
+            {'cid': chatId, 'uid': otherUid},
+            (_) => ChatScreen(conversationId: chatId, otherUid: otherUid),
+          ),
+        );
   }
 
   /// زر الرجوع (أندرويد/المتصفح): يغلق الصفحة المفتوحة فوق التبويب أولاً،
@@ -323,66 +395,98 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     final navInactive = isDark ? Colors.white70 : Colors.black54;
 
     return PopScope(
-      // الضغطة الثانية خلال ثانيتين تمرّ للنظام فيُغلق التطبيق فعلاً.
-      canPop: _exitArmed,
-      onPopInvoked: (didPop) {
-        if (!didPop) _handleBack();
-      },
-      child: Scaffold(
-      extendBody: true,
-      body: IndexedStack(
-        index: _index,
-        children: List.generate(
-          _tabNavigators.length,
-          (tab) => Navigator(
-            key: _tabNavigators[tab],
-            observers: [_routeObservers[tab], _pushObservers[tab]],
-            onGenerateRoute: (_) => MaterialPageRoute<void>(
-              builder: (_) => ValueListenableBuilder<int>(
-                valueListenable: _selectedTab,
-                builder: (context, selectedTab, _) =>
-                    _tabPage(tab, selectedTab),
+        // الضغطة الثانية خلال ثانيتين تمرّ للنظام فيُغلق التطبيق فعلاً.
+        canPop: _exitArmed,
+        onPopInvoked: (didPop) {
+          if (!didPop) _handleBack();
+        },
+        child: Scaffold(
+          extendBody: true,
+          body: IndexedStack(
+            index: _index,
+            children: List.generate(
+              _tabNavigators.length,
+              (tab) => Navigator(
+                key: _tabNavigators[tab],
+                observers: [_routeObservers[tab], _pushObservers[tab]],
+                onGenerateRoute: (_) => MaterialPageRoute<void>(
+                  builder: (_) => ValueListenableBuilder<int>(
+                    valueListenable: _selectedTab,
+                    builder: (context, selectedTab, _) =>
+                        _tabPage(tab, selectedTab),
+                  ),
+                ),
               ),
             ),
           ),
-        ),
-      ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.only(left: 10, right: 10, bottom: 4),
-          child: SizedBox(
-            height: 58,
-            child: Row(
-              children: [
-                _navItem(
-                    0, Icons.home_outlined, Icons.home_rounded, tr('الرئيسية'),
-                    foreground: navForeground, inactive: navInactive),
-                _navItem(1, Icons.explore_outlined, Icons.explore_rounded,
-                    tr('استكشف'),
-                    foreground: navForeground, inactive: navInactive),
-                Expanded(child: Center(child: _createButton())),
-                StreamBuilder<int>(
-                  stream: _unreadNotificationCount,
-                  builder: (context, snapshot) => _navItem(
-                    3,
-                    Icons.chat_bubble_outline_rounded,
-                    Icons.chat_bubble_rounded,
-                    tr('صندوق البريد'),
-                    foreground: navForeground,
-                    inactive: navInactive,
-                    badgeCount: snapshot.hasError ? -1 : (snapshot.data ?? 0),
-                  ),
+          bottomNavigationBar: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 10, right: 10, bottom: 4),
+              child: SizedBox(
+                height: 58,
+                child: Row(
+                  children: [
+                    _navItem(0, Icons.home_outlined, Icons.home_rounded,
+                        tr('الرئيسية'),
+                        foreground: navForeground, inactive: navInactive),
+                    _navItem(1, Icons.explore_outlined, Icons.explore_rounded,
+                        tr('استكشف'),
+                        foreground: navForeground, inactive: navInactive),
+                    Expanded(child: Center(child: _createButton())),
+                    StreamBuilder<int>(
+                      stream: _unreadNotificationCount,
+                      builder: (context, snapshot) => _navItem(
+                        3,
+                        Icons.chat_bubble_outline_rounded,
+                        Icons.chat_bubble_rounded,
+                        tr('الرسائل'),
+                        foreground: navForeground,
+                        inactive: navInactive,
+                        badgeCount:
+                            snapshot.hasError ? -1 : (snapshot.data ?? 0),
+                      ),
+                    ),
+                    StreamBuilder<AppUser?>(
+                      stream: _currentProfile,
+                      builder: (context, snapshot) {
+                        final profile = snapshot.data ?? UserService.me;
+                        return _navItem(
+                          4,
+                          Icons.person_outline_rounded,
+                          Icons.person_rounded,
+                          tr('الملف الشخصي'),
+                          foreground: navForeground,
+                          inactive: navInactive,
+                          iconBuilder: (selected) => Container(
+                            width: 25,
+                            height: 25,
+                            padding: const EdgeInsets.all(1.5),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: selected
+                                    ? navForeground
+                                    : Colors.transparent,
+                                width: 1.5,
+                              ),
+                            ),
+                            child: UserAvatar(
+                              uid: profile?.uid ?? '',
+                              fallbackName: profile?.username ?? '',
+                              profile: profile,
+                              radius: 9.5,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 ),
-                _navItem(4, Icons.person_outline_rounded, Icons.person_rounded,
-                    tr('الملف الشخصي'),
-                    foreground: navForeground, inactive: navInactive),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
-    ));
+        ));
   }
 
   Widget _tabPage(int tab, int selectedTab) => switch (tab) {
@@ -437,6 +541,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     required Color foreground,
     required Color inactive,
     int badgeCount = 0,
+    Widget Function(bool selected)? iconBuilder,
   }) {
     final selected = _index == i;
     return Expanded(
@@ -454,8 +559,9 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
               Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  Icon(selected ? activeIcon : icon,
-                      color: selected ? foreground : inactive, size: 23),
+                  iconBuilder?.call(selected) ??
+                      Icon(selected ? activeIcon : icon,
+                          color: selected ? foreground : inactive, size: 23),
                   if (badgeCount != 0)
                     Positioned(
                       top: -5,
@@ -518,8 +624,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
           ),
         );
     return GestureDetector(
-      onTap: () => showCreateSheet(
-          _tabNavigators[_index].currentContext ?? context),
+      onTap: () =>
+          showCreateSheet(_tabNavigators[_index].currentContext ?? context),
       child: SizedBox(
         width: 50,
         height: 34,
