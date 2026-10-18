@@ -423,7 +423,7 @@ class _StoryViewerState extends State<StoryViewer>
     _replyFocus.unfocus();
     try {
       final id = await SocialService.startConversation(_group.uid);
-      await SocialService.sendMessage(id, 'ردّ على القصة: $text');
+      await SocialService.sendMessage(id, trf('ردّ على القصة: {0}', [text]));
       messenger.showSnackBar(SnackBar(
           content: Text(tr('تم إرسال ردّك')), duration: Duration(seconds: 2)));
     } catch (_) {

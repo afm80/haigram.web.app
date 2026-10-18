@@ -92,7 +92,9 @@ class InboxScreen extends StatelessWidget {
         ),
       ];
     }
-    final conversations = snapshot.data!;
+    // المحادثات التي لم تُرسل فيها أي رسالة بعد لا تظهر في الصندوق.
+    final conversations =
+        snapshot.data!.where((c) => c.lastMessageId.isNotEmpty).toList();
     if (conversations.isEmpty) {
       return [
         SizedBox(
@@ -602,18 +604,54 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final _text = TextEditingController();
   final _picker = ImagePicker();
+  final _scroll = ScrollController();
   late final Stream<ChatBlockState> _blockState;
   bool _sending = false;
   Uint8List? _pendingImage; // صورة مرفقة بانتظار الإرسال اليدوي
   Set<String> _hidden = const {};
   StreamSubscription<Set<String>>? _hiddenSub;
 
+  // الرسائل: اشتراك واحد يُنشأ في initState (لا يُعاد إنشاؤه مع كل build).
+  StreamSubscription<List<ChatMessage>>? _messagesSub;
+  List<ChatMessage>? _messages;
+  Object? _messagesError;
+  int _limit = SocialService.messagesPageSize;
+  bool _loadingMore = false;
+  bool _foreground = true;
+
+  // حالة المراسلة مع غير الأصدقاء: رسالة أولى نصية فقط ثم انتظار الردّ.
+  StreamSubscription<Map<String, dynamic>?>? _chatSub;
+  Map<String, dynamic>? _chatData;
+  bool? _friends; // null = لم يُعرف بعد (لا نقيّد الواجهة حتى يُعرف)
+
+  /// المحادثة غير مقبولة بعد وليسا صديقين.
+  bool get _restricted {
+    final data = _chatData;
+    if (data == null || _friends != false) return false;
+    return !(data['accepted'] as bool? ?? true);
+  }
+
+  bool get _hasMessages =>
+      ((_chatData?['lastMessageId'] as String?) ?? '').isNotEmpty;
+
+  /// أرسلتُ الرسالة الأخيرة ولم يردّ الطرف الآخر: لا يمكنني الإرسال.
+  bool get _waitingForReply =>
+      _restricted &&
+      _hasMessages &&
+      _chatData?['lastSenderUid'] == SocialService.currentUid;
+
+  /// أول رسالة لغير صديق: نص فقط.
+  bool get _firstMessageToStranger => _restricted && !_hasMessages;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    _foreground = lifecycle == null || lifecycle == AppLifecycleState.resumed;
     _blockState = SocialService.blockState(widget.otherUid);
     _hiddenSub = SocialService.hiddenMessageIds(widget.conversationId).listen(
       (ids) {
@@ -621,13 +659,83 @@ class _ChatScreenState extends State<ChatScreen> {
       },
       onError: (_) {},
     );
+    _scroll.addListener(_onScroll);
+    _chatSub = SocialService.chatStream(widget.conversationId).listen(
+      (data) {
+        if (mounted) setState(() => _chatData = data);
+      },
+      onError: (_) {},
+    );
+    SocialService.areMutualFriends(widget.otherUid).then((value) {
+      if (mounted) setState(() => _friends = value);
+    }).catchError((Object _) {});
+    _subscribeMessages();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _messagesSub?.cancel();
+    _chatSub?.cancel();
     _hiddenSub?.cancel();
+    _scroll.dispose();
     _text.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final foreground = state == AppLifecycleState.resumed;
+    if (foreground == _foreground) return;
+    _foreground = foreground;
+    if (foreground) _markRead();
+  }
+
+  void _subscribeMessages() {
+    _messagesSub?.cancel();
+    _messagesError = null;
+    _messagesSub =
+        SocialService.messages(widget.conversationId, limit: _limit).listen(
+      (messages) {
+        if (!mounted) return;
+        setState(() {
+          _messages = messages;
+          _messagesError = null;
+          _loadingMore = false;
+        });
+        _markRead();
+      },
+      onError: (Object error) {
+        if (!mounted) return;
+        setState(() {
+          _messagesError = error;
+          _loadingMore = false;
+        });
+      },
+    );
+  }
+
+  /// علامة «مقروءة» فقط عندما تكون المحادثة ظاهرة والتطبيق في الواجهة.
+  void _markRead() {
+    final messages = _messages;
+    if (!_foreground || !mounted || messages == null) return;
+    SocialService.markMessagesRead(widget.conversationId, messages)
+        .catchError((Object _) {});
+  }
+
+  /// عند الوصول لأعلى القائمة (أقدم الرسائل) نحمّل صفحة أقدم.
+  void _onScroll() {
+    if (!_scroll.hasClients || _loadingMore) return;
+    final messages = _messages;
+    // إن رجع أقل من الحد فلا يوجد المزيد.
+    if (messages == null || messages.length < _limit) return;
+    if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 200) {
+      setState(() {
+        _loadingMore = true;
+        _limit += SocialService.messagesPageSize;
+      });
+      _subscribeMessages();
+    }
   }
 
   void _showError(String what, Object error) {
@@ -638,19 +746,35 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  /// يرسل ما في خانة الكتابة (نص/ملصق) والصورة المرفقة عند ضغط زر الإرسال فقط.
-  void _send() {
+  /// يرسل الصورة المرفقة ثم النص (بهذا الترتيب) عند ضغط زر الإرسال فقط.
+  /// رفع الصورة هو الجزء البطيء، لذلك يُعطَّل الزر أثناءه فقط.
+  Future<void> _send() async {
+    if (_sending) return;
     final text = _text.text.trim();
     final image = _pendingImage;
     if (text.isEmpty && image == null) return;
     _text.clear();
     setState(() => _pendingImage = null);
+
     if (image != null) {
-      SocialService.sendImage(widget.conversationId, image)
-          .catchError((Object e) => _showError(tr('تعذر إرسال الصورة'), e));
+      setState(() => _sending = true);
+      try {
+        await SocialService.sendImage(widget.conversationId, image);
+      } catch (e) {
+        // نُعيد ما كتبه المستخدم كما هو ولا نُرسل النص وحده.
+        if (mounted) {
+          if (_pendingImage == null) setState(() => _pendingImage = image);
+          if (_text.text.isEmpty) _text.text = text;
+        }
+        _showError(tr('تعذر إرسال الصورة'), e);
+        return;
+      } finally {
+        if (mounted) setState(() => _sending = false);
+      }
     }
+
     if (text.isNotEmpty) {
-      final sending = isSingleSticker(text)
+      final sending = isSingleSticker(text) && !_firstMessageToStranger
           ? SocialService.sendSticker(widget.conversationId, text)
           : SocialService.sendMessage(widget.conversationId, text);
       sending.catchError((Object e) {
@@ -658,6 +782,28 @@ class _ChatScreenState extends State<ChatScreen> {
         _showError(tr('تعذر إرسال الرسالة'), e);
       });
     }
+  }
+
+  void _openNetworkImage(String url) {
+    Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          extendBodyBehindAppBar: true,
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            foregroundColor: Colors.white,
+            elevation: 0,
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              child: Image.network(PostService.optimizedImageUrl(url, 1600)),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _openImage(Uint8List bytes) => openFullScreenImage(context, bytes);
@@ -919,19 +1065,21 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
               Expanded(
-                child: StreamBuilder<List<ChatMessage>>(
-                  stream: SocialService.messages(widget.conversationId),
-                  builder: (context, snapshot) {
-                    if (snapshot.hasError) {
+                child: Builder(
+                  builder: (context) {
+                    if (_messagesError != null && _messages == null) {
                       return ErrorState(
-                          error: snapshot.error,
+                          error: _messagesError,
                           title: tr('تعذر تحميل المحادثة'),
-                          onRetry: () => setState(() {}));
+                          onRetry: () {
+                            setState(() => _messagesError = null);
+                            _subscribeMessages();
+                          });
                     }
-                    if (!snapshot.hasData) {
+                    if (_messages == null) {
                       return const AppLoading();
                     }
-                    final messages = snapshot.data!
+                    final messages = _messages!
                         .where((m) => !_hidden.contains(m.id))
                         .toList();
                     if (messages.isEmpty) {
@@ -941,11 +1089,25 @@ class _ChatScreenState extends State<ChatScreen> {
                       );
                     }
                     return ListView.builder(
+                      controller: _scroll,
                       reverse: true,
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 12),
-                      itemCount: messages.length,
+                      itemCount: messages.length + (_loadingMore ? 1 : 0),
                       itemBuilder: (context, index) {
+                        if (index == messages.length) {
+                          return const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: Center(
+                              child: SizedBox(
+                                width: 20,
+                                height: 20,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            ),
+                          );
+                        }
                         final message = messages[messages.length - 1 - index];
                         final mine =
                             message.senderUid == SocialService.currentUid;
@@ -982,16 +1144,51 @@ class _ChatScreenState extends State<ChatScreen> {
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
                                 if (message.kind == 'image' &&
-                                    message.imageBytes != null)
+                                    (message.imageUrl != null ||
+                                        message.imageBytes != null))
                                   GestureDetector(
-                                    onTap: () => _openImage(message.imageBytes!),
+                                    onTap: () => message.imageUrl != null
+                                        ? _openNetworkImage(message.imageUrl!)
+                                        : _openImage(message.imageBytes!),
                                     child: ClipRRect(
                                       borderRadius: BorderRadius.circular(13),
-                                      child: Image.memory(
-                                        message.imageBytes!,
-                                        width: 220,
-                                        fit: BoxFit.cover,
-                                      ),
+                                      child: message.imageUrl != null
+                                          ? Image.network(
+                                              PostService.optimizedImageUrl(
+                                                  message.imageUrl!, 440),
+                                              width: 220,
+                                              fit: BoxFit.cover,
+                                              loadingBuilder:
+                                                  (context, child, progress) =>
+                                                      progress == null
+                                                          ? child
+                                                          : const SizedBox(
+                                                              width: 220,
+                                                              height: 160,
+                                                              child: Center(
+                                                                child: CircularProgressIndicator(
+                                                                    strokeWidth:
+                                                                        2),
+                                                              ),
+                                                            ),
+                                              errorBuilder: (context, _, __) =>
+                                                  SizedBox(
+                                                width: 220,
+                                                height: 120,
+                                                child: Center(
+                                                  child: Text(
+                                                      tr('تعذر تحميل صورة'),
+                                                      style: TextStyle(
+                                                          color:
+                                                              colors.textDim)),
+                                                ),
+                                              ),
+                                            )
+                                          : Image.memory(
+                                              message.imageBytes!,
+                                              width: 220,
+                                              fit: BoxFit.cover,
+                                            ),
                                     ),
                                   )
                                 else if (sticker)
@@ -1080,7 +1277,31 @@ class _ChatScreenState extends State<ChatScreen> {
                   },
                 ),
               ),
-              if (!blockState.blocked) ...[
+              if (!blockState.blocked && _waitingForReply)
+                SafeArea(
+                  top: false,
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
+                    color: colors.surfaceHigh,
+                    child: Text(
+                      tr('انتظر رد الطرف الآخر لتكمل المراسلة'),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: colors.textDim),
+                    ),
+                  ),
+                )
+              else if (!blockState.blocked) ...[
+                if (_firstMessageToStranger)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                    child: Text(
+                      tr('هذه أول رسالة لغير صديق: نص فقط، ولن تستطيع إرسال غيرها حتى يردّ.'),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: colors.textDim, fontSize: 12),
+                    ),
+                  ),
                 if (_pendingImage != null)
                   PendingImagePreview(
                     bytes: _pendingImage!,
@@ -1095,7 +1316,9 @@ class _ChatScreenState extends State<ChatScreen> {
                       children: [
                         IconButton(
                           tooltip: tr('إرسال صورة أو التقاط صورة'),
-                          onPressed: _sending ? null : _chooseImageSource,
+                          onPressed: (_sending || _firstMessageToStranger)
+                              ? null
+                              : _chooseImageSource,
                           icon: const Icon(Icons.add_circle_outline_rounded),
                         ),
                         IconButton(
