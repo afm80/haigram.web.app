@@ -1,16 +1,12 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
-import 'package:file_picker/file_picker.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -748,75 +744,6 @@ class _FriendsScreenState extends State<_FriendsScreen> {
   }
 }
 
-class _PendingChatAttachment {
-  final Uint8List bytes;
-  final String name;
-  final String contentType;
-  final String kind;
-
-  const _PendingChatAttachment({
-    required this.bytes,
-    required this.name,
-    required this.contentType,
-    required this.kind,
-  });
-}
-
-class _VoiceMessageControl extends StatefulWidget {
-  final String url;
-  final Color foregroundColor;
-
-  const _VoiceMessageControl({
-    required this.url,
-    required this.foregroundColor,
-  });
-
-  @override
-  State<_VoiceMessageControl> createState() => _VoiceMessageControlState();
-}
-
-class _VoiceMessageControlState extends State<_VoiceMessageControl> {
-  final _player = AudioPlayer();
-  StreamSubscription<PlayerState>? _stateSub;
-  bool _playing = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _stateSub = _player.onPlayerStateChanged.listen((state) {
-      if (mounted) setState(() => _playing = state == PlayerState.playing);
-    });
-    _player.onPlayerComplete.listen((_) {
-      if (mounted) setState(() => _playing = false);
-    });
-  }
-
-  @override
-  void dispose() {
-    _stateSub?.cancel();
-    _player.dispose();
-    super.dispose();
-  }
-
-  Future<void> _toggle() async {
-    try {
-      if (_playing) {
-        await _player.pause();
-      } else {
-        await _player.play(UrlSource(widget.url));
-      }
-    } catch (_) {}
-  }
-
-  @override
-  Widget build(BuildContext context) => IconButton(
-        tooltip: _playing ? tr('إيقاف الصوت') : tr('تشغيل الرسالة الصوتية'),
-        onPressed: _toggle,
-        icon: Icon(_playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
-        color: widget.foregroundColor,
-      );
-}
-
 class ChatScreen extends StatefulWidget {
   final String conversationId;
   final String otherUid;
@@ -836,8 +763,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final _messageFocus = FocusNode();
   final _picker = ImagePicker();
   final _scroll = ScrollController();
-  final _audioRecorder = AudioRecorder();
-  final _recordedAudio = BytesBuilder(copy: false);
   Timer? _draftTimer;
   late final Stream<ChatBlockState> _blockState;
   StreamSubscription<Map<String, DateTime>>? _typingSub;
@@ -848,12 +773,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _capturedReadAtWhenOpened = false;
   bool _sending = false;
   bool _draftRestored = false;
-  bool _isRecording = false;
   String? _failedText;
   Uint8List? _failedImage;
-  _PendingChatAttachment? _pendingAttachment;
-  _PendingChatAttachment? _failedAttachment;
-  StreamSubscription<Uint8List>? _audioRecordingSub;
   Uint8List? _pendingImage; // صورة مرفقة بانتظار الإرسال اليدوي
   Set<String> _hidden = const {};
   StreamSubscription<Set<String>>? _hiddenSub;
@@ -986,8 +907,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _messageFocus.dispose();
     _scroll.dispose();
     _text.dispose();
-    _audioRecordingSub?.cancel();
-    _audioRecorder.dispose();
     super.dispose();
   }
 
@@ -1275,16 +1194,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (_sending) return;
     final text = _text.text.trim();
     final image = _pendingImage;
-    final attachment = _pendingAttachment;
     final replyTarget = _replyTarget;
-    if (text.isEmpty && image == null && attachment == null) return;
+    if (text.isEmpty && image == null) return;
     _text.clear();
     setState(() {
       _pendingImage = null;
-      _pendingAttachment = null;
       _failedText = null;
       _failedImage = null;
-      _failedAttachment = null;
     });
 
     if (image != null) {
@@ -1307,34 +1223,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           });
         }
         _showError(tr('تعذر إرسال الصورة'), e);
-        return;
-      } finally {
-        if (mounted) setState(() => _sending = false);
-      }
-    }
-
-    if (attachment != null) {
-      setState(() => _sending = true);
-      try {
-        await SocialService.sendAttachment(
-          widget.conversationId,
-          bytes: attachment.bytes,
-          fileName: attachment.name,
-          contentType: attachment.contentType,
-          kind: attachment.kind,
-          replyToMessageId: replyTarget?.id,
-          replyToText: replyTarget?.text,
-          replyToSenderUid: replyTarget?.senderUid,
-        );
-      } catch (e) {
-        if (mounted) {
-          setState(() {
-            _pendingAttachment ??= attachment;
-            _failedAttachment = attachment;
-          });
-          if (_text.text.isEmpty) _text.text = text;
-        }
-        _showError(tr('تعذر إرسال المرفق'), e);
         return;
       } finally {
         if (mounted) setState(() => _sending = false);
@@ -1364,7 +1252,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             _replyTarget = null;
             _failedText = null;
             _failedImage = null;
-            _failedAttachment = null;
           });
         }
       } catch (e) {
@@ -1373,7 +1260,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           setState(() {
             _failedText = text;
             _failedImage = null;
-            _failedAttachment = null;
           });
         }
         _showError(tr('تعذر إرسال الرسالة'), e);
@@ -1453,8 +1339,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               title: Text(tr('التقاط صورة')),
               onTap: () => Navigator.pop(sheetContext, 'camera'),
             ),
-            // مخفية مؤقتاً: الفيديو والملفات والصوت تحتاج Firebase Storage (خطة Blaze).
-            // عند الترقية أعد هذه العناصر الثلاثة: video / file / voice.
           ],
         ),
       ),
@@ -1464,125 +1348,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         await _pickImage(ImageSource.gallery);
       case 'camera':
         await _pickImage(ImageSource.camera);
-      case 'video':
-        await _pickAttachment(videoOnly: true);
-      case 'file':
-        await _pickAttachment();
-      case 'voice':
-        await _startVoiceRecording();
-    }
-  }
-
-  String _contentTypeForName(String name) {
-    final extension = name.split('.').last.toLowerCase();
-    return switch (extension) {
-      'mp4' => 'video/mp4',
-      'mov' => 'video/quicktime',
-      'm4v' => 'video/x-m4v',
-      'webm' => 'video/webm',
-      'mp3' => 'audio/mpeg',
-      'm4a' => 'audio/mp4',
-      'aac' => 'audio/aac',
-      'wav' => 'audio/wav',
-      'ogg' || 'opus' => 'audio/ogg',
-      'pdf' => 'application/pdf',
-      'txt' => 'text/plain',
-      'zip' => 'application/zip',
-      'doc' => 'application/msword',
-      'docx' =>
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      _ => 'application/octet-stream',
-    };
-  }
-
-  Future<void> _pickAttachment({bool videoOnly = false}) async {
-    if (_sending || _firstMessageToStranger) return;
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: videoOnly ? FileType.video : FileType.any,
-        withData: true,
-      );
-      if (result == null || result.files.isEmpty) return;
-      final file = result.files.single;
-      final bytes = file.bytes;
-      if (bytes == null || bytes.isEmpty) {
-        _showError(tr('تعذر قراءة الملف'), StateError(file.name));
-        return;
-      }
-      if (bytes.length > 20 * 1024 * 1024) {
-        _showError(tr('تعذر إرفاق الملف'),
-            tr('يجب ألا يتجاوز حجم المرفق 20 ميغابايت'));
-        return;
-      }
-      final contentType = _contentTypeForName(file.name);
-      final kind = contentType.startsWith('video/')
-          ? 'video'
-          : contentType.startsWith('audio/')
-              ? 'audio'
-              : 'file';
-      setState(() {
-        _pendingAttachment = _PendingChatAttachment(
-          bytes: bytes,
-          name: file.name,
-          contentType: contentType,
-          kind: kind,
-        );
-      });
-    } catch (error) {
-      _showError(tr('تعذر إرفاق الملف'), error);
-    }
-  }
-
-  Future<void> _startVoiceRecording() async {
-    if (_sending || _isRecording || _firstMessageToStranger) return;
-    try {
-      if (!await _audioRecorder.hasPermission()) {
-        _showError(tr('لم يتم السماح باستخدام الميكروفون'),
-            StateError(tr('تحقق من أذونات الميكروفون')));
-        return;
-      }
-      _recordedAudio.clear();
-      final stream = await _audioRecorder.startStream(RecordConfig(
-        encoder: kIsWeb ? AudioEncoder.opus : AudioEncoder.aacLc,
-        sampleRate: 48000,
-        numChannels: 1,
-      ));
-      _audioRecordingSub = stream.listen(
-        _recordedAudio.add,
-        onError: (Object error) {
-          if (mounted) _showError(tr('تعذر تسجيل الصوت'), error);
-        },
-      );
-      if (mounted) setState(() => _isRecording = true);
-    } catch (error) {
-      _showError(tr('تعذر بدء التسجيل'), error);
-    }
-  }
-
-  Future<void> _finishVoiceRecording() async {
-    try {
-      await _audioRecorder.stop();
-      await _audioRecordingSub?.cancel();
-      _audioRecordingSub = null;
-      final bytes = _recordedAudio.takeBytes();
-      if (mounted) setState(() => _isRecording = false);
-      if (bytes.isEmpty) {
-        _showError(tr('لم يتم تسجيل صوت'), StateError('empty recording'));
-        return;
-      }
-      final isWeb = kIsWeb;
-      setState(() {
-        _pendingAttachment = _PendingChatAttachment(
-          bytes: bytes,
-          name:
-              'voice_${DateTime.now().millisecondsSinceEpoch}.${isWeb ? 'webm' : 'm4a'}',
-          contentType: isWeb ? 'audio/webm' : 'audio/mp4',
-          kind: 'audio',
-        );
-      });
-    } catch (error) {
-      if (mounted) setState(() => _isRecording = false);
-      _showError(tr('تعذر إنهاء التسجيل'), error);
     }
   }
 
@@ -2179,36 +1944,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                             ),
                                     ),
                                   )
-                                else if (message.kind == 'audio' &&
-                                    message.attachmentUrl != null)
-                                  _VoiceMessageControl(
-                                    url: message.attachmentUrl!,
-                                    foregroundColor:
-                                        mine ? Colors.white : colors.text,
-                                  )
-                                else if ((message.kind == 'video' ||
-                                        message.kind == 'file') &&
-                                    message.attachmentUrl != null)
-                                  TextButton.icon(
-                                    onPressed: () => launchUrl(
-                                      Uri.parse(message.attachmentUrl!),
-                                      mode: LaunchMode.externalApplication,
-                                    ),
-                                    icon: Icon(message.kind == 'video'
-                                        ? Icons.play_circle_outline_rounded
-                                        : Icons.download_rounded),
-                                    label: Flexible(
-                                      child: Text(
-                                        message.attachmentName ?? message.text,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    style: TextButton.styleFrom(
-                                      foregroundColor:
-                                          mine ? Colors.white : colors.text,
-                                    ),
-                                  )
                                 else if (sticker)
                                   StickerGlyph(message.text, size: 72)
                                 else
@@ -2386,9 +2121,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       style: TextStyle(color: colors.textDim, fontSize: 12),
                     ),
                   ),
-                if (_failedText != null ||
-                    _failedImage != null ||
-                    _failedAttachment != null)
+                if (_failedText != null || _failedImage != null)
                   Container(
                     margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                     padding:
@@ -2413,9 +2146,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                     if (_failedImage != null) {
                                       _pendingImage ??= _failedImage;
                                     }
-                                    if (_failedAttachment != null) {
-                                      _pendingAttachment ??= _failedAttachment;
-                                    }
                                     if (_failedText != null &&
                                         _text.text.isEmpty) {
                                       _text.text = _failedText!;
@@ -2433,43 +2163,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   PendingImagePreview(
                     bytes: _pendingImage!,
                     onRemove: () => setState(() => _pendingImage = null),
-                  ),
-                if (_pendingAttachment != null)
-                  ListTile(
-                    dense: true,
-                    leading: Icon(_pendingAttachment!.kind == 'video'
-                        ? Icons.video_file_outlined
-                        : _pendingAttachment!.kind == 'audio'
-                            ? Icons.audio_file_outlined
-                            : Icons.attach_file_rounded),
-                    title: Text(
-                      _pendingAttachment!.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Text(
-                        '${(_pendingAttachment!.bytes.length / (1024 * 1024)).toStringAsFixed(1)} MB'),
-                    trailing: IconButton(
-                      tooltip: tr('إزالة المرفق'),
-                      onPressed: () => setState(() {
-                        _pendingAttachment = null;
-                        _failedAttachment = null;
-                      }),
-                      icon: const Icon(Icons.close_rounded),
-                    ),
-                  ),
-                if (_isRecording)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.fiber_manual_record,
-                            color: Colors.red, size: 14),
-                        const SizedBox(width: 8),
-                        Text(tr('جارٍ تسجيل رسالة صوتية')),
-                      ],
-                    ),
                   ),
                 if (_replyTarget != null)
                   Container(
@@ -2546,11 +2239,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         ),
                         const SizedBox(width: 5),
                         IconButton.filled(
-                          onPressed: _sending
-                              ? null
-                              : _isRecording
-                                  ? _finishVoiceRecording
-                                  : _send,
+                          onPressed: _sending ? null : _send,
                           style: IconButton.styleFrom(
                               backgroundColor: AppColors.accent),
                           icon: _sending
@@ -2559,12 +2248,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                   height: 18,
                                   child: CircularProgressIndicator(
                                       strokeWidth: 2, color: Colors.white))
-                              : Icon(
-                                  _isRecording
-                                      ? Icons.stop_rounded
-                                      : Icons.send_rounded,
-                                  color: Colors.white,
-                                ),
+                              : const Icon(Icons.send_rounded,
+                                  color: Colors.white),
                         ),
                       ],
                     ),
