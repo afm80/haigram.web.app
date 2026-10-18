@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../l10n.dart';
+import '../net_error.dart';
 import '../services/post_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
@@ -22,7 +23,7 @@ class SettingsScreen extends StatelessWidget {
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$error')),
+          SnackBar(content: Text(friendlyError(error))),
         );
       }
     }
@@ -61,7 +62,9 @@ class SettingsScreen extends StatelessWidget {
       RouteStore.clear();
     } catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text('${tr('تعذر تسجيل الخروج')}: $error')),
+        SnackBar(
+            content: Text(friendlyError(error,
+                fallback: tr('تعذر تسجيل الخروج')))),
       );
     }
   }
@@ -216,7 +219,9 @@ class _PrivacySectionState extends State<_PrivacySection> {
       }
     } catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text('${tr('تعذر حفظ الإعداد')}: $error')),
+        SnackBar(
+            content: Text(friendlyError(error,
+                fallback: tr('تعذر حفظ الإعداد')))),
       );
     }
   }

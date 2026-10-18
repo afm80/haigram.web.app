@@ -5,6 +5,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 
 import '../firebase_options.dart';
 import '../l10n.dart';
+import '../net_error.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
 import 'language_button.dart';
@@ -49,7 +50,8 @@ class _AuthScreenState extends State<AuthScreen> {
       setState(() => _error = _msg(e.code));
     } catch (e) {
       debugPrint('Auth error: $e');
-      setState(() => _error = '${tr('تعذر تسجيل الدخول')}: $e');
+      setState(() => _error =
+          friendlyError(e, fallback: tr('تعذر تسجيل الدخول')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -72,7 +74,7 @@ class _AuthScreenState extends State<AuthScreen> {
       case 'account-exists-with-different-credential':
         return tr('هذا البريد مسجّل بطريقة دخول أخرى');
       case 'network-request-failed':
-        return tr('تحقق من اتصال الإنترنت');
+        return tr('لا يوجد اتصال بالإنترنت');
       case 'too-many-requests':
         return tr('محاولات كثيرة، حاول مرة أخرى بعد قليل');
       case 'missing-email':

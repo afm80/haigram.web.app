@@ -7,6 +7,7 @@ import '../services/post_service.dart';
 import '../theme.dart';
 
 import '../l10n.dart';
+import '../net_error.dart';
 enum CreateKind { post, story, video }
 
 /// حدود الرفع للحفاظ على مجانية الخدمة.
@@ -222,7 +223,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
     } on MediaError catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
-      if (mounted) setState(() => _error = trf('تعذر فتح الكاميرا أو الملفات: {0}', [e]));
+      if (mounted) setState(() => _error =
+          friendlyError(e, fallback: tr('تعذر فتح الكاميرا أو الملفات')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -416,7 +418,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
     } on MediaError catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
-      if (mounted) setState(() => _error = trf('تعذر اختيار الصور: {0}', [e]));
+      if (mounted) setState(() => _error = friendlyError(e, fallback: tr('تعذر اختيار الصور')));
     }
   }
 
@@ -508,7 +510,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
       if (mounted) {
         setState(() {
           _busy = false;
-          _error = trf('فشل النشر: {0}', [e]);
+          _error = friendlyError(e, fallback: tr('فشل النشر'));
         });
       }
     }

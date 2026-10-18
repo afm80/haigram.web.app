@@ -15,6 +15,7 @@ import 'share_sheet.dart';
 import 'yt_embed_stub.dart' if (dart.library.html) 'yt_embed_web.dart';
 
 import '../l10n.dart';
+import '../net_error.dart';
 String timeAgo(DateTime t) {
   final d = DateTime.now().difference(t);
   if (d.inMinutes < 1) return tr('الآن');
@@ -57,7 +58,7 @@ class _PostCardState extends State<PostCard> {
     try {
       await PostService.hidePost(p.id);
     } catch (error) {
-      messenger.showSnackBar(SnackBar(content: Text(trf('تعذر الإخفاء: {0}', [error]))));
+      messenger.showSnackBar(SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر الإخفاء')))));
     }
   }
 
@@ -251,7 +252,9 @@ class _PostCardState extends State<PostCard> {
           content: Text(posted ? tr('تمت إعادة النشر') : tr('تم إلغاء إعادة النشر'))));
     } catch (error) {
       final text =
-          error is StateError ? error.message : trf('تعذرت العملية: {0}', [error]);
+          error is StateError
+              ? error.message
+              : friendlyError(error, fallback: tr('تعذرت العملية'));
       messenger.showSnackBar(SnackBar(content: Text(text)));
     }
   }
@@ -508,7 +511,7 @@ Future<void> reportPostSheet(BuildContext context, Post post) async {
                   await PostService.hidePost(post.id);
                 } catch (error) {
                   messenger.showSnackBar(
-                      SnackBar(content: Text(trf('تعذر إرسال البلاغ: {0}', [error]))));
+                      SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر إرسال البلاغ')))));
                 }
               },
             ),
@@ -1577,7 +1580,7 @@ Future<bool> _confirmDeleteShort(BuildContext dialogCtx, Post post) async {
     await PostService.deletePost(post);
     messenger.showSnackBar(SnackBar(content: Text(tr('تم حذف الفيديو'))));
   } catch (error) {
-    messenger.showSnackBar(SnackBar(content: Text(trf('تعذر الحذف: {0}', [error]))));
+    messenger.showSnackBar(SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر الحذف')))));
   }
   return true;
 }
@@ -1617,7 +1620,7 @@ Future<void> editPostCaption(BuildContext context, Post post) async {
     messenger.showSnackBar(SnackBar(
         content: Text(trf('تم تعديل {0}', [isText ? tr('المنشور') : tr('الوصف')]))));
   } catch (error) {
-    messenger.showSnackBar(SnackBar(content: Text(trf('تعذر التعديل: {0}', [error]))));
+    messenger.showSnackBar(SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر التعديل')))));
   }
 }
 
@@ -1648,7 +1651,7 @@ Future<void> deletePostWithConfirm(BuildContext context, Post post) async {
     await PostService.deletePost(post);
     messenger.showSnackBar(SnackBar(content: Text(tr('تم حذف المنشور'))));
   } catch (error) {
-    messenger.showSnackBar(SnackBar(content: Text(trf('تعذر الحذف: {0}', [error]))));
+    messenger.showSnackBar(SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر الحذف')))));
   }
 }
 

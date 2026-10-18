@@ -13,6 +13,7 @@ import 'profile_screen.dart';
 import '../route_state.dart';
 
 import '../l10n.dart';
+import '../net_error.dart';
 /// يفتح ملف مستخدم (مثل تيك توك / إنستغرام).
 void openProfile(BuildContext context, String uid) {
   if (uid.isEmpty) return;
@@ -155,7 +156,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   void _fail(String what, Object error) {
     if (mounted) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('$what: $error')));
+          .showSnackBar(SnackBar(content: Text(friendlyError(error, fallback: what))));
     }
   }
 
@@ -228,7 +229,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
             } catch (error) {
               if (widget.outerContext.mounted) {
                 ScaffoldMessenger.of(widget.outerContext).showSnackBar(
-                  SnackBar(content: Text(trf('تعذر حذف التعليق: {0}', [error]))),
+                  SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر حذف التعليق')))),
                 );
               }
             }
@@ -244,7 +245,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     } catch (error) {
       if (widget.outerContext.mounted) {
         ScaffoldMessenger.of(widget.outerContext).showSnackBar(
-          SnackBar(content: Text(trf('تعذر الإعجاب بالتعليق: {0}', [error]))),
+          SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر الإعجاب بالتعليق')))),
         );
       }
     }
@@ -280,9 +281,10 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                 stream: PostService.comments(widget.post.id),
                 builder: (context, snap) {
                   if (snap.hasError) {
-                    return Center(
-                        child: Text(trf('تعذر تحميل التعليقات\n{0}', [snap.error]),
-                            textAlign: TextAlign.center));
+                    return ErrorState(
+                        error: snap.error,
+                        title: tr('تعذر تحميل التعليقات'),
+                        onRetry: () => setState(() {}));
                   }
                   if (!snap.hasData) {
                     return AppLoading(message: tr('جارٍ تحميل التعليقات...'));
@@ -532,7 +534,7 @@ class _LikeBuilderState extends State<LikeBuilder> {
           _delta -= change;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(trf('تعذر تسجيل الإعجاب: {0}', [error]))),
+          SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر تسجيل الإعجاب')))),
         );
       }
     } finally {

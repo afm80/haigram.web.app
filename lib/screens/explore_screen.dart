@@ -12,6 +12,7 @@ import 'post_widgets.dart';
 import '../route_state.dart';
 
 import '../l10n.dart';
+import '../net_error.dart';
 /// عدد أعمدة الشبكة حسب عرض الشاشة.
 int _gridColumns(BuildContext context) {
   final width = MediaQuery.sizeOf(context).width;
@@ -164,9 +165,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       padding: listPadding,
                       children: [
                         Padding(
-                          padding: const EdgeInsets.all(28),
-                          child: Text(trf('تعذر تحميل الاستكشاف\n{0}', [snap.error]),
-                              textAlign: TextAlign.center),
+                          padding: const EdgeInsets.only(top: 80),
+                          child: ErrorState(
+                            error: snap.error,
+                            title: tr('تعذر تحميل الاستكشاف'),
+                            onRetry: () => setState(
+                                () => _feed = PostService.exploreFeed()),
+                          ),
                         ),
                       ],
                     );
@@ -517,9 +522,13 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
             builder: (context, snap) {
               if (snap.hasError) {
                 return Padding(
-                  padding: const EdgeInsets.all(28),
-                  child: Text(trf('تعذر تحميل المحتوى الرائج\n{0}', [snap.error]),
-                      textAlign: TextAlign.center),
+                  padding: const EdgeInsets.only(top: 40),
+                  child: ErrorState(
+                    error: snap.error,
+                    title: tr('تعذر تحميل المحتوى الرائج'),
+                    onRetry: () => setState(
+                        () => _trendingFuture = _loadTrending()),
+                  ),
                 );
               }
               if (!snap.hasData) {
@@ -562,9 +571,7 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
       future: _results,
       builder: (context, snap) {
         if (snap.hasError) {
-          return Center(
-              child: Text(trf('تعذر البحث\n{0}', [snap.error]),
-                  textAlign: TextAlign.center));
+          return ErrorState(error: snap.error, title: tr('تعذر البحث'));
         }
         if (!snap.hasData) return AppLoading(message: tr('جارٍ البحث...'));
         final (users, posts) = snap.data!;

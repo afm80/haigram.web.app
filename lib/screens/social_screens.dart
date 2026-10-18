@@ -17,6 +17,7 @@ import 'story_widgets.dart' show StoryViewed, StoryViewer;
 import '../route_state.dart';
 
 import '../l10n.dart';
+import '../net_error.dart';
 /// صندوق البريد (على طريقة تيكتوك): صف الأصدقاء، ثم المتابعون والإعجابات
 /// والتعليقات، ثم المحادثات.
 class InboxScreen extends StatelessWidget {
@@ -77,8 +78,9 @@ class InboxScreen extends StatelessWidget {
     if (snapshot.hasError) {
       return [
         SizedBox(
-          height: 240,
-          child: _MessageState(message: trf('تعذر تحميل الرسائل\n{0}', [snapshot.error])),
+          height: 320,
+          child: ErrorState(
+              error: snapshot.error, title: tr('تعذر تحميل الرسائل')),
         ),
       ];
     }
@@ -360,7 +362,7 @@ class _FollowingRailState extends State<_FollowingRail> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(trf('تعذر فتح المحادثة: {0}', [error]))),
+          SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر فتح المحادثة')))),
         );
       }
     }
@@ -376,7 +378,9 @@ class _FollowingRailState extends State<_FollowingRail> {
           if (snapshot.hasError) {
             return Center(
               child: Text(
-                trf('تعذر تحميل الأشخاص الذين تتابعهم: {0}', [snapshot.error]),
+                friendlyError(snapshot.error,
+                    fallback: tr('تعذر تحميل الأشخاص الذين تتابعهم')),
+                textAlign: TextAlign.center,
                 style: TextStyle(color: context.appColors.textDim),
               ),
             );
@@ -398,7 +402,7 @@ class _FollowingRailState extends State<_FollowingRail> {
               child: Text(
                 widget.error == null
                     ? tr('تابع أصدقاءك لتظهر حساباتهم هنا')
-                    : trf('تعذر تحميل القصص: {0}', [widget.error]),
+                    : friendlyError(widget.error, fallback: tr('تعذر تحميل القصص')),
                 style: TextStyle(color: context.appColors.textDim),
               ),
             );
@@ -491,7 +495,7 @@ class _FriendsScreen extends StatefulWidget {
 }
 
 class _FriendsScreenState extends State<_FriendsScreen> {
-  late final Future<List<AppUser>> _friends = _loadFriends();
+  late Future<List<AppUser>> _friends = _loadFriends();
   bool _opening = false;
 
   Future<List<AppUser>> _loadFriends() async {
@@ -519,7 +523,7 @@ class _FriendsScreenState extends State<_FriendsScreen> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(trf('تعذر بدء المحادثة: {0}', [error]))),
+          SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر بدء المحادثة')))),
         );
       }
     } finally {
@@ -537,8 +541,11 @@ class _FriendsScreenState extends State<_FriendsScreen> {
         future: _friends,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return _MessageState(
-                message: trf('تعذر تحميل قائمة الأصدقاء\n{0}', [snapshot.error]));
+            return ErrorState(
+                error: snapshot.error,
+                title: tr('تعذر تحميل قائمة الأصدقاء'),
+                onRetry: () =>
+                    setState(() => _friends = _loadFriends()));
           }
           if (!snapshot.hasData) {
             return const AppLoading();
@@ -626,7 +633,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void _showError(String what, Object error) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$what: $error')),
+        SnackBar(content: Text(friendlyError(error, fallback: what))),
       );
     }
   }
@@ -675,7 +682,7 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(trf('تعذر إرفاق الصورة: {0}', [error]))),
+          SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر إرفاق الصورة')))),
         );
       }
     }
@@ -745,7 +752,7 @@ class _ChatScreenState extends State<ChatScreen> {
       } catch (error) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(trf('تعذر تحديث الحظر: {0}', [error]))),
+            SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر تحديث الحظر')))),
           );
         }
       }
@@ -759,7 +766,7 @@ class _ChatScreenState extends State<ChatScreen> {
       } catch (error) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('$failure: $error')),
+            SnackBar(content: Text(friendlyError(error, fallback: failure))),
           );
         }
       }
@@ -815,8 +822,9 @@ class _ChatScreenState extends State<ChatScreen> {
         if (blockSnapshot.hasError) {
           return Scaffold(
             backgroundColor: colors.bg,
-            body: _MessageState(
-                message: trf('تعذر تحميل حالة الحظر\n{0}', [blockSnapshot.error])),
+            body: ErrorState(
+                error: blockSnapshot.error,
+                title: tr('تعذر تحميل حالة الحظر')),
           );
         }
         final blockState = blockSnapshot.data ??
@@ -915,8 +923,10 @@ class _ChatScreenState extends State<ChatScreen> {
                   stream: SocialService.messages(widget.conversationId),
                   builder: (context, snapshot) {
                     if (snapshot.hasError) {
-                      return _MessageState(
-                          message: trf('تعذر تحميل المحادثة\n{0}', [snapshot.error]));
+                      return ErrorState(
+                          error: snapshot.error,
+                          title: tr('تعذر تحميل المحادثة'),
+                          onRetry: () => setState(() {}));
                     }
                     if (!snapshot.hasData) {
                       return const AppLoading();
@@ -1154,7 +1164,7 @@ Future<void> _openNotification(
   if (!notification.read) {
     SocialService.markNotificationRead(notification.id).catchError((Object e) {
       messenger.showSnackBar(
-        SnackBar(content: Text(trf('تعذر تحديث الإشعار: {0}', [e]))),
+        SnackBar(content: Text(friendlyError(e, fallback: tr('تعذر تحديث الإشعار')))),
       );
     });
   }
@@ -1179,7 +1189,7 @@ Future<void> _openNotification(
     post = await PostService.postById(postId);
   } catch (error) {
     messenger.showSnackBar(
-      SnackBar(content: Text(trf('تعذر فتح المنشور: {0}', [error]))),
+      SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر فتح المنشور')))),
     );
     return;
   }
@@ -1218,7 +1228,7 @@ class NotificationsScreen extends StatelessWidget {
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(trf('تعذر تحديث الإشعارات: {0}', [error]))),
+          SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر تحديث الإشعارات')))),
         );
       }
     }
@@ -1242,8 +1252,8 @@ class NotificationsScreen extends StatelessWidget {
         stream: SocialService.notifications(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return _MessageState(
-                message: trf('تعذر تحميل الإشعارات\n{0}', [snapshot.error]));
+            return ErrorState(
+                error: snapshot.error, title: tr('تعذر تحميل الإشعارات'));
           }
           if (!snapshot.hasData) {
             return const AppLoading();
@@ -1341,7 +1351,7 @@ class ActivityScreen extends StatelessWidget {
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(trf('تعذر تحديث الإشعارات: {0}', [error]))),
+          SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر تحديث الإشعارات')))),
         );
       }
     }
@@ -1378,8 +1388,8 @@ class ActivityScreen extends StatelessWidget {
           stream: SocialService.notifications(),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
-              return _MessageState(
-                  message: trf('تعذر تحميل الإشعارات\n{0}', [snapshot.error]));
+              return ErrorState(
+                  error: snapshot.error, title: tr('تعذر تحميل الإشعارات'));
             }
             if (!snapshot.hasData) {
               return const AppLoading();
@@ -1515,7 +1525,7 @@ class _FollowBackButton extends StatelessWidget {
       }
     } catch (error) {
       messenger.showSnackBar(
-          SnackBar(content: Text(trf('تعذر تنفيذ الإجراء: {0}', [error]))));
+          SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر تنفيذ الإجراء')))));
     }
   }
 
@@ -1788,7 +1798,7 @@ class ProfileVisitsScreen extends StatelessWidget {
       await UserService.updatePrivacy(profileVisits: value);
     } catch (error) {
       messenger.showSnackBar(
-          SnackBar(content: Text(trf('تعذر حفظ الإعداد: {0}', [error]))));
+          SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر حفظ الإعداد')))));
     }
   }
 
@@ -1824,8 +1834,9 @@ class ProfileVisitsScreen extends StatelessWidget {
                   stream: SocialService.profileVisits(),
                   builder: (context, snapshot) {
                     if (snapshot.hasError) {
-                      return _MessageState(
-                          message: trf('تعذر تحميل الزيارات\n{0}', [snapshot.error]));
+                      return ErrorState(
+                          error: snapshot.error,
+                          title: tr('تعذر تحميل الزيارات'));
                     }
                     if (!snapshot.hasData) {
                       return const AppLoading();
@@ -1927,7 +1938,7 @@ class _FollowRequestActionsState extends State<_FollowRequestActions> {
     try {
       await action();
     } catch (error) {
-      messenger.showSnackBar(SnackBar(content: Text(trf('تعذر تنفيذ الإجراء: {0}', [error]))));
+      messenger.showSnackBar(SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر تنفيذ الإجراء')))));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

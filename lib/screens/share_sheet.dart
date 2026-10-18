@@ -14,6 +14,7 @@ import 'common_widgets.dart';
 import 'post_widgets.dart' show PostImage;
 
 import '../l10n.dart';
+import '../net_error.dart';
 /// رابط مشاركة المنشور (?p=).
 String postShareLink(Post post) => PostService.postLink(post);
 
@@ -94,7 +95,7 @@ class _PostShareSheetState extends State<_PostShareSheet> {
         await action();
         _toast(success);
       } catch (error) {
-        _toast(trf('تعذر تنفيذ العملية: {0}', [error]));
+        _toast(friendlyError(error, fallback: tr('تعذر تنفيذ العملية')));
       }
     }());
   }
@@ -147,7 +148,7 @@ class _PostShareSheetState extends State<_PostShareSheet> {
       if (!opened) throw StateError(tr('تعذر فتح تطبيق المشاركة'));
       unawaited(PostService.registerShare(_post.id));
     } catch (error) {
-      _toast(trf('تعذرت المشاركة: {0}', [error]));
+      _toast(friendlyError(error, fallback: tr('تعذرت المشاركة')));
     }
   }
 
@@ -170,7 +171,7 @@ class _PostShareSheetState extends State<_PostShareSheet> {
         unawaited(PostService.registerShare(_post.id));
       }
     } catch (error) {
-      _toast(trf('تعذرت المشاركة: {0}', [error]));
+      _toast(friendlyError(error, fallback: tr('تعذرت المشاركة')));
     }
   }
 
@@ -309,7 +310,8 @@ class _PostShareSheetState extends State<_PostShareSheet> {
       future: _friends,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return _hint(tr('تعذر تحميل الأصدقاء'));
+          return _hint(friendlyError(snapshot.error,
+              fallback: tr('تعذر تحميل الأصدقاء')));
         }
         if (!snapshot.hasData) {
           return const SizedBox(
@@ -650,6 +652,6 @@ Future<void> showAddToStoryDialog(BuildContext rootContext, Post post,
     await PostService.shareToStory(post);
     messenger.showSnackBar(SnackBar(content: Text(tr('تمت الإضافة إلى قصتك'))));
   } catch (error) {
-    messenger.showSnackBar(SnackBar(content: Text(trf('تعذرت الإضافة: {0}', [error]))));
+    messenger.showSnackBar(SnackBar(content: Text(friendlyError(error, fallback: tr('تعذرت الإضافة')))));
   }
 }

@@ -21,6 +21,7 @@ import 'story_widgets.dart' show StoryViewer;
 import '../route_state.dart';
 
 import '../l10n.dart';
+import '../net_error.dart';
 /// تبويب الملف الشخصي للمستخدم الحالي.
 class ProfileScreen extends StatelessWidget {
   final ThemeMode themeMode;
@@ -122,10 +123,9 @@ class _ProfileViewState extends State<ProfileView> {
           if (userSnap.hasError) {
             return Padding(
               padding: const EdgeInsets.all(32),
-              child: EmptyState(
-                  icon: Icons.person_off_outlined,
-                  title: tr('تعذر تحميل الملف الشخصي'),
-                  message: '${userSnap.error}'),
+              child: ErrorState(
+                  error: userSnap.error,
+                  title: tr('تعذر تحميل الملف الشخصي')),
             );
           }
           return Padding(
@@ -648,7 +648,7 @@ class _Header extends StatelessWidget {
           await SocialService.setBlocked(uid, false);
         } catch (error) {
           messenger.showSnackBar(
-            SnackBar(content: Text(trf('تعذر إلغاء الحظر: {0}', [error]))),
+            SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر إلغاء الحظر')))),
           );
         }
       });
@@ -735,7 +735,7 @@ class FollowActionButton extends StatelessWidget {
       }
     } catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text(trf('تعذر تحديث المتابعة: {0}', [error]))),
+        SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر تحديث المتابعة')))),
       );
     }
   }
@@ -878,7 +878,7 @@ Future<void> openChatWith(BuildContext context, String uid) async {
     );
   } catch (error) {
     messenger.showSnackBar(
-      SnackBar(content: Text(trf('تعذر فتح المحادثة: {0}', [error]))),
+      SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر فتح المحادثة')))),
     );
   }
 }
@@ -893,7 +893,7 @@ class _ProfileShareSheet extends StatefulWidget {
 }
 
 class _ProfileShareSheetState extends State<_ProfileShareSheet> {
-  late final Future<List<AppUser>> _friends = _loadFriends();
+  late Future<List<AppUser>> _friends = _loadFriends();
   String? _sharingUid;
 
   Future<List<AppUser>> _loadFriends() async {
@@ -944,7 +944,7 @@ class _ProfileShareSheetState extends State<_ProfileShareSheet> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(trf('تعذرت المشاركة: {0}', [error]))),
+          SnackBar(content: Text(friendlyError(error, fallback: tr('تعذرت المشاركة')))),
         );
       }
     }
@@ -967,7 +967,7 @@ class _ProfileShareSheetState extends State<_ProfileShareSheet> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(trf('تعذرت مشاركة الملف: {0}', [error]))),
+          SnackBar(content: Text(friendlyError(error, fallback: tr('تعذرت مشاركة الملف')))),
         );
       }
     } finally {
@@ -1113,12 +1113,11 @@ class _ProfileShareSheetState extends State<_ProfileShareSheet> {
                   future: _friends,
                   builder: (context, snapshot) {
                     if (snapshot.hasError) {
-                      return Center(
-                        child: Text(
-                          trf('تعذر تحميل الأصدقاء\n{0}', [snapshot.error]),
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: colors.textDim),
-                        ),
+                      return ErrorState(
+                        error: snapshot.error,
+                        title: tr('تعذر تحميل الأصدقاء'),
+                        onRetry: () =>
+                            setState(() => _friends = _loadFriends()),
                       );
                     }
                     if (!snapshot.hasData) {
@@ -1237,7 +1236,7 @@ class _UserList extends StatefulWidget {
 }
 
 class _UserListState extends State<_UserList> {
-  late final Future<List<AppUser>> _users = _load();
+  late Future<List<AppUser>> _users = _load();
   String _q = '';
 
   Future<List<AppUser>> _load() async {
@@ -1263,9 +1262,10 @@ class _UserListState extends State<_UserList> {
             future: _users,
             builder: (context, snap) {
               if (snap.hasError)
-                return Center(
-                    child: Text(trf('تعذر التحميل\n{0}', [snap.error]),
-                        textAlign: TextAlign.center));
+                return ErrorState(
+                    error: snap.error,
+                    title: tr('تعذر التحميل'),
+                    onRetry: () => setState(() => _users = _load()));
               if (!snap.hasData)
                 return const AppLoading();
               final list = snap.data!
@@ -1368,7 +1368,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         _error = null;
       });
     } catch (e) {
-      setState(() => _error = trf('تعذر اختيار الصورة: {0}', [e]));
+      setState(() => _error = friendlyError(e, fallback: tr('تعذر اختيار الصورة')));
     }
   }
 
@@ -1499,7 +1499,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     } catch (e) {
       setState(() {
         _busy = false;
-        _error = trf('تعذر الحفظ: {0}', [e]);
+        _error = friendlyError(e, fallback: tr('تعذر الحفظ'));
       });
     }
   }
@@ -1753,7 +1753,8 @@ void _showPinSheet(BuildContext context, Post post, bool pinned) {
                 messenger.showSnackBar(SnackBar(
                   content: Text(error is PinLimitReached
                       ? '$error'
-                      : trf('تعذر تحديث التثبيت: {0}', [error])),
+                      : friendlyError(error,
+                          fallback: tr('تعذر تحديث التثبيت'))),
                 ));
               }
             },
@@ -1821,9 +1822,7 @@ class _PostsTabState extends State<_PostsTab> {
       stream: _stream,
       builder: (context, snap) {
         if (snap.hasError) {
-          return Center(
-              child: Text(trf('تعذر التحميل\n{0}', [snap.error]),
-                  textAlign: TextAlign.center));
+          return ErrorState(error: snap.error, title: tr('تعذر التحميل'));
         }
         if (!snap.hasData) return const AppLoading();
         // المثبّت يظهر أولاً في التبويب الذي ينتمي إليه فقط.
@@ -2042,9 +2041,7 @@ class _SavedGrid extends StatelessWidget {
       stream: PostService.savedPosts(),
       builder: (context, snap) {
         if (snap.hasError)
-          return Center(
-              child: Text(trf('تعذر التحميل\n{0}', [snap.error]),
-                  textAlign: TextAlign.center));
+          return ErrorState(error: snap.error, title: tr('تعذر التحميل'));
         if (!snap.hasData) return const AppLoading();
         final list = snap.data!;
         if (list.isEmpty) {
@@ -2104,7 +2101,7 @@ class _ProfileMoreMenuState extends State<_ProfileMoreMenu> {
       );
     } catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text(trf('تعذر تنفيذ العملية: {0}', [error]))),
+        SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر تنفيذ العملية')))),
       );
     }
   }
@@ -2155,7 +2152,7 @@ class _ProfileMoreMenuState extends State<_ProfileMoreMenu> {
                     );
                   } catch (error) {
                     messenger.showSnackBar(
-                      SnackBar(content: Text(trf('تعذر إرسال البلاغ: {0}', [error]))),
+                      SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر إرسال البلاغ')))),
                     );
                   }
                 },

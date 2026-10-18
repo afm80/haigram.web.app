@@ -9,6 +9,7 @@ import '../services/user_service.dart';
 import '../theme.dart';
 
 import '../l10n.dart';
+import '../net_error.dart';
 /// يفتح شاشة تعديل وتحجيم الصورة الشخصية (تحريك + تكبير بإصبعين/عجلة الفأرة + تدوير)
 /// ويعيد صورة JPEG مربّعة مصغّرة جاهزة للحفظ، أو null عند الإلغاء.
 Future<Uint8List?> cropProfilePhoto(BuildContext context, Uint8List bytes) =>
@@ -162,7 +163,7 @@ class _CropScreenState extends State<_CropScreen> {
       _controller.value = Matrix4.identity();
       await _decodeSize();
     } catch (e) {
-      if (mounted) setState(() => _error = trf('تعذر تدوير الصورة: {0}', [e]));
+      if (mounted) setState(() => _error = friendlyError(e, fallback: tr('تعذر تدوير الصورة')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -216,7 +217,7 @@ class _CropScreenState extends State<_CropScreen> {
       if (mounted) {
         setState(() {
           _busy = false;
-          _error = trf('تعذر قص الصورة: {0}', [e]);
+          _error = friendlyError(e, fallback: tr('تعذر قص الصورة'));
         });
       }
     }

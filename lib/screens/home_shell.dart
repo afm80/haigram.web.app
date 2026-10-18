@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemNavigator;
 
 import '../l10n.dart';
+import '../net_error.dart';
 import '../route_state.dart';
 import '../services/post_service.dart';
 import '../services/presence_service.dart';
@@ -34,7 +35,7 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> {
-  late final Future<AppUser> _profile = UserService.ensureProfile();
+  late Future<AppUser> _profile = UserService.ensureProfile();
 
   @override
   Widget build(BuildContext context) {
@@ -43,11 +44,11 @@ class _HomeShellState extends State<HomeShell> {
       builder: (context, snap) {
         if (snap.hasError) {
           return Scaffold(
-              body: Center(
-                  child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text('${tr('تعذر تحميل ملفك الشخصي')}\n${snap.error}',
-                          textAlign: TextAlign.center))));
+              body: ErrorState(
+                  error: snap.error,
+                  title: tr('تعذر تحميل ملفك الشخصي'),
+                  onRetry: () =>
+                      setState(() => _profile = UserService.ensureProfile())));
         }
         if (!snap.hasData)
           return const Scaffold(
