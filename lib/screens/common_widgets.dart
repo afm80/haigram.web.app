@@ -8,7 +8,7 @@ import '../services/presence_service.dart';
 import '../services/social_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
-import 'post_widgets.dart' show timeAgo;
+import 'post_widgets.dart' show timeAgo, stopInlineVideos;
 import 'sticker_sheet.dart';
 import 'translate_widgets.dart';
 import 'profile_screen.dart';
@@ -128,7 +128,12 @@ class UserAvatar extends StatelessWidget {
 }
 
 /// نافذة التعليقات السفلية.
-Future<void> showCommentsSheet(BuildContext context, Post post) {
+Future<void> showCommentsSheet(BuildContext context, Post post) async {
+  // مشغّل يوتيوب على الويب (iframe) يبقى فوق واجهة فلاتر ويلتقط النقرات،
+  // فنوقف الفيديوهات المضمّنة وننتظر إطاراً ليُزال قبل فتح الورقة.
+  stopInlineVideos();
+  await WidgetsBinding.instance.endOfFrame;
+  if (!context.mounted) return;
   return showModalBottomSheet(
     context: context,
     useRootNavigator: true,
