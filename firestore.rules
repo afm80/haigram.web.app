@@ -165,10 +165,19 @@ service cloud.firestore {
                 && !existsAfter(likeDocPath(postId)))
             )) ||
           (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments'])
-            && math.abs(request.resource.data.comments - resource.data.get('comments', 0)) == 1) ||
+            && request.resource.data.comments is int
+            && request.resource.data.comments >= 0
+            && (request.resource.data.comments == resource.data.get('comments', 0) + 1
+              || request.resource.data.comments < resource.data.get('comments', 0))) ||
           (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['shares'])
             && request.resource.data.shares == resource.data.get('shares', 0) + 1)
-        ))
+        )) ||
+        // لوحة التحكم: تنقيص عدّاد التعليقات عند حذف تعليق مُبلَّغ عنه.
+        (isAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments'])
+          && request.resource.data.comments is int
+          && request.resource.data.comments >= 0
+          && request.resource.data.comments < resource.data.get('comments', 0))
       );
       allow delete: if request.auth != null
         && (isAdmin() || resource.data.uid == request.auth.uid);
@@ -194,7 +203,8 @@ service cloud.firestore {
 
       // التعليقات: يكتبها أي مستخدم مسجّل، ويحذفها صاحبها أو صاحب المنشور
       match /comments/{commentId} {
-        allow read: if request.auth != null && parentPostReadable(postId);
+        allow read: if request.auth != null
+          && (isAdmin() || parentPostReadable(postId));
         allow create: if request.auth != null
           && parentPostReadable(postId)
           && request.resource.data.uid == request.auth.uid
@@ -205,6 +215,17 @@ service cloud.firestore {
           && request.resource.data.text.size() > 0
           && request.resource.data.text.size() <= 500
           && request.resource.data.get('kind', 'text') in ['text', 'sticker', 'image']
+          // الردود: مستوى واحد فقط؛ الأب موجود وليس ردّاً بدوره.
+          && (!('parentId' in request.resource.data)
+            || (request.resource.data.parentId is string
+              && request.resource.data.parentId.size() > 0
+              && request.resource.data.parentId.size() <= 40
+              && exists(/databases/$(database)/documents/posts/$(postId)/comments/$(request.resource.data.parentId))
+              && !('parentId' in get(/databases/$(database)/documents/posts/$(postId)/comments/$(request.resource.data.parentId)).data)))
+          && (!('replyToUsername' in request.resource.data)
+            || ('parentId' in request.resource.data
+              && request.resource.data.replyToUsername is string
+              && request.resource.data.replyToUsername.size() <= 24))
           && (!('image' in request.resource.data)
             || (request.resource.data.kind == 'image'
               && request.resource.data.image is bytes
@@ -235,8 +256,12 @@ service cloud.firestore {
               && !request.resource.data.likedBy.hasAny([request.auth.uid]))
           );
         allow delete: if request.auth != null && (
+          isAdmin() ||
           resource.data.uid == request.auth.uid ||
-          get(/databases/$(database)/documents/posts/$(postId)).data.uid == request.auth.uid
+          get(/databases/$(database)/documents/posts/$(postId)).data.uid == request.auth.uid ||
+          // صاحب التعليق الأب يحذف الردود عليه عند حذف تعليقه.
+          ('parentId' in resource.data
+            && get(/databases/$(database)/documents/posts/$(postId)/comments/$(resource.data.parentId)).data.uid == request.auth.uid)
         );
       }
     }
@@ -439,14 +464,23 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.resource.data.keys().hasOnly([
           'type', 'targetUid', 'reporterUid', 'reason', 'details', 'createdAt',
-          'postId'
+          'postId', 'commentId'
         ])
         && ((request.resource.data.type == 'user'
-              && !('postId' in request.resource.data))
+              && !('postId' in request.resource.data)
+              && !('commentId' in request.resource.data))
             || (request.resource.data.type == 'post'
               && request.resource.data.postId is string
               && request.resource.data.postId.size() > 0
-              && request.resource.data.postId.size() <= 40))
+              && request.resource.data.postId.size() <= 40
+              && !('commentId' in request.resource.data))
+            || (request.resource.data.type == 'comment'
+              && request.resource.data.postId is string
+              && request.resource.data.postId.size() > 0
+              && request.resource.data.postId.size() <= 40
+              && request.resource.data.commentId is string
+              && request.resource.data.commentId.size() > 0
+              && request.resource.data.commentId.size() <= 40))
         && request.resource.data.reporterUid == request.auth.uid
         && request.resource.data.targetUid is string
         && request.resource.data.targetUid != request.auth.uid
