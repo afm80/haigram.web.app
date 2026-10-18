@@ -2,6 +2,11 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function isActiveUser() {
+      return request.auth != null
+        && !exists(/databases/$(database)/documents/blockedUsers/$(request.auth.uid));
+    }
+
     // حساب الأدمن الوحيد (لوحة التحكم): يقرأ كل المنشورات والبلاغات ويحذفها.
     function isAdmin() {
       return request.auth != null
@@ -120,13 +125,21 @@ service cloud.firestore {
         );
     }
 
+      // يسمح للمستخدم بقراءة حالة حظره فقط حتى يسجّل التطبيق خروجه؛ لا يستطيع العميل تعديلها.
+      match /blockedUsers/{uid} {
+        allow get: if request.auth != null
+          && (request.auth.uid == uid || isAdmin());
+        allow list: if isAdmin();
+        allow write: if false;
+      }
+
     match /posts/{postId} {
       // الحساب الخاص: منشوراته لصاحبه ولمتابعيه فقط (تُفرض هنا في الخادم لا في الواجهة).
       // قواعد القراءة ليست فلتراً: استعلامات القوائم يجب أن تحمل where('authorPrivate', '==', false)
       // أو تقيّد uid بنفسي/بمن أتابعه، وإلا يرفضها Firestore كاملة.
-      allow read: if request.auth != null
+      allow read: if isActiveUser()
         && (isAdmin() || canReadPost(resource.data));
-      allow create: if request.auth != null
+      allow create: if isActiveUser()
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.caption.size() <= 500
         && request.resource.data.likes == 0
@@ -142,7 +155,7 @@ service cloud.firestore {
       // المالك يعدّل نص المنشور فقط. أي مستخدم مسجّل يستطيع:
       //  - الإعجاب/إلغاؤه: العدّاد يتغيّر بمقدار 1 فقط وبالتزامن مع إنشاء/حذف مستند إعجابه هو.
       //  - زيادة/إنقاص عدّاد التعليقات بمقدار 1، وزيادة المشاركات بمقدار 1.
-      allow update: if request.auth != null && (
+      allow update: if isActiveUser() && (
         (resource.data.uid == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['caption'])
           && request.resource.data.caption is string
@@ -179,21 +192,21 @@ service cloud.firestore {
           && request.resource.data.comments >= 0
           && request.resource.data.comments < resource.data.get('comments', 0))
       );
-      allow delete: if request.auth != null
+      allow delete: if isActiveUser()
         && (isAdmin() || resource.data.uid == request.auth.uid);
 
       match /likes/{uid} {
         // مستند إعجابي أنا يُقرأ دائماً (بلا قراءة إضافية)، وإعجابات غيري تتبع قابلية قراءة المنشور.
-        allow read: if request.auth != null
+        allow read: if isActiveUser()
           && (request.auth.uid == uid || parentPostReadable(postId));
-        allow write: if request.auth != null && request.auth.uid == uid;
+        allow write: if isActiveUser() && request.auth.uid == uid;
       }
 
       // مشاهدات القصص: كل مشاهد يسجّل نفسه فقط (وقت الخادم)، ويقرؤها صاحب القصة وحده.
       match /views/{viewerUid} {
-        allow read: if request.auth != null
+        allow read: if isActiveUser()
           && get(/databases/$(database)/documents/posts/$(postId)).data.uid == request.auth.uid;
-        allow create, update: if request.auth != null
+        allow create, update: if isActiveUser()
           && request.auth.uid == viewerUid
           && get(/databases/$(database)/documents/posts/$(postId)).data.uid != viewerUid
           && request.resource.data.keys().hasOnly(['at'])
@@ -203,9 +216,9 @@ service cloud.firestore {
 
       // التعليقات: يكتبها أي مستخدم مسجّل، ويحذفها صاحبها أو صاحب المنشور
       match /comments/{commentId} {
-        allow read: if request.auth != null
+        allow read: if isActiveUser()
           && (isAdmin() || parentPostReadable(postId));
-        allow create: if request.auth != null
+        allow create: if isActiveUser()
           && parentPostReadable(postId)
           && request.resource.data.uid == request.auth.uid
           && authorMatchesProfile()
@@ -230,7 +243,7 @@ service cloud.firestore {
             || (request.resource.data.kind == 'image'
               && request.resource.data.image is bytes
               && request.resource.data.image.size() <= 716800));
-        allow update: if request.auth != null
+        allow update: if isActiveUser()
           && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['likedBy'])
           && request.resource.data.likedBy is list
@@ -255,7 +268,7 @@ service cloud.firestore {
               && resource.data.get('likedBy', []).hasAny([request.auth.uid])
               && !request.resource.data.likedBy.hasAny([request.auth.uid]))
           );
-        allow delete: if request.auth != null && (
+        allow delete: if isActiveUser() && (
           isAdmin() ||
           resource.data.uid == request.auth.uid ||
           get(/databases/$(database)/documents/posts/$(postId)).data.uid == request.auth.uid ||
@@ -268,7 +281,7 @@ service cloud.firestore {
 
     match /chats/{chatId} {
       function isParticipant() {
-        return request.auth != null
+        return isActiveUser()
           && request.auth.uid in resource.data.participants;
       }
 
@@ -287,9 +300,10 @@ service cloud.firestore {
 
       // لا نسمح بقراءة مستند غير موجود (كان يكشف هل تراسل مستخدمان أم لا):
       // البدء يتم بالإنشاء ثم القراءة من الطرفين فقط.
-      allow get: if isParticipant();
-      allow list: if isParticipant();
-      allow create: if request.auth != null
+      // الأدمن يقرأ ملخصات المحادثات للوحة التحكم؛ الرسائل الفرعية تبقى للمشاركين فقط.
+      allow get: if isAdmin() || isParticipant();
+      allow list: if isAdmin() || isParticipant();
+      allow create: if isActiveUser()
         && request.resource.data.keys().hasOnly([
           'participants', 'lastMessage', 'lastSenderUid', 'lastMessageId',
           'createdAt', 'updatedAt', 'accepted'
@@ -316,7 +330,7 @@ service cloud.firestore {
         && request.resource.data.updatedAt == request.time
         // كل محادثة جديدة تبدأ «غير مقبولة»؛ تُفتح عند ردّ الطرف الآخر.
         && request.resource.data.accepted == false;
-      allow update: if request.auth != null
+      allow update: if isActiveUser()
         && resource.data.participants is list
         && resource.data.participants.hasAny([request.auth.uid])
         && (
@@ -415,7 +429,7 @@ service cloud.firestore {
 
       match /messages/{messageId} {
         function isChatParticipant() {
-          return request.auth != null
+          return isActiveUser()
             && request.auth.uid in
               get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
         }
@@ -425,6 +439,18 @@ service cloud.firestore {
         }
         function chatNext() {
           return getAfter(/databases/$(database)/documents/chats/$(chatId)).data;
+        }
+        function validReactionUpdate() {
+          let before = resource.data.get('reactions', {});
+          let after = request.resource.data.get('reactions', {});
+          let uid = request.auth.uid;
+          return after is map
+            && after.keys().hasOnly(chatNow().participants)
+            && after.diff(before).affectedKeys().hasOnly([uid])
+            && (!(uid in after)
+              || (after[uid] is string
+                && after[uid].size() > 0
+                && after[uid].size() <= 8));
         }
         // متابعة متبادلة بين طرفي المحادثة.
         function areMutualFriends() {
@@ -453,8 +479,9 @@ service cloud.firestore {
         allow read: if isChatParticipant();
         allow create: if isChatParticipant()
           && request.resource.data.keys().hasOnly([
-            'senderUid', 'text', 'kind', 'image', 'deliveredTo', 'readBy',
-            'createdAt'
+            'senderUid', 'text', 'kind', 'image', 'imageUrl', 'attachmentUrl',
+            'attachmentName', 'contentType', 'deliveredTo', 'readBy',
+            'createdAt', 'replyToMessageId', 'replyToText', 'replyToSenderUid'
           ])
           && request.resource.data.keys().hasAll([
             'senderUid', 'text', 'kind', 'deliveredTo', 'readBy', 'createdAt'
@@ -462,20 +489,27 @@ service cloud.firestore {
           && request.resource.data.senderUid == request.auth.uid
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
+          && (!('replyToMessageId' in request.resource.data)
+            || (request.resource.data.replyToMessageId is string
+              && request.resource.data.replyToMessageId.size() > 0
+              && request.resource.data.replyToMessageId.size() <= 128
+              && request.resource.data.replyToText is string
+              && request.resource.data.replyToText.size() <= 2000
+              && request.resource.data.replyToSenderUid is string
+              && request.resource.data.replyToSenderUid in chatNow().participants))
           && (
             (request.resource.data.kind == 'image'
               && request.resource.data.keys().hasOnly([
                 'senderUid', 'text', 'kind', 'image', 'imageUrl',
-                'deliveredTo', 'readBy', 'createdAt'
+                'deliveredTo', 'readBy', 'createdAt', 'replyToMessageId',
+                'replyToText', 'replyToSenderUid'
               ])
               && (
-                // وضع التجربة: الصورة داخل المستند.
                 (('image' in request.resource.data)
                   && !('imageUrl' in request.resource.data)
                   && request.resource.data.image is bytes
                   && request.resource.data.image.size() <= 716800)
                 ||
-                // Cloudinary أو Firebase Storage: رابط مباشر فقط.
                 (('imageUrl' in request.resource.data)
                   && !('image' in request.resource.data)
                   && request.resource.data.imageUrl is string
@@ -487,50 +521,76 @@ service cloud.firestore {
             (request.resource.data.kind == 'text'
               && request.resource.data.keys().hasOnly([
                 'senderUid', 'text', 'kind', 'deliveredTo', 'readBy',
-                'createdAt'
+                'createdAt', 'replyToMessageId', 'replyToText',
+                'replyToSenderUid'
               ])
               && request.resource.data.text.size() <= 2000)
             ||
             (request.resource.data.kind == 'sticker'
               && request.resource.data.keys().hasOnly([
                 'senderUid', 'text', 'kind', 'deliveredTo', 'readBy',
-                'createdAt'
+                'createdAt', 'replyToMessageId', 'replyToText',
+                'replyToSenderUid'
               ])
               && request.resource.data.text.size() <= 24)
+            ||
+            (request.resource.data.kind in ['video', 'audio', 'file']
+              && request.resource.data.keys().hasOnly([
+                'senderUid', 'text', 'kind', 'attachmentUrl',
+                'attachmentName', 'contentType', 'deliveredTo', 'readBy',
+                'createdAt', 'replyToMessageId', 'replyToText',
+                'replyToSenderUid'
+              ])
+              && request.resource.data.text.size() <= 160
+              && request.resource.data.attachmentName is string
+              && request.resource.data.attachmentName.size() > 0
+              && request.resource.data.attachmentName.size() <= 160
+              && request.resource.data.attachmentUrl is string
+              && request.resource.data.attachmentUrl.size() <= 1200
+              && request.resource.data.attachmentUrl.matches(
+                '^https://firebasestorage[.]googleapis[.]com/.+$')
+              && request.resource.data.contentType is string
+              && request.resource.data.contentType.size() <= 120
+              && ((request.resource.data.kind == 'video'
+                    && request.resource.data.contentType.matches('video/.*'))
+                || (request.resource.data.kind == 'audio'
+                    && request.resource.data.contentType.matches('audio/.*'))
+                || request.resource.data.kind == 'file'))
           )
           && !isBlocked(
-            get(/databases/$(database)/documents/chats/$(chatId)).data.participants[0],
-            get(/databases/$(database)/documents/chats/$(chatId)).data.participants[1]
+            chatNow().participants[0],
+            chatNow().participants[1]
           )
           && canSendNow()
           && request.resource.data.deliveredTo == [request.auth.uid]
           && request.resource.data.readBy == [request.auth.uid]
           && request.resource.data.createdAt == request.time
-          && getAfter(/databases/$(database)/documents/chats/$(chatId)).data.lastSenderUid
-            == request.auth.uid
-          && getAfter(/databases/$(database)/documents/chats/$(chatId)).data.lastMessageId
-            == messageId
-          // في المحادثة غير المقبولة يجب أن يسجّل المرسل نفسه في startedBy
-          // ضمن الكتابة نفسها، وإلا تعطّل حدّ الرسالة الواحدة.
+          && chatNext().lastSenderUid == request.auth.uid
+          && chatNext().lastMessageId == messageId
           && (chatNext().get('accepted', true) == true
             || request.auth.uid in chatNext().get('startedBy', []))
-          && getAfter(/databases/$(database)/documents/chats/$(chatId)).data.lastMessage
-            == request.resource.data.text;
+          && chatNext().lastMessage == request.resource.data.text;
         allow update: if isChatParticipant()
-          && resource.data.senderUid != request.auth.uid
-          && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['deliveredTo', 'readBy'])
-          && request.resource.data.deliveredTo is list
-          && request.resource.data.deliveredTo
-            .hasAll(resource.data.get('deliveredTo', []))
-          && request.resource.data.deliveredTo.hasAny([request.auth.uid])
-          && request.resource.data.deliveredTo.size()
-            <= resource.data.get('deliveredTo', []).size() + 1
-          && request.resource.data.readBy is list
-          && request.resource.data.readBy.hasAll(resource.data.get('readBy', []))
-          && request.resource.data.readBy.hasAny([request.auth.uid])
-          && request.resource.data.readBy.size()
-            <= resource.data.get('readBy', []).size() + 1;
+          && (
+            (resource.data.senderUid != request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['deliveredTo', 'readBy'])
+              && request.resource.data.deliveredTo is list
+              && request.resource.data.deliveredTo
+                .hasAll(resource.data.get('deliveredTo', []))
+              && request.resource.data.deliveredTo.hasAny([request.auth.uid])
+              && request.resource.data.deliveredTo.size()
+                <= resource.data.get('deliveredTo', []).size() + 1
+              && request.resource.data.readBy is list
+              && request.resource.data.readBy.hasAll(resource.data.get('readBy', []))
+              && request.resource.data.readBy.hasAny([request.auth.uid])
+              && request.resource.data.readBy.size()
+                <= resource.data.get('readBy', []).size() + 1)
+            ||
+            (request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['reactions'])
+              && validReactionUpdate())
+          );
         allow delete: if isChatParticipant()
           && resource.data.senderUid == request.auth.uid;
       }
@@ -538,7 +598,7 @@ service cloud.firestore {
       // رسائل «حذف لديّ فقط»: مستند لكل مستخدم يخص نفسه فقط.
       match /hiddenMessages/{uid} {
         function isParticipantHere() {
-          return request.auth != null
+          return isActiveUser()
             && request.auth.uid in
               get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
         }
@@ -554,20 +614,20 @@ service cloud.firestore {
     }
 
     match /userBlocks/{uid}/blocked/{otherUid} {
-      allow read: if request.auth != null
+      allow read: if isActiveUser()
         && (request.auth.uid == uid || request.auth.uid == otherUid);
-      allow create: if request.auth != null
+      allow create: if isActiveUser()
         && request.auth.uid == uid
         && uid != otherUid
         && request.resource.data.keys().hasOnly(['createdAt'])
         && request.resource.data.createdAt == request.time;
       allow update: if false;
-      allow delete: if request.auth != null && request.auth.uid == uid;
+      allow delete: if isActiveUser() && request.auth.uid == uid;
     }
 
     // البلاغات: الإنشاء فقط من المستخدم المسجّل، والقراءة والحذف للأدمن فقط (لوحة التحكم).
     match /reports/{reportId} {
-      allow create: if request.auth != null
+      allow create: if isActiveUser()
         && request.resource.data.keys().hasOnly([
           'type', 'targetUid', 'reporterUid', 'reason', 'details', 'createdAt',
           'postId', 'commentId'
@@ -601,39 +661,39 @@ service cloud.firestore {
     }
 
     match /presence/{uid} {
-      allow read: if request.auth != null;
-      allow create, update: if request.auth != null
+      allow read: if isActiveUser();
+      allow create, update: if isActiveUser()
         && request.auth.uid == uid
         && request.resource.data.keys().hasOnly(['online', 'updatedAt'])
         && request.resource.data.online is bool
         && request.resource.data.updatedAt == request.time;
-      allow delete: if request.auth != null && request.auth.uid == uid;
+      allow delete: if isActiveUser() && request.auth.uid == uid;
     }
 
     // قطع الملفات (وضع التجربة): كل قطعة تحمل uid صاحبها، لا تُعدَّل، ويحذفها صاحبها فقط
     match /media/{chunkId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null
+      allow read: if isActiveUser();
+      allow create: if isActiveUser()
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.data.size() < 950000;
       allow update: if false;
-      allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
+      allow delete: if isActiveUser() && resource.data.uid == request.auth.uid;
     }
 
     // حجز أسماء المستخدمين (فريدة). القراءة المفردة مفتوحة للتحقق من التوفر قبل التسجيل.
     match /usernames/{name} {
       allow get: if true;
-      allow create: if request.auth != null
+      allow create: if isActiveUser()
         && request.resource.data.uid == request.auth.uid
         && name.matches('^[a-z0-9._]{3,24}$');
       allow update: if false;
-      allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
+      allow delete: if isActiveUser() && resource.data.uid == request.auth.uid;
     }
 
     // الملف الشخصي: الاسم + اسم المستخدم + النبذة
     match /users/{uid} {
-      allow read: if request.auth != null;
-      allow create, update: if request.auth != null
+      allow read: if isActiveUser();
+      allow create, update: if isActiveUser()
         && request.auth.uid == uid
         && request.resource.data.username is string
         && request.resource.data.username.matches('^[a-z0-9._]{3,24}$')
@@ -659,20 +719,28 @@ service cloud.firestore {
     match /users/{uid}/{sub}/{doc} {
       // طلبات المتابعة: يقرؤها صاحب الحساب أو مرسل الطلب فقط. المحفوظات لصاحبها، والإعجابات حسب إعدادات صاحبها،
       // وباقي المجموعات (المتابَعون/المتابِعون) مفتوحة للقراءة لأن العدّادات تعتمد عليها.
-      allow read: if request.auth != null
+      allow read: if isActiveUser()
         && (sub != 'notifications' || request.auth.uid == uid)
         && (sub != 'followRequests' || request.auth.uid == uid || request.auth.uid == doc)
         && (sub != 'profileVisits' || request.auth.uid == uid)
         && (sub != 'hiddenPosts' || request.auth.uid == uid)
+        && (sub != 'pushTokens' || request.auth.uid == uid)
         // المحفوظات خاصة بصاحبها وحده.
         && (sub != 'saved' || request.auth.uid == uid)
         // قائمة الإعجابات: تحترم «إخفاء الإعجابات» وخصوصية الحساب.
         && (sub != 'liked' || request.auth.uid == uid || canViewLikes(uid));
 
-      allow create: if request.auth != null && (
+      allow create: if isActiveUser() && (
+        (request.auth.uid == uid && sub == 'pushTokens'
+          && request.resource.data.keys().hasOnly(['token', 'platform', 'updatedAt'])
+          && request.resource.data.token is string
+          && request.resource.data.token.size() >= 30
+          && request.resource.data.token.size() <= 4096
+          && request.resource.data.platform in ['web', 'android', 'ios']
+          && request.resource.data.updatedAt == request.time) ||
         // المالك: saved / liked ... لكن ليس followers ولا followRequests ولا الإشعارات.
         (request.auth.uid == uid
-          && !(sub in ['notifications', 'followers', 'followRequests', 'following'])) ||
+          && !(sub in ['notifications', 'followers', 'followRequests', 'following', 'pushTokens'])) ||
         // متابعة مباشرة: فقط إذا كان الحساب الهدف عاماً.
         (sub == 'following' && request.auth.uid == uid
           && doc != uid && !isPrivateUser(doc)
@@ -699,9 +767,16 @@ service cloud.firestore {
           && request.resource.data.at == request.time) ||
         (sub == 'notifications' && validNotificationCreate(uid, doc))
       );
-      allow update: if request.auth != null && (
+      allow update: if isActiveUser() && (
+        (request.auth.uid == uid && sub == 'pushTokens'
+          && request.resource.data.keys().hasOnly(['token', 'platform', 'updatedAt'])
+          && request.resource.data.token is string
+          && request.resource.data.token.size() >= 30
+          && request.resource.data.token.size() <= 4096
+          && request.resource.data.platform in ['web', 'android', 'ios']
+          && request.resource.data.updatedAt == request.time) ||
         (request.auth.uid == uid
-          && !(sub in ['notifications', 'followers', 'followRequests', 'following'])) ||
+          && !(sub in ['notifications', 'followers', 'followRequests', 'following', 'pushTokens'])) ||
         (sub == 'following' && request.auth.uid == uid
           && request.resource.data.keys().hasOnly(['at'])) ||
         (sub == 'followers' && doc == request.auth.uid
@@ -717,7 +792,7 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
           && request.resource.data.read is bool)
       );
-      allow delete: if request.auth != null
+      allow delete: if isActiveUser()
         && ((request.auth.uid == uid && sub != 'notifications' && sub != 'followers')
           || (sub == 'followers' && doc == request.auth.uid)
           || (sub == 'followRequests' && doc == request.auth.uid)

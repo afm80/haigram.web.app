@@ -1,11 +1,35 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    function isActiveAccount() {
+      return request.auth != null
+        && !firestore.exists(
+          /databases/(default)/documents/blockedUsers/$(request.auth.uid)
+        );
+    }
+
     match /photos/{uid}/{file} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == uid
+      allow read: if isActiveAccount();
+      allow write: if isActiveAccount() && request.auth.uid == uid
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
+    }
+
+    match /chats/{chatId}/{uid}/{file} {
+      function isChatParticipant() {
+        return isActiveAccount()
+          && request.auth.uid == uid
+          && firestore.get(/databases/(default)/documents/chats/$(chatId))
+            .data.participants.hasAny([request.auth.uid]);
+      }
+
+      allow read: if isChatParticipant();
+      allow write: if isChatParticipant()
+        && request.resource.size <= 20 * 1024 * 1024
+        && request.resource.contentType is string
+        && (request.resource.contentType.matches('(video|audio)/.*')
+          || request.resource.contentType.matches('application/.*')
+          || request.resource.contentType.matches('text/.*'));
     }
   }
 }
