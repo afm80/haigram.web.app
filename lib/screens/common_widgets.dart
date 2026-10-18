@@ -153,6 +153,12 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   final _picker = ImagePicker();
   Uint8List? _pendingImage; // صورة مرفقة بانتظار الإرسال اليدوي
 
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
   void _fail(String what, Object error) {
     if (mounted) {
       ScaffoldMessenger.of(context)

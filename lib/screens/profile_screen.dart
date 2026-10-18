@@ -1348,6 +1348,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   bool _busy = false;
   String? _error;
 
+  @override
+  void dispose() {
+    _name.dispose();
+    _username.dispose();
+    _bio.dispose();
+    _website.dispose();
+    super.dispose();
+  }
+
   Future<void> _pickPhoto(ImageSource source) async {
     try {
       // تصغير إلى 320px وجودة 70% فيصبح حجم الصورة بضع عشرات الكيلوبايت.
@@ -1358,8 +1367,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       final Uint8List original = await f.readAsBytes();
       if (!mounted) return;
       final Uint8List? bytes = await cropProfilePhoto(context, original);
-      if (bytes == null) return;
-      if (bytes.length > 150 * 1024) {
+      if (bytes == null || !mounted) return;
+      // الحد 145000 بايت لأن قواعد Firestore ترفض النص (base64) إن تجاوز 200000 حرف.
+      if (bytes.length > 145 * 1000) {
         setState(() => _error = tr('الصورة كبيرة جداً، جرّب صورة أخرى'));
         return;
       }
@@ -1368,6 +1378,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         _error = null;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = friendlyError(e, fallback: tr('تعذر اختيار الصورة')));
     }
   }

@@ -47,11 +47,13 @@ class _AuthScreenState extends State<AuthScreen> {
     try {
       await action();
     } on FirebaseAuthException catch (e) {
-      setState(() => _error = _msg(e.code));
+      if (mounted) setState(() => _error = _msg(e.code));
     } catch (e) {
       debugPrint('Auth error: $e');
-      setState(() => _error =
-          friendlyError(e, fallback: tr('تعذر تسجيل الدخول')));
+      if (mounted) {
+        setState(() => _error =
+            friendlyError(e, fallback: tr('تعذر تسجيل الدخول')));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -94,6 +96,7 @@ class _AuthScreenState extends State<AuthScreen> {
             return;
           }
           if (!await UserService.isAvailable(username)) {
+            if (!mounted) return;
             setState(() => _error = tr('اسم المستخدم محجوز، اختر اسماً آخر'));
             return;
           }
@@ -134,6 +137,7 @@ class _AuthScreenState extends State<AuthScreen> {
           // لا نكشف هل البريد مسجّل أم لا.
           if (e.code != 'user-not-found') rethrow;
         }
+        if (!mounted) return;
         setState(() => _info =
             tr('إن كان هذا البريد مسجّلاً لدينا فقد أرسلنا إليه رابط إعادة تعيين كلمة المرور. تحقق من صندوق الوارد ومن البريد غير الهام (Spam).'));
       });
