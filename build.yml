@@ -1,0 +1,163 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_name:
+        description: 'اسم حزمة التطبيق (applicationId)'
+        required: true
+        default: 'com.haigram.app'
+      app_name:
+        description: 'اسم التطبيق الظاهر على الهاتف'
+        required: true
+        default: 'Haigram'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.22.0'
+          cache: true
+
+      # يولّد ملفات منصة أندرويد، ثم يضبط اسم الحزمة واسم التطبيق والصلاحيات
+      - name: Generate Android scaffolding
+        env:
+          PKG: ${{ inputs.package_name }}
+          APP_NAME: ${{ inputs.app_name }}
+        run: |
+          set -e
+          if ! printf '%s' "$PKG" | grep -Eq '^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$'; then
+            echo "اسم الحزمة غير صالح: $PKG" >&2
+            exit 1
+          fi
+          rm -rf android
+          flutter create . --platforms=android --project-name haigram --org com.haigram >/dev/null
+
+          GRADLE=$(ls android/app/build.gradle android/app/build.gradle.kts 2>/dev/null | head -1)
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+
+          # اسم الحزمة (applicationId)
+          sed -i -E "s/applicationId\s*=?\s*\"[^\"]+\"/applicationId = \"$PKG\"/" "$GRADLE"
+          # حدّ أدنى 23 لمتطلبات مكتبات Firebase
+          sed -i -E 's/(minSdk(Version)?)(\s*=\s*|\s+)flutter\.minSdkVersion/\1 = 23/' "$GRADLE"
+          # رفع إصدار Kotlin: قالب Flutter 3.22 يستخدم 1.7 والمكتبات (مثل file_saver) تحتاج 1.9
+          for f in android/build.gradle android/build.gradle.kts android/settings.gradle android/settings.gradle.kts; do
+            [ -f "$f" ] || continue
+            sed -i -E "s/(ext\.kotlin_version\s*=\s*)'[^']+'/\1'1.9.24'/" "$f"
+            sed -i -E "s/(org\.jetbrains\.kotlin\.android\"\)?\s+version\s+\")[^\"]+/\11.9.24/" "$f"
+          done
+          grep -rn "kotlin" android/build.gradle android/build.gradle.kts android/settings.gradle android/settings.gradle.kts 2>/dev/null || true
+
+          # اسم التطبيق الظاهر
+          sed -i -E "s/android:label=\"[^\"]*\"/android:label=\"$APP_NAME\"/" "$MANIFEST"
+          # صلاحيات الشبكة والميكروفون والإشعارات
+          sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n    <application#' "$MANIFEST"
+
+          grep -n "applicationId\|minSdk" "$GRADLE"
+          grep -n "INTERNET\|android:label" "$MANIFEST"
+
+      # توقيع ثابت للـ APK: بصمة SHA-1 يجب أن تبقى نفسها ليعمل تسجيل Google.
+      # الأسرار المطلوبة: ANDROID_KEYSTORE_BASE64 و ANDROID_KEYSTORE_PASSWORD
+      # و ANDROID_KEY_ALIAS و ANDROID_KEY_PASSWORD
+      - name: Configure release signing
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -e
+          if [ -z "$KS_B64" ]; then
+            echo "::warning::لا يوجد keystore في الأسرار؛ سيُوقَّع الـ APK بمفتاح debug متغيّر وسيفشل تسجيل Google."
+            exit 0
+          fi
+          GRADLE=android/app/build.gradle
+          if [ ! -f "$GRADLE" ]; then
+            echo "::error::لم يُعثر على android/app/build.gradle (قالب Groovy مطلوب)"
+            exit 1
+          fi
+          printf '%s' "$KS_B64" | base64 -d > android/app/release.keystore
+          {
+            echo "storePassword=$KS_PASS"
+            echo "keyPassword=$KEY_PASS"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "storeFile=release.keystore"
+          } > android/key.properties
+
+          python3 - <<'PY'
+          p = 'android/app/build.gradle'
+          s = open(p).read()
+          block = """    signingConfigs {
+                  release {
+                      def props = new Properties()
+                      def f = rootProject.file("key.properties")
+                      if (f.exists()) { f.withInputStream { props.load(it) } }
+                      keyAlias props["keyAlias"]
+                      keyPassword props["keyPassword"]
+                      storeFile props["storeFile"] ? file(props["storeFile"]) : null
+                      storePassword props["storePassword"]
+                  }
+              }
+
+          """
+          assert "buildTypes {" in s, "buildTypes not found"
+          s = s.replace("    buildTypes {", block + "    buildTypes {", 1)
+          s = s.replace("signingConfigs.debug", "signingConfigs.release")
+          open(p, 'w').write(s)
+          PY
+
+          echo "== بصمات التوقيع (أضفها في Firebase > Project settings > تطبيق Android) =="
+          keytool -list -v -keystore android/app/release.keystore \
+            -alias "$KEY_ALIAS" -storepass "$KS_PASS" | grep -E "SHA1|SHA256"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # أيقونة تطبيق أندرويد: صورة android-icon/app-icon.png كما هي تملأ الأيقونة كاملة
+      # (بدون تصغير ولا هوامش). لا نستخدم الأيقونة المتكيّفة لأنها تصغّر الشعار
+      # وتقصّ أطرافه. لا تمسّ أيقونات الويب.
+      - name: Generate launcher icon
+        run: |
+          set -e
+          dart pub add --dev flutter_launcher_icons:^0.14.1
+          cat > flutter_launcher_icons.yaml <<'YAML'
+          flutter_launcher_icons:
+            android: true
+            ios: false
+            image_path: "android-icon/app-icon.png"
+          YAML
+          dart run flutter_launcher_icons
+
+      - name: Build APK
+        run: |
+          flutter build apk --release \
+            --dart-define=FB_API_KEY=${{ secrets.FB_API_KEY }} \
+            --dart-define=FB_APP_ID=${{ secrets.FB_APP_ID }} \
+            --dart-define=FB_SENDER_ID=${{ secrets.FB_SENDER_ID }} \
+            --dart-define=FB_PROJECT_ID=${{ secrets.FB_PROJECT_ID }} \
+            --dart-define=FB_AUTH_DOMAIN=${{ secrets.FB_AUTH_DOMAIN }} \
+            --dart-define=FB_STORAGE_BUCKET=${{ secrets.FB_STORAGE_BUCKET }} \
+            --dart-define=FB_ANDROID_APP_ID=${{ secrets.FB_ANDROID_APP_ID }} \
+            --dart-define=FB_ANDROID_API_KEY=${{ secrets.FB_ANDROID_API_KEY }} \
+            --dart-define=GOOGLE_SERVER_CLIENT_ID=${{ secrets.GOOGLE_SERVER_CLIENT_ID }} \
+            --dart-define=CLOUDINARY_CLOUD_NAME=${{ secrets.CLOUDINARY_CLOUD_NAME }} \
+            --dart-define=CLOUDINARY_UPLOAD_PRESET=${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: haigram-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
