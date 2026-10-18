@@ -5,10 +5,12 @@ import 'package:image_picker/image_picker.dart';
 
 import '../services/post_service.dart';
 import '../services/presence_service.dart';
+import '../services/social_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
 import 'post_widgets.dart' show timeAgo;
 import 'sticker_sheet.dart';
+import 'translate_widgets.dart';
 import 'profile_screen.dart';
 import '../route_state.dart';
 
@@ -152,10 +154,14 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   bool _sending = false;
   final _picker = ImagePicker();
   Uint8List? _pendingImage; // صورة مرفقة بانتظار الإرسال اليدوي
+  final _focus = FocusNode();
+  Comment? _replyTo; // التعليق الذي نردّ عليه حالياً
+  final Set<String> _expanded = {}; // التعليقات التي تُعرض ردودها
 
   @override
   void dispose() {
     _text.dispose();
+    _focus.dispose();
     super.dispose();
   }
 
@@ -170,12 +176,18 @@ class _CommentsSheetState extends State<_CommentsSheet> {
       {String kind = 'text',
       Uint8List? imageBytes,
       String? failure}) {
+    // الرد دائماً على التعليق الرئيسي (مستوى واحد)، مع ذكر من نردّ عليه.
+    final target = _replyTo;
+    final parentId = target == null ? null : (target.parentId ?? target.id);
+    if (parentId != null) _expanded.add(parentId);
     PostService.addComment(
       widget.post.id,
       text,
       ownerUid: widget.post.uid,
       kind: kind,
       imageBytes: imageBytes,
+      parentId: parentId,
+      replyToUsername: target?.username,
     ).catchError((Object e) => _fail(failure ?? tr('تعذر إرسال التعليق'), e));
   }
 
@@ -193,6 +205,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     if (t.isNotEmpty) {
       _post(t, kind: isSingleSticker(t) ? 'sticker' : 'text');
     }
+    if (_replyTo != null) setState(() => _replyTo = null);
   }
 
   Future<void> _pickImage() async {
@@ -219,27 +232,106 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     }
   }
 
-  Future<void> _showCommentActions(Comment comment) async {
+  Future<void> _showCommentActions(Comment comment,
+      {required bool canDelete, required bool canReport}) async {
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: context.appColors.surface,
       builder: (sheetContext) => SafeArea(
-        child: ListTile(
-          leading: Icon(Icons.delete_outline_rounded,
-              color: context.appColors.text),
-          title: Text(tr('حذف التعليق')),
-          onTap: () async {
-            Navigator.pop(sheetContext);
-            try {
-              await PostService.deleteComment(widget.post.id, comment.id);
-            } catch (error) {
-              if (widget.outerContext.mounted) {
-                ScaffoldMessenger.of(widget.outerContext).showSnackBar(
-                  SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر حذف التعليق')))),
-                );
-              }
-            }
-          },
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (canDelete)
+              ListTile(
+                leading: Icon(Icons.delete_outline_rounded,
+                    color: context.appColors.text),
+                title: Text(tr('حذف التعليق')),
+                onTap: () async {
+                  Navigator.pop(sheetContext);
+                  try {
+                    await PostService.deleteComment(
+                        widget.post.id, comment.id);
+                  } catch (error) {
+                    if (widget.outerContext.mounted) {
+                      ScaffoldMessenger.of(widget.outerContext).showSnackBar(
+                        SnackBar(
+                            content: Text(friendlyError(error,
+                                fallback: tr('تعذر حذف التعليق')))),
+                      );
+                    }
+                  }
+                },
+              ),
+            if (canReport)
+              ListTile(
+                leading: Icon(Icons.flag_outlined,
+                    color: context.appColors.text),
+                title: Text(tr('إبلاغ عن التعليق')),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _reportComment(comment);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// نافذة أسباب الإبلاغ عن تعليق.
+  Future<void> _reportComment(Comment comment) async {
+    final messenger = ScaffoldMessenger.of(widget.outerContext);
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: context.appColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(tr('إبلاغ عن هذا التعليق'),
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: context.appColors.text)),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(
+                    tr('اختر السبب الأقرب. لن يعرف صاحب التعليق أنك من أبلغ.'),
+                    style: TextStyle(
+                        fontSize: 12, color: context.appColors.textDim)),
+              ),
+            ),
+            for (final reason in SocialService.reportReasons.entries)
+              ListTile(
+                title: Text(tr(reason.value)),
+                trailing: const Icon(Icons.chevron_left_rounded),
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  try {
+                    await SocialService.reportComment(widget.post.id,
+                        comment.id, comment.uid, reason.key);
+                    messenger.showSnackBar(SnackBar(
+                        content: Text(tr('تم إرسال البلاغ، شكراً لك'))));
+                  } catch (error) {
+                    messenger.showSnackBar(SnackBar(
+                        content: Text(friendlyError(error,
+                            fallback: tr('تعذر إرسال البلاغ')))));
+                  }
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
         ),
       ),
     );
@@ -255,6 +347,222 @@ class _CommentsSheetState extends State<_CommentsSheet> {
         );
       }
     }
+  }
+
+  /// صف تعليق واحد (تعليق رئيسي أو رد).
+  Widget _commentRow(Comment c, String me, {bool isReply = false}) {
+                                            final canDelete = c.uid == me || widget.post.uid == me;
+                      final canReport = c.uid != me;
+                      void open() {
+                        Navigator.pop(context);
+                        openProfile(widget.outerContext, c.uid);
+                      }
+
+                      return Padding(
+                        padding: isReply
+                            ? const EdgeInsetsDirectional.only(
+                                start: 62, end: 14, top: 6, bottom: 6)
+                            : const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 8),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            UserAvatar(
+                                uid: c.uid,
+                                fallbackName: c.username,
+                                radius: isReply ? 13 : 17,
+                                onTap: open),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  GestureDetector(
+                                    onTap: open,
+                                    child: Row(
+                                      children: [
+                                        Flexible(
+                                            child: Text(c.username,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                    fontWeight: FontWeight.w700,
+                                                    fontSize: 13))),
+                                        const SizedBox(width: 8),
+                                        Text(timeAgo(c.createdAt),
+                                            style: TextStyle(
+                                                color: context.appColors.textDim,
+                                                fontSize: 12)),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  GestureDetector(
+                                    onLongPress: (canDelete || canReport)
+                                        ? () => _showCommentActions(c,
+                                            canDelete: canDelete,
+                                            canReport: canReport)
+                                        : null,
+                                    child: c.kind == 'image' &&
+                                            c.imageBytes != null
+                                        ? GestureDetector(
+                                            onTap: () => openFullScreenImage(
+                                                context, c.imageBytes!),
+                                            child: ClipRRect(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              child: Image.memory(
+                                                c.imageBytes!,
+                                                width: 180,
+                                                fit: BoxFit.cover,
+                                              ),
+                                            ),
+                                          )
+                                        : c.kind == 'sticker'
+                                            ? StickerGlyph(c.text, size: 56)
+                                            : TranslatableText(
+                                                text: c.text,
+                                                builder: (shown) => Text.rich(
+                                                  TextSpan(children: [
+                                                    if (isReply &&
+                                                        (c.replyToUsername ??
+                                                                '')
+                                                            .isNotEmpty)
+                                                      TextSpan(
+                                                        text:
+                                                            '@${c.replyToUsername} ',
+                                                        style: const TextStyle(
+                                                            fontWeight:
+                                                                FontWeight
+                                                                    .w700),
+                                                      ),
+                                                    TextSpan(text: shown),
+                                                  ]),
+                                                  style: const TextStyle(
+                                                    height: 1.4,
+                                                    fontSize: null,
+                                                  ),
+                                                ),
+                                              ),
+                                  ),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        tooltip: c.likedBy.contains(me)
+                                            ? tr('إلغاء الإعجاب')
+                                            : tr('إعجاب بالتعليق'),
+                                        visualDensity: VisualDensity.compact,
+                                        constraints: const BoxConstraints(
+                                            minWidth: 36, minHeight: 32),
+                                        padding: EdgeInsets.zero,
+                                        onPressed: () =>
+                                            _toggleCommentLike(c),
+                                        icon: Icon(
+                                          c.likedBy.contains(me)
+                                              ? Icons.favorite_rounded
+                                              : Icons.favorite_border_rounded,
+                                          size: 18,
+                                          color: c.likedBy.contains(me)
+                                              ? AppColors.likeRed
+                                              : context.appColors.textDim,
+                                        ),
+                                      ),
+                                      if (c.likedBy.isNotEmpty)
+                                        Text(
+                                          '${c.likedBy.length}',
+                                          style: TextStyle(
+                                            color: context.appColors.textDim,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      const SizedBox(width: 10),
+                                      GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onTap: () => _startReply(c),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 4, vertical: 8),
+                                          child: Text(
+                                            tr('رد'),
+                                            style: TextStyle(
+                                              color: context.appColors.textDim,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+  }
+
+  /// يجمع الردود تحت التعليق الأب، مع زر «عرض/إخفاء الردود».
+  Widget _buildList(List<Comment> list, String me) {
+    final ids = {for (final c in list) c.id};
+    final replies = <String, List<Comment>>{};
+    final top = <Comment>[];
+    for (final c in list) {
+      final parent = c.parentId;
+      if (parent == null || parent.isEmpty) {
+        top.add(c);
+      } else if (ids.contains(parent)) {
+        (replies[parent] ??= <Comment>[]).add(c);
+      }
+    }
+    final rows = <Widget>[];
+    for (final c in top) {
+      rows.add(_commentRow(c, me));
+      final rs = replies[c.id] ?? const <Comment>[];
+      if (rs.isEmpty) continue;
+      final open = _expanded.contains(c.id);
+      rows.add(Padding(
+        padding: const EdgeInsetsDirectional.only(start: 62, bottom: 4),
+        child: Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => setState(() {
+              if (open) {
+                _expanded.remove(c.id);
+              } else {
+                _expanded.add(c.id);
+              }
+            }),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(
+                open ? tr('إخفاء الردود') : trf('عرض {0} ردود', [rs.length]),
+                style: TextStyle(
+                    color: context.appColors.textDim,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+        ),
+      ));
+      if (open) {
+        for (final reply in rs) {
+          rows.add(_commentRow(reply, me, isReply: true));
+        }
+      }
+    }
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      children: rows,
+    );
+  }
+
+  void _startReply(Comment c) {
+    setState(() => _replyTo = c);
+    _focus.requestFocus();
   }
 
   @override
@@ -303,123 +611,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                       message: tr('ابدأ المحادثة وكن أول من يعلّق.'),
                     );
                   }
-                  return ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: list.length,
-                    itemBuilder: (_, i) {
-                      final c = list[i];
-                      final canDelete = c.uid == me || widget.post.uid == me;
-                      void open() {
-                        Navigator.pop(context);
-                        openProfile(widget.outerContext, c.uid);
-                      }
-
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 8),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            UserAvatar(
-                                uid: c.uid,
-                                fallbackName: c.username,
-                                radius: 17,
-                                onTap: open),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  GestureDetector(
-                                    onTap: open,
-                                    child: Row(
-                                      children: [
-                                        Flexible(
-                                            child: Text(c.username,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                    fontWeight: FontWeight.w700,
-                                                    fontSize: 13))),
-                                        const SizedBox(width: 8),
-                                        Text(timeAgo(c.createdAt),
-                                            style: TextStyle(
-                                                color: context.appColors.textDim,
-                                                fontSize: 12)),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  GestureDetector(
-                                    onLongPress: canDelete
-                                        ? () => _showCommentActions(c)
-                                        : null,
-                                    child: c.kind == 'image' &&
-                                            c.imageBytes != null
-                                        ? GestureDetector(
-                                            onTap: () => openFullScreenImage(
-                                                context, c.imageBytes!),
-                                            child: ClipRRect(
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                              child: Image.memory(
-                                                c.imageBytes!,
-                                                width: 180,
-                                                fit: BoxFit.cover,
-                                              ),
-                                            ),
-                                          )
-                                        : c.kind == 'sticker'
-                                            ? StickerGlyph(c.text, size: 56)
-                                            : Text(
-                                            c.text,
-                                            style: TextStyle(
-                                              height: 1.4,
-                                              fontSize: null,
-                                            ),
-                                          ),
-                                  ),
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      IconButton(
-                                        tooltip: c.likedBy.contains(me)
-                                            ? tr('إلغاء الإعجاب')
-                                            : tr('إعجاب بالتعليق'),
-                                        visualDensity: VisualDensity.compact,
-                                        constraints: const BoxConstraints(
-                                            minWidth: 36, minHeight: 32),
-                                        padding: EdgeInsets.zero,
-                                        onPressed: () =>
-                                            _toggleCommentLike(c),
-                                        icon: Icon(
-                                          c.likedBy.contains(me)
-                                              ? Icons.favorite_rounded
-                                              : Icons.favorite_border_rounded,
-                                          size: 18,
-                                          color: c.likedBy.contains(me)
-                                              ? AppColors.likeRed
-                                              : context.appColors.textDim,
-                                        ),
-                                      ),
-                                      if (c.likedBy.isNotEmpty)
-                                        Text(
-                                          '${c.likedBy.length}',
-                                          style: TextStyle(
-                                            color: context.appColors.textDim,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  );
+                  return _buildList(list, me);
                 },
               ),
             ),
@@ -427,6 +619,31 @@ class _CommentsSheetState extends State<_CommentsSheet> {
               PendingImagePreview(
                 bytes: _pendingImage!,
                 onRemove: () => setState(() => _pendingImage = null),
+              ),
+            if (_replyTo != null)
+              Container(
+                width: double.infinity,
+                color: context.appColors.text.withOpacity(0.06),
+                padding: const EdgeInsets.fromLTRB(16, 6, 6, 6),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        trf('الرد على {0}', [_replyTo!.username]),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: context.appColors.textDim, fontSize: 12.5),
+                      ),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => setState(() => _replyTo = null),
+                      icon: Icon(Icons.close_rounded,
+                          size: 18, color: context.appColors.textDim),
+                    ),
+                  ],
+                ),
               ),
             Divider(
                 height: 1, color: context.appColors.text.withOpacity(0.12)),
@@ -466,11 +683,14 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                     Expanded(
                       child: TextField(
                         controller: _text,
+                        focusNode: _focus,
                         maxLength: 500,
                         textInputAction: TextInputAction.send,
                         onSubmitted: (_) => _send(),
                         decoration: InputDecoration(
-                          hintText: tr('أضف تعليقاً...'),
+                          hintText: _replyTo != null
+                              ? tr('أضف رداً...')
+                              : tr('أضف تعليقاً...'),
                           counterText: '',
                           isDense: true,
                           contentPadding: EdgeInsets.symmetric(

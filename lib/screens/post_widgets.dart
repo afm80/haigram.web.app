@@ -12,6 +12,7 @@ import '../route_state.dart';
 import 'common_widgets.dart';
 import 'explore_screen.dart' show ExploreSearchScreen;
 import 'share_sheet.dart';
+import 'translate_widgets.dart';
 import 'yt_embed_stub.dart' if (dart.library.html) 'yt_embed_web.dart';
 
 import '../l10n.dart';
@@ -117,15 +118,19 @@ class _PostCardState extends State<PostCard> {
                               color: colors.text.withOpacity(0.08)),
                         ),
                       ),
-                      child: LinkText(
+                      child: TranslatableText(
                         text: p.caption,
-                        collapsedLines: widget.expandText ? null : 6,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                            color: textPostForeground,
-                            fontSize: 20,
-                            height: 1.5,
-                            fontWeight: FontWeight.w600),
+                        centered: true,
+                        builder: (shown) => LinkText(
+                          text: shown,
+                          collapsedLines: widget.expandText ? null : 6,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              color: textPostForeground,
+                              fontSize: 20,
+                              height: 1.5,
+                              fontWeight: FontWeight.w600),
+                        ),
                       ),
                     )
                   else
@@ -182,12 +187,15 @@ class _PostCardState extends State<PostCard> {
         if ((!isText || p.hasVideo) && p.caption.isNotEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
-            child: LinkText(
+            child: TranslatableText(
               text: p.caption,
-              collapsedLines: widget.expandText ? null : 2,
-              leading: '${p.username} ',
-              onLeadingTap: () => openProfile(context, p.uid),
-              style: TextStyle(color: colors.text, height: 1.4),
+              builder: (shown) => LinkText(
+                text: shown,
+                collapsedLines: widget.expandText ? null : 2,
+                leading: '${p.username} ',
+                onLeadingTap: () => openProfile(context, p.uid),
+                style: TextStyle(color: colors.text, height: 1.4),
+              ),
             ),
           ),
         Padding(
