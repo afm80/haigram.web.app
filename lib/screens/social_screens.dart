@@ -1453,21 +1453,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               title: Text(tr('التقاط صورة')),
               onTap: () => Navigator.pop(sheetContext, 'camera'),
             ),
-            ListTile(
-              leading: const Icon(Icons.video_library_outlined),
-              title: Text(tr('اختيار فيديو')),
-              onTap: () => Navigator.pop(sheetContext, 'video'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.attach_file_rounded),
-              title: Text(tr('اختيار ملف')),
-              onTap: () => Navigator.pop(sheetContext, 'file'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.mic_none_rounded),
-              title: Text(tr('تسجيل رسالة صوتية')),
-              onTap: () => Navigator.pop(sheetContext, 'voice'),
-            ),
+            // مخفية مؤقتاً: الفيديو والملفات والصوت تحتاج Firebase Storage (خطة Blaze).
+            // عند الترقية أعد هذه العناصر الثلاثة: video / file / voice.
           ],
         ),
       ),
