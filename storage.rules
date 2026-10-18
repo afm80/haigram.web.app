@@ -14,22 +14,5 @@ service firebase.storage {
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
     }
-
-    match /chats/{chatId}/{uid}/{file} {
-      function isChatParticipant() {
-        return isActiveAccount()
-          && request.auth.uid == uid
-          && firestore.get(/databases/(default)/documents/chats/$(chatId))
-            .data.participants.hasAny([request.auth.uid]);
-      }
-
-      allow read: if isChatParticipant();
-      allow write: if isChatParticipant()
-        && request.resource.size <= 20 * 1024 * 1024
-        && request.resource.contentType is string
-        && (request.resource.contentType.matches('(video|audio)/.*')
-          || request.resource.contentType.matches('application/.*')
-          || request.resource.contentType.matches('text/.*'));
-    }
   }
 }

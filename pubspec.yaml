@@ -26,9 +26,6 @@ dependencies:
   http: ^1.2.2
   webview_flutter: ^4.8.0
   webview_flutter_android: ^3.16.8
-  file_picker: ^8.3.2
-  record: ^6.0.0
-  audioplayers: ^6.4.0
   firebase_messaging: ^15.2.10
 
 dev_dependencies:

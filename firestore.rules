@@ -479,9 +479,9 @@ service cloud.firestore {
         allow read: if isChatParticipant();
         allow create: if isChatParticipant()
           && request.resource.data.keys().hasOnly([
-            'senderUid', 'text', 'kind', 'image', 'imageUrl', 'attachmentUrl',
-            'attachmentName', 'contentType', 'deliveredTo', 'readBy',
-            'createdAt', 'replyToMessageId', 'replyToText', 'replyToSenderUid'
+            'senderUid', 'text', 'kind', 'image', 'imageUrl', 'deliveredTo',
+            'readBy', 'createdAt', 'replyToMessageId', 'replyToText',
+            'replyToSenderUid'
           ])
           && request.resource.data.keys().hasAll([
             'senderUid', 'text', 'kind', 'deliveredTo', 'readBy', 'createdAt'
@@ -533,29 +533,6 @@ service cloud.firestore {
                 'replyToSenderUid'
               ])
               && request.resource.data.text.size() <= 24)
-            ||
-            (request.resource.data.kind in ['video', 'audio', 'file']
-              && request.resource.data.keys().hasOnly([
-                'senderUid', 'text', 'kind', 'attachmentUrl',
-                'attachmentName', 'contentType', 'deliveredTo', 'readBy',
-                'createdAt', 'replyToMessageId', 'replyToText',
-                'replyToSenderUid'
-              ])
-              && request.resource.data.text.size() <= 160
-              && request.resource.data.attachmentName is string
-              && request.resource.data.attachmentName.size() > 0
-              && request.resource.data.attachmentName.size() <= 160
-              && request.resource.data.attachmentUrl is string
-              && request.resource.data.attachmentUrl.size() <= 1200
-              && request.resource.data.attachmentUrl.matches(
-                '^https://firebasestorage[.]googleapis[.]com/.+$')
-              && request.resource.data.contentType is string
-              && request.resource.data.contentType.size() <= 120
-              && ((request.resource.data.kind == 'video'
-                    && request.resource.data.contentType.matches('video/.*'))
-                || (request.resource.data.kind == 'audio'
-                    && request.resource.data.contentType.matches('audio/.*'))
-                || request.resource.data.kind == 'file'))
           )
           && !isBlocked(
             chatNow().participants[0],
