@@ -98,6 +98,8 @@ jobs:
           firebase deploy --only firestore:rules --project "$FB_PROJECT_ID" --non-interactive
 
       - name: Deploy Storage rules
+        # يتطلب خطة Blaze؛ على Spark يُتخطى بدون إيقاف النشر.
+        continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           FB_PROJECT_ID: ${{ secrets.FB_PROJECT_ID }}
@@ -113,6 +115,8 @@ jobs:
         with:
           node-version: '20'
       - name: Install and deploy chat notification function
+        # يتطلب خطة Blaze؛ على Spark يُتخطى بدون إيقاف النشر.
+        continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           FB_PROJECT_ID: ${{ secrets.FB_PROJECT_ID }}
