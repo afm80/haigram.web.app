@@ -7,6 +7,24 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../l10n.dart';
 import 'post_service.dart';
 
+/// وقت من حقل Firestore. الكتابة المعلّقة (serverTimestamp لم يؤكدها الخادم
+/// بعد) تأتي null: نعتبرها «الآن» بدل 1970 حتى لا تقفز المحادثة في القائمة
+/// ولا يظهر وقت الرسالة «قبل 20000 يوم».
+DateTime _readTs(Object? value, {bool pending = false}) {
+  if (value is Timestamp) return value.toDate();
+  return pending ? DateTime.now() : DateTime.fromMillisecondsSinceEpoch(0);
+}
+
+/// خريطة {uid: وقت} مثل readAt / deliveredAt / clearedAt.
+Map<String, DateTime> _tsMap(Object? raw) {
+  if (raw is! Map) return const {};
+  final out = <String, DateTime>{};
+  raw.forEach((key, value) {
+    if (key is String && value is Timestamp) out[key] = value.toDate();
+  });
+  return out;
+}
+
 class Conversation {
   final String id;
   final List<String> participants;
@@ -15,6 +33,11 @@ class Conversation {
   final String lastMessageId;
   final DateTime updatedAt;
 
+  /// آخر وقت قرأ/استلم/مسح فيه كل طرف (مفتاحها uid).
+  final Map<String, DateTime> readAt;
+  final Map<String, DateTime> deliveredAt;
+  final Map<String, DateTime> clearedAt;
+
   const Conversation({
     required this.id,
     required this.participants,
@@ -22,25 +45,54 @@ class Conversation {
     required this.lastSenderUid,
     required this.lastMessageId,
     required this.updatedAt,
+    this.readAt = const {},
+    this.deliveredAt = const {},
+    this.clearedAt = const {},
   });
 
   String otherParticipant(String uid) =>
       participants.firstWhere((participant) => participant != uid);
 
-  factory Conversation.fromDoc(
+  /// آخر رسالة من الطرف الآخر ولم أفتح المحادثة بعدها.
+  bool unreadFor(String uid) {
+    if (lastMessageId.isEmpty || lastSenderUid.isEmpty || lastSenderUid == uid) {
+      return false;
+    }
+    final read = readAt[uid];
+    return read == null || updatedAt.isAfter(read);
+  }
+
+  /// تظهر في صندوقي: فيها رسالة ولم أمسحها لديّ بعد آخر نشاط.
+  bool visibleFor(String uid) {
+    if (lastMessageId.isEmpty) return false;
+    final cleared = clearedAt[uid];
+    return cleared == null || updatedAt.isAfter(cleared);
+  }
+
+  /// null إن كان المستند تالفاً (بدل أن يكسر قائمة المحادثات كلها).
+  static Conversation? tryFromDoc(
       QueryDocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data();
-    final updatedAt = data['updatedAt'];
-    return Conversation(
-      id: doc.id,
-      participants: List<String>.from(data['participants'] as List),
-      lastMessage: data['lastMessage'] as String? ?? '',
-      lastSenderUid: data['lastSenderUid'] as String? ?? '',
-      lastMessageId: data['lastMessageId'] as String? ?? '',
-      updatedAt: updatedAt is Timestamp
-          ? updatedAt.toDate()
-          : DateTime.fromMillisecondsSinceEpoch(0),
-    );
+    try {
+      final data = doc.data();
+      final participants = List<String>.from(data['participants'] as List);
+      if (participants.length != 2 || participants[0] == participants[1]) {
+        return null;
+      }
+      return Conversation(
+        id: doc.id,
+        participants: participants,
+        lastMessage: data['lastMessage'] as String? ?? '',
+        lastSenderUid: data['lastSenderUid'] as String? ?? '',
+        lastMessageId: data['lastMessageId'] as String? ?? '',
+        updatedAt: _readTs(data['updatedAt'],
+            pending: doc.metadata.hasPendingWrites),
+        readAt: _tsMap(data['readAt']),
+        deliveredAt: _tsMap(data['deliveredAt']),
+        clearedAt: _tsMap(data['clearedAt']),
+      );
+    } catch (_) {
+      return null;
+    }
   }
 }
 
@@ -69,22 +121,28 @@ class ChatMessage {
     this.imageUrl,
   });
 
-  factory ChatMessage.fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data();
-    final createdAt = data['createdAt'];
-    return ChatMessage(
-      id: doc.id,
-      senderUid: data['senderUid'] as String,
-      text: data['text'] as String,
-      createdAt: createdAt is Timestamp
-          ? createdAt.toDate()
-          : DateTime.fromMillisecondsSinceEpoch(0),
-      deliveredTo: List<String>.from(data['deliveredTo'] as List? ?? const []),
-      readBy: List<String>.from(data['readBy'] as List? ?? const []),
-      kind: data['kind'] as String? ?? 'text',
-      imageBytes: (data['image'] as Blob?)?.bytes,
-      imageUrl: data['imageUrl'] as String?,
-    );
+  /// null إن كانت الرسالة تالفة (حقل ناقص أو بنوع خاطئ): تُتجاهل هي وحدها
+  /// بدل أن يفشل تحميل المحادثة كلها.
+  static ChatMessage? tryFromDoc(
+      QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    try {
+      final data = doc.data();
+      return ChatMessage(
+        id: doc.id,
+        senderUid: data['senderUid'] as String,
+        text: data['text'] as String,
+        createdAt: _readTs(data['createdAt'],
+            pending: doc.metadata.hasPendingWrites),
+        deliveredTo:
+            List<String>.from(data['deliveredTo'] as List? ?? const []),
+        readBy: List<String>.from(data['readBy'] as List? ?? const []),
+        kind: data['kind'] as String? ?? 'text',
+        imageBytes: (data['image'] as Blob?)?.bytes,
+        imageUrl: data['imageUrl'] as String?,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 }
 
@@ -326,24 +384,34 @@ class SocialService {
     });
   }
 
-  /// رسائل أُرسل لها «تم التسليم» في هذه الجلسة، حتى لا نقرأ المستند نفسه
-  /// عند كل تحديث لقائمة المحادثات.
+  /// محادثات/رسائل أُرسل لها «تم التسليم» في هذه الجلسة، حتى لا نكتب
+  /// المستند نفسه عند كل تحديث لقائمة المحادثات.
   static final Set<String> _deliveredMarked = <String>{};
 
   static Stream<List<Conversation>> conversations() => _chats
           .where('participants', arrayContains: _uid)
           .snapshots()
           .map((snapshot) {
-        final items = snapshot.docs.map(Conversation.fromDoc).toList()
+        final items = snapshot.docs
+            .map(Conversation.tryFromDoc)
+            .whereType<Conversation>()
+            .toList()
           ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
         for (final conversation in items) {
           if (conversation.lastSenderUid != _uid &&
               conversation.lastMessageId.isNotEmpty) {
+            final delivered = conversation.deliveredAt[_uid];
+            if (delivered != null &&
+                !conversation.updatedAt.isAfter(delivered)) {
+              continue;
+            }
             final key = '${conversation.id}/${conversation.lastMessageId}';
             if (_deliveredMarked.add(key)) {
-              unawaited(_markDelivered(
+              // حقل واحد في المحادثة بدل قراءة الرسالة وتعديلها.
+              unawaited(_stampChat(
                 conversation.id,
-                conversation.lastMessageId,
+                'deliveredAt',
+                conversation.updatedAt,
               ).catchError((Object _) {
                 _deliveredMarked.remove(key); // تُعاد المحاولة عند التحديث التالي
               }));
@@ -353,6 +421,16 @@ class SocialService {
         return items;
       });
 
+  /// يكتب وقتي في حقل خريطة بالمحادثة (readAt / deliveredAt). نزيد ميلي ثانية
+  /// واحدة لأن الويب يقصّ الميكروثواني، فلا تبقى الرسالة «غير مقروءة» للأبد.
+  static Future<void> _stampChat(
+      String conversationId, String field, DateTime at) {
+    return _chats.doc(conversationId).update({
+      '$field.$_uid':
+          Timestamp.fromDate(at.add(const Duration(milliseconds: 1))),
+    });
+  }
+
   /// مستند المحادثة نفسه (accepted وآخر مرسل...) لمعرفة هل يحق لي الإرسال.
   static Stream<Map<String, dynamic>?> chatStream(String conversationId) =>
       _chats.doc(conversationId).snapshots().map((snapshot) => snapshot.data());
@@ -360,67 +438,70 @@ class SocialService {
   /// حجم الصفحة الافتراضي لرسائل المحادثة.
   static const messagesPageSize = 100;
 
-  /// آخر [limit] رسالة. لا يعلّم الرسائل مقروءة: الشاشة هي من تستدعي
-  /// [markMessagesRead] عندما تكون المحادثة ظاهرة فعلاً أمام المستخدم.
+  /// رسائل المحادثة مباشرةً. بلا [since]: آخر [limit] رسالة. مع [since]: كل
+  /// الرسائل منذ ذلك الوقت (بلا حد) — تُستعمل بعد تحميل صفحات أقدم، فلا تُعاد
+  /// قراءة القديم عند كل صفحة. لا يعلّم الرسائل مقروءة: الشاشة هي من تستدعي
+  /// [markChatRead] عندما تكون المحادثة ظاهرة فعلاً أمام المستخدم.
   static Stream<List<ChatMessage>> messages(String conversationId,
-          {int limit = messagesPageSize}) =>
-      _chats
-          .doc(conversationId)
-          .collection('messages')
-          .orderBy('createdAt')
-          .limitToLast(limit)
-          .snapshots()
-          .map((snapshot) => snapshot.docs.map(ChatMessage.fromDoc).toList());
-
-  static Future<void> _markDelivered(
-      String conversationId, String messageId) async {
-    final reference =
-        _chats.doc(conversationId).collection('messages').doc(messageId);
-    final snapshot = await reference.get();
-    final data = snapshot.data();
-    if (data == null || data['senderUid'] == _uid) return;
-    final deliveredTo = List<String>.from(data['deliveredTo'] as List? ?? []);
-    if (deliveredTo.contains(_uid)) return;
-    await reference.update({
-      'deliveredTo': FieldValue.arrayUnion([_uid]),
-    });
+      {int limit = messagesPageSize, DateTime? since}) {
+    final base = _chats
+        .doc(conversationId)
+        .collection('messages')
+        .orderBy('createdAt');
+    final query = since == null
+        ? base.limitToLast(limit)
+        : base.where('createdAt',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(since));
+    return query.snapshots().map((snapshot) => snapshot.docs
+        .map(ChatMessage.tryFromDoc)
+        .whereType<ChatMessage>()
+        .toList());
   }
 
-  static final Set<String> _readInFlight = <String>{};
+  /// صفحة أقدم من [before] (تصاعدياً). قد تتضمن رسالة الحدّ نفسها، فيدمجها
+  /// المستدعي بحسب المعرّف. إن رجع أقل من [limit] فلا يوجد المزيد.
+  static Future<List<ChatMessage>> olderMessages(
+      String conversationId, DateTime before,
+      {int limit = messagesPageSize}) async {
+    final snapshot = await _chats
+        .doc(conversationId)
+        .collection('messages')
+        .where('createdAt',
+            isLessThanOrEqualTo: Timestamp.fromDate(
+                before.add(const Duration(milliseconds: 1))))
+        .orderBy('createdAt', descending: true)
+        .limit(limit)
+        .get();
+    return snapshot.docs
+        .map(ChatMessage.tryFromDoc)
+        .whereType<ChatMessage>()
+        .toList()
+        .reversed
+        .toList();
+  }
 
-  /// يعلّم رسائل الطرف الآخر «مُسلَّمة ومقروءة». يُستدعى فقط عندما تكون
-  /// المحادثة ظاهرة والتطبيق في الواجهة.
-  static Future<void> markMessagesRead(
-      String conversationId, List<ChatMessage> messages) async {
-    final pending = <ChatMessage>[];
-    for (final message in messages) {
-      if (message.senderUid == _uid) continue;
-      if (message.readBy.contains(_uid) && message.deliveredTo.contains(_uid)) {
-        continue;
-      }
-      if (_readInFlight.contains('$conversationId/${message.id}')) continue;
-      pending.add(message);
+  static final Map<String, int> _readStamped = <String, int>{};
+
+  /// يعلّم المحادثة «مقروءة» حتى [upTo] (وقت أحدث رسالة من الطرف الآخر ظهرت
+  /// أمامي) بكتابة واحدة، بدل تعديل كل رسالة. يُستدعى فقط والمحادثة ظاهرة.
+  static Future<void> markChatRead(String conversationId, DateTime upTo) async {
+    final stamp = upTo.millisecondsSinceEpoch;
+    if ((_readStamped[conversationId] ?? 0) >= stamp) return;
+    _readStamped[conversationId] = stamp;
+    try {
+      await _stampChat(conversationId, 'readAt', upTo);
+    } catch (_) {
+      _readStamped.remove(conversationId);
+      rethrow;
     }
-    if (pending.isEmpty) return;
-    final messagesRef = _chats.doc(conversationId).collection('messages');
-    // حد الدفعة الواحدة في Firestore 500 عملية.
-    for (var i = 0; i < pending.length; i += 400) {
-      final chunk = pending.skip(i).take(400).toList();
-      final keys = [for (final m in chunk) '$conversationId/${m.id}'];
-      _readInFlight.addAll(keys);
-      try {
-        final batch = _db.batch();
-        for (final message in chunk) {
-          batch.update(messagesRef.doc(message.id), {
-            'deliveredTo': FieldValue.arrayUnion([_uid]),
-            'readBy': FieldValue.arrayUnion([_uid]),
-          });
-        }
-        await batch.commit();
-      } finally {
-        _readInFlight.removeAll(keys);
-      }
-    }
+  }
+
+  /// «حذف المحادثة لديّ»: تختفي من صندوقي وتُخفى رسائلها السابقة عني فقط،
+  /// وتعود (برسائلها الجديدة وحدها) إن وصلت رسالة بعد ذلك.
+  static Future<void> clearChatForMe(String conversationId) {
+    return _chats
+        .doc(conversationId)
+        .update({'clearedAt.$_uid': FieldValue.serverTimestamp()});
   }
 
   static Future<bool> areMutualFriends(String otherUid) async {
@@ -459,18 +540,11 @@ class SocialService {
         '${participants[0].length}_${participants[0]}${participants[1].length}_${participants[1]}';
     final reference = _chats.doc(conversationId);
 
-    await _db.runTransaction((transaction) async {
-      final snapshot = await transaction.get(reference);
-      if (snapshot.exists) {
-        final stored =
-            List<String>.from(snapshot.data()!['participants'] as List);
-        if (stored.toSet().difference(participants.toSet()).isNotEmpty ||
-            participants.toSet().difference(stored.toSet()).isNotEmpty) {
-          throw StateError(tr('المحادثة لا تخص هذين المستخدمين'));
-        }
-        return;
-      }
-      transaction.set(reference, {
+    // ننشئ مباشرة بلا قراءة مسبقة: القواعد لا تسمح بقراءة مستند غير موجود
+    // (حتى لا يُكشف هل تراسل مستخدمان). إن كانت موجودة يُرفض الإنشاء، فنتأكد
+    // بقراءتها (مسموحة لطرفيها فقط) ونُكمل.
+    try {
+      await reference.set({
         'participants': participants,
         'lastMessage': '',
         'lastSenderUid': '',
@@ -480,7 +554,14 @@ class SocialService {
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
-    });
+    } on FirebaseException catch (e) {
+      if (e.code != 'permission-denied') rethrow;
+      try {
+        await reference.get();
+      } on FirebaseException {
+        throw StateError(tr('تعذر بدء المحادثة'));
+      }
+    }
     return conversationId;
   }
 
@@ -584,72 +665,80 @@ class SocialService {
   }) async {
     final chat = _chats.doc(conversationId);
     final message = chat.collection('messages').doc();
-    final conversation = await chat.get();
-    if (!conversation.exists) {
-      throw StateError(tr('المحادثة غير موجودة'));
-    }
-    final participants =
-        List<String>.from(conversation.data()!['participants'] as List);
-    if (!participants.contains(_uid)) {
-      throw StateError(tr('لا تملك صلاحية إرسال رسالة في هذه المحادثة'));
-    }
-    final otherUid =
-        participants.firstWhere((participant) => participant != _uid);
-    if (await isBlockedEither(otherUid)) {
-      throw StateError(tr('لا يمكن إرسال الرسائل بعد الحظر'));
-    }
+    String? otherUid;
+    try {
+      // قراءة واحدة داخل المعاملة تكفي للفحص والكتابة (كانت ~8 قراءات).
+      // القواعد في الخادم هي المرجع؛ الفحص هنا لرسالة خطأ مفهومة فقط.
+      await _db.runTransaction((transaction) async {
+        final snapshot = await transaction.get(chat);
+        final current = snapshot.data();
+        if (!snapshot.exists || current == null) {
+          throw StateError(tr('المحادثة غير موجودة'));
+        }
+        final participants =
+            List<String>.from(current['participants'] as List);
+        if (!participants.contains(_uid)) {
+          throw StateError(tr('لا تملك صلاحية إرسال رسالة في هذه المحادثة'));
+        }
+        final other =
+            participants.firstWhere((participant) => participant != _uid);
+        otherUid = other;
 
-    // غير الأصدقاء: رسالة أولى نصية فقط، ثم الانتظار حتى يردّ الطرف الآخر.
-    // (القواعد في الخادم هي المرجع؛ هذا فحص مسبق لرسالة خطأ مفهومة.)
-    final chatData = conversation.data()!;
-    final accepted = chatData['accepted'] as bool? ?? true;
-    final lastSender = chatData['lastSenderUid'] as String? ?? '';
-    final hasMessages = (chatData['lastMessageId'] as String? ?? '').isNotEmpty;
-    final replying = hasMessages && lastSender != _uid;
-    if (!accepted && !replying && !await areMutualFriends(otherUid)) {
-      if (hasMessages) {
-        throw StateError(tr('انتظر رد الطرف الآخر لتكمل المراسلة'));
-      }
-      if (kind != 'text') {
-        throw StateError(tr('الرسالة الأولى لغير الأصدقاء نص فقط'));
-      }
-    }
+        // غير الأصدقاء: رسالة أولى نصية فقط، ثم الانتظار حتى يردّ الطرف الآخر.
+        final accepted = current['accepted'] as bool? ?? true;
+        final currentSender = current['lastSenderUid'] as String? ?? '';
+        final hasMessages =
+            (current['lastMessageId'] as String? ?? '').isNotEmpty;
+        final startedBy =
+            List<String>.from(current['startedBy'] as List? ?? const []);
+        final replying = hasMessages && currentSender != _uid;
+        if (!accepted && !replying && !await areMutualFriends(other)) {
+          if (hasMessages || startedBy.contains(_uid)) {
+            throw StateError(tr('انتظر رد الطرف الآخر لتكمل المراسلة'));
+          }
+          if (kind != 'text') {
+            throw StateError(tr('الرسالة الأولى لغير الأصدقاء نص فقط'));
+          }
+        }
 
-    await _db.runTransaction((transaction) async {
-      final snapshot = await transaction.get(chat);
-      if (!snapshot.exists ||
-          !List<String>.from(snapshot.data()!['participants'] as List)
-              .contains(_uid)) {
-        throw StateError(tr('لا تملك صلاحية إرسال رسالة في هذه المحادثة'));
-      }
-      final messageData = <String, dynamic>{
-        'senderUid': _uid,
-        'text': text,
-        'kind': kind,
-        'deliveredTo': [_uid],
-        'readBy': [_uid],
-        'createdAt': FieldValue.serverTimestamp(),
-      };
-      if (imageUrl != null) {
-        messageData['imageUrl'] = imageUrl;
-      } else if (imageBytes != null) {
-        messageData['image'] = Blob(imageBytes);
-      }
-      final current = snapshot.data()!;
-      final currentSender = current['lastSenderUid'] as String? ?? '';
-      // الردّ على رسالة الطرف الآخر يجعل المحادثة «مقبولة» للطرفين.
-      final acceptsNow = (current['accepted'] as bool? ?? true) == false &&
-          currentSender.isNotEmpty &&
-          currentSender != _uid;
-      transaction.update(chat, {
-        'lastMessage': text,
-        'lastSenderUid': _uid,
-        'lastMessageId': message.id,
-        'updatedAt': FieldValue.serverTimestamp(),
-        if (acceptsNow) 'accepted': true,
+        final messageData = <String, dynamic>{
+          'senderUid': _uid,
+          'text': text,
+          'kind': kind,
+          'deliveredTo': [_uid],
+          'readBy': [_uid],
+          'createdAt': FieldValue.serverTimestamp(),
+        };
+        if (imageUrl != null) {
+          messageData['imageUrl'] = imageUrl;
+        } else if (imageBytes != null) {
+          messageData['image'] = Blob(imageBytes);
+        }
+        // الردّ على رسالة الطرف الآخر يجعل المحادثة «مقبولة» للطرفين.
+        final acceptsNow =
+            !accepted && currentSender.isNotEmpty && currentSender != _uid;
+        transaction.update(chat, {
+          'lastMessage': text,
+          'lastSenderUid': _uid,
+          'lastMessageId': message.id,
+          'updatedAt': FieldValue.serverTimestamp(),
+          if (acceptsNow) 'accepted': true,
+          // يُسجَّل المرسل ولا يُمسح بحذف رسالته (يمنع «أرسل ثم احذف»).
+          if (!startedBy.contains(_uid))
+            'startedBy': FieldValue.arrayUnion([_uid]),
+        });
+        transaction.set(message, messageData);
       });
-      transaction.set(message, messageData);
-    });
+    } on FirebaseException catch (e) {
+      // رفض القواعد غالباً بسبب الحظر: نُظهر رسالة مفهومة.
+      final other = otherUid;
+      if (e.code == 'permission-denied' &&
+          other != null &&
+          await isBlockedEither(other)) {
+        throw StateError(tr('لا يمكن إرسال الرسائل بعد الحظر'));
+      }
+      rethrow;
+    }
   }
 
   /// من راسلتهم مؤخراً (الأحدث أولاً)، من سجل المحادثات. تُهمل المحادثات
@@ -657,11 +746,14 @@ class SocialService {
   static Future<List<String>> recentChatPartnerIds() async {
     final snapshot =
         await _chats.where('participants', arrayContains: _uid).get();
-    final items = snapshot.docs.map(Conversation.fromDoc).toList()
+    final items = snapshot.docs
+        .map(Conversation.tryFromDoc)
+        .whereType<Conversation>()
+        .toList()
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     return [
       for (final c in items)
-        if (c.lastMessageId.isNotEmpty) c.otherParticipant(_uid),
+        if (c.visibleFor(_uid)) c.otherParticipant(_uid),
     ];
   }
 
