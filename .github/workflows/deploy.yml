@@ -32,6 +32,39 @@ jobs:
       - name: Analyze code (errors only)
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
+      - name: Configure Firebase messaging service worker
+        env:
+          FB_API_KEY: ${{ secrets.FB_API_KEY }}
+          FB_APP_ID: ${{ secrets.FB_APP_ID }}
+          FB_SENDER_ID: ${{ secrets.FB_SENDER_ID }}
+          FB_PROJECT_ID: ${{ secrets.FB_PROJECT_ID }}
+          FB_AUTH_DOMAIN: ${{ secrets.FB_AUTH_DOMAIN }}
+          FB_STORAGE_BUCKET: ${{ secrets.FB_STORAGE_BUCKET }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const file = 'web/firebase-messaging-sw.js';
+          let worker = fs.readFileSync(file, 'utf8');
+          const values = {
+            __FB_API_KEY__: process.env.FB_API_KEY,
+            __FB_APP_ID__: process.env.FB_APP_ID,
+            __FB_SENDER_ID__: process.env.FB_SENDER_ID,
+            __FB_PROJECT_ID__: process.env.FB_PROJECT_ID,
+            __FB_AUTH_DOMAIN__: process.env.FB_AUTH_DOMAIN,
+            __FB_STORAGE_BUCKET__: process.env.FB_STORAGE_BUCKET,
+          };
+          for (const [placeholder, value] of Object.entries(values)) {
+            if (!value) throw new Error(`Missing Firebase setting for ${placeholder}`);
+            worker = worker.replaceAll(placeholder, value);
+          }
+          fs.writeFileSync(file, worker);
+          NODE
+
+      - name: Validate Web Push key
+        env:
+          FB_WEB_PUSH_VAPID_KEY: ${{ secrets.FB_WEB_PUSH_VAPID_KEY }}
+        run: test -n "$FB_WEB_PUSH_VAPID_KEY"
+
       - name: Build web (PWA)
         run: |
           flutter build web --release --web-renderer canvaskit \
@@ -41,6 +74,7 @@ jobs:
             --dart-define=FB_PROJECT_ID=${{ secrets.FB_PROJECT_ID }} \
             --dart-define=FB_AUTH_DOMAIN=${{ secrets.FB_AUTH_DOMAIN }} \
             --dart-define=FB_STORAGE_BUCKET=${{ secrets.FB_STORAGE_BUCKET }} \
+            --dart-define=FB_WEB_PUSH_VAPID_KEY=${{ secrets.FB_WEB_PUSH_VAPID_KEY }} \
             --dart-define=CLOUDINARY_CLOUD_NAME=${{ secrets.CLOUDINARY_CLOUD_NAME }} \
             --dart-define=CLOUDINARY_UPLOAD_PRESET=${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
 
@@ -62,6 +96,33 @@ jobs:
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$GOOGLE_APPLICATION_CREDENTIALS"
           npm install --global firebase-tools
           firebase deploy --only firestore:rules --project "$FB_PROJECT_ID" --non-interactive
+
+      - name: Deploy Storage rules
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FB_PROJECT_ID: ${{ secrets.FB_PROJECT_ID }}
+        run: |
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
+          trap 'rm -f "$GOOGLE_APPLICATION_CREDENTIALS"' EXIT
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          npm install --global firebase-tools
+          firebase deploy --only storage --project "$FB_PROJECT_ID" --non-interactive
+
+      - name: Deploy chat notification function
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install and deploy chat notification function
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FB_PROJECT_ID: ${{ secrets.FB_PROJECT_ID }}
+        run: |
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
+          trap 'rm -f "$GOOGLE_APPLICATION_CREDENTIALS"' EXIT
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          npm ci --prefix functions
+          npm install --global firebase-tools
+          firebase deploy --only functions --project "$FB_PROJECT_ID" --non-interactive
 
       # الفهارس في خطوة منفصلة: إن فشلت (صلاحية الحساب مثلاً) لا يتأثر النشر أعلاه.
       - name: Deploy Firestore indexes
