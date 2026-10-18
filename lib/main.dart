@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'firebase_options.dart';
 import 'l10n.dart';
+import 'net_error.dart';
 import 'screens/auth_screen.dart';
 import 'screens/home_shell.dart';
 import 'screens/onboarding_screen.dart';
@@ -106,7 +107,9 @@ class _StartupErrorScreen extends StatelessWidget {
                   const HaigramLogo(size: 84),
                   const SizedBox(height: 20),
                   Text(
-                    'تعذر تشغيل التطبيق',
+                    isOfflineError(error)
+                        ? tr('لا يوجد اتصال بالإنترنت')
+                        : tr('تعذر تشغيل التطبيق'),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: colors.text,
@@ -116,15 +119,11 @@ class _StartupErrorScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    'تعذر تهيئة التطبيق. تحقق من الاتصال بالإنترنت ثم حاول مجدداً.',
+                    isOfflineError(error)
+                        ? tr('تحقق من اتصالك بالإنترنت ثم حاول مجدداً.')
+                        : tr('تعذر تهيئة التطبيق، حاول مجدداً بعد قليل.'),
                     textAlign: TextAlign.center,
                     style: TextStyle(color: colors.textDim),
-                  ),
-                  const SizedBox(height: 8),
-                  SelectableText(
-                    '$error',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: colors.textDim, fontSize: 12),
                   ),
                   const SizedBox(height: 20),
                   SizedBox(
@@ -136,8 +135,8 @@ class _StartupErrorScreen extends StatelessWidget {
                         foregroundColor: Colors.white,
                         minimumSize: const Size.fromHeight(52),
                       ),
-                      child: const Text(
-                        'إعادة تشغيل التطبيق',
+                      child: Text(
+                        tr('إعادة المحاولة'),
                         textAlign: TextAlign.center,
                       ),
                     ),
