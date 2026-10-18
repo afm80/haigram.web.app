@@ -23,7 +23,6 @@ String trf(String ar, List<Object?> args) {
 }
 
 const Map<String, String> _en = {
-
   // رسائل الأخطاء وانقطاع الإنترنت
   'تعذر إرسال البلاغ': "Couldn't send the report",
   'تعذر إلغاء الحظر': "Couldn't unblock",
@@ -53,13 +52,16 @@ const Map<String, String> _en = {
   'تعذرت مشاركة الملف': "Couldn't share the profile",
   'فشل النشر': "Posting failed",
   'لا يوجد اتصال بالإنترنت': 'No internet connection',
-  'تحقق من اتصالك بالشبكة ثم حاول مرة أخرى.': 'Check your connection and try again.',
+  'تحقق من اتصالك بالشبكة ثم حاول مرة أخرى.':
+      'Check your connection and try again.',
   'إعادة المحاولة': 'Try again',
   'حدث خطأ غير متوقع': 'Something went wrong',
   'حاول مرة أخرى بعد قليل.': 'Please try again in a moment.',
   'حدث خطأ غير متوقع، حاول مرة أخرى': 'Something went wrong. Please try again.',
-  'تحقق من اتصالك بالإنترنت ثم حاول مجدداً.': 'Check your internet connection and try again.',
-  'تعذر تهيئة التطبيق، حاول مجدداً بعد قليل.': 'Could not start the app. Please try again shortly.',
+  'تحقق من اتصالك بالإنترنت ثم حاول مجدداً.':
+      'Check your internet connection and try again.',
+  'تعذر تهيئة التطبيق، حاول مجدداً بعد قليل.':
+      'Could not start the app. Please try again shortly.',
   'تعذر تشغيل التطبيق': 'Could not start the app',
   'تعذر التحميل': 'Could not load',
   'تعذر تحميل التعليقات': 'Could not load comments',
@@ -104,7 +106,8 @@ const Map<String, String> _en = {
   'تعرف من زار ملفك خلال 30 يوماً، ويرى الآخرون زياراتك لهم. تعمل عندما يفعّلها الطرفان':
       'See who visited your profile in the last 30 days, and others see your visits to them. Works when both sides turn it on.',
   'المحفوظات': 'Saved',
-  'خاصة بك دائماً ولا يراها أحد': 'Always private to you; nobody else can see them',
+  'خاصة بك دائماً ولا يراها أحد':
+      'Always private to you; nobody else can see them',
 
   // الترحيب
   'لحظات جميلة، حكايات كثيرة': 'Beautiful moments, many stories',
@@ -125,6 +128,7 @@ const Map<String, String> _en = {
   // الغلاف والتبويبات
   'الرئيسية': 'Home',
   'استكشف': 'Explore',
+  'الرسائل': 'Messages',
   'صندوق البريد': 'Inbox',
   'الملف الشخصي': 'Profile',
   'اضغط مرة أخرى للخروج': 'Press again to exit',
@@ -137,7 +141,8 @@ const Map<String, String> _en = {
   'البريد الإلكتروني غير صحيح': 'Invalid email address',
   'البريد أو كلمة المرور غير صحيحة': 'Incorrect email or password',
   'هذا البريد مستخدم مسبقاً': 'This email is already in use',
-  'كلمة المرور ضعيفة (6 أحرف على الأقل)': 'Weak password (at least 6 characters)',
+  'كلمة المرور ضعيفة (6 أحرف على الأقل)':
+      'Weak password (at least 6 characters)',
   'تم إغلاق نافذة تسجيل الدخول': 'The sign-in window was closed',
   'هذا البريد مسجّل بطريقة دخول أخرى':
       'This email is registered with a different sign-in method',
@@ -145,7 +150,8 @@ const Map<String, String> _en = {
   'محاولات كثيرة، حاول مرة أخرى بعد قليل':
       'Too many attempts, please try again shortly',
   'اكتب بريدك الإلكتروني أولاً': 'Enter your email first',
-  'اسم المستخدم محجوز، اختر اسماً آخر': 'That username is taken, choose another',
+  'اسم المستخدم محجوز، اختر اسماً آخر':
+      'That username is taken, choose another',
   'اكتب بريدك الإلكتروني أولاً ثم اضغط «نسيت كلمة المرور»':
       'Enter your email first, then tap "Forgot password?"',
   'إن كان هذا البريد مسجّلاً لدينا فقد أرسلنا إليه رابط إعادة تعيين كلمة المرور. تحقق من صندوق الوارد ومن البريد غير الهام (Spam).':
@@ -171,9 +177,12 @@ const Map<String, String> _en = {
   '📷 صورة': "📷 Photo",
   'ردّ على القصة: {0}': "Story reply: {0}",
   'تعذر تحميل صورة': "Couldn't load the photo",
-  'انتظر رد الطرف الآخر لتكمل المراسلة': "Wait for their reply to continue the conversation",
-  'الرسالة الأولى لغير الأصدقاء نص فقط': "The first message to a non-friend must be text only",
-  'هذه أول رسالة لغير صديق: نص فقط، ولن تستطيع إرسال غيرها حتى يردّ.': "This is your first message to a non-friend: text only, and you can't send another until they reply.",
+  'انتظر رد الطرف الآخر لتكمل المراسلة':
+      "Wait for their reply to continue the conversation",
+  'الرسالة الأولى لغير الأصدقاء نص فقط':
+      "The first message to a non-friend must be text only",
+  'هذه أول رسالة لغير صديق: نص فقط، ولن تستطيع إرسال غيرها حتى يردّ.':
+      "This is your first message to a non-friend: text only, and you can't send another until they reply.",
   'حجم الصورة يجب ألا يتجاوز 700 كيلوبايت': "The photo must not exceed 700 KB",
   'حذف التعليق': "Delete comment",
   'تعذر حذف التعليق: {0}': "Couldn't delete the comment: {0}",
@@ -182,7 +191,8 @@ const Map<String, String> _en = {
   'تعذر تحميل التعليقات\n{0}': "Couldn't load comments\n{0}",
   'جارٍ تحميل التعليقات...': "Loading comments...",
   'لا توجد تعليقات بعد': "No comments yet",
-  'ابدأ المحادثة وكن أول من يعلّق.': "Start the conversation and be the first to comment.",
+  'ابدأ المحادثة وكن أول من يعلّق.':
+      "Start the conversation and be the first to comment.",
   'إلغاء الإعجاب': "Unlike",
   'إعجاب بالتعليق': "Like comment",
   'الملصقات': "Stickers",
@@ -199,9 +209,11 @@ const Map<String, String> _en = {
   'فيديو': "Video",
   'الصورة كبيرة جداً': "The photo is too large",
   'إحدى الصور كبيرة جداً': "One of the photos is too large",
-  'الحد الأقصى {0} صور، تم أخذ أول {1}': "Maximum {0} photos; the first {1} were kept",
+  'الحد الأقصى {0} صور، تم أخذ أول {1}':
+      "Maximum {0} photos; the first {1} were kept",
   'تعذر فتح الكاميرا أو الملفات: {0}': "Couldn't open the camera or files: {0}",
-  'التقط صورة أو اختر حتى {0} صور من ملفاتك': "Take a photo or pick up to {0} photos from your files",
+  'التقط صورة أو اختر حتى {0} صور من ملفاتك':
+      "Take a photo or pick up to {0} photos from your files",
   'التقط صورة أو اختر من ملفاتك': "Take a photo or pick from your files",
   'ملفات الجهاز': "Device files",
   'الحد الأقصى {0} صور': "Maximum {0} photos",
@@ -213,7 +225,8 @@ const Map<String, String> _en = {
   'أضف صورة أو رابط فيديو أولاً': "Add a photo or a video link first",
   'رابط يوتيوب غير صالح': "Invalid YouTube link",
   'أضف رابط فيديو يوتيوب أولاً': "Add a YouTube video link first",
-  'اكتب شيئاً أو أضف رابط فيديو أولاً': "Write something or add a video link first",
+  'اكتب شيئاً أو أضف رابط فيديو أولاً':
+      "Write something or add a video link first",
   'تمت إضافة القصة': "Story added",
   'تم النشر بنجاح': "Posted successfully",
   'فشل النشر: {0}': "Posting failed: {0}",
@@ -224,12 +237,14 @@ const Map<String, String> _en = {
   'رابط فيديو يوتيوب (اختياري)': "YouTube video link (optional)",
   'جارٍ الرفع...': "Uploading...",
   'إضافة إلى قصتك': "Add to your story",
-  'ابحث بالاسم أو اسم المستخدم أو هاشتاق': "Search by name, username or hashtag",
+  'ابحث بالاسم أو اسم المستخدم أو هاشتاق':
+      "Search by name, username or hashtag",
   'تعذر تحميل الاستكشاف\n{0}': "Couldn't load Explore\n{0}",
   'جارٍ الاستكشاف...': "Exploring...",
   'لا توجد فيديوهات بعد': "No videos yet",
   'لا توجد صور بعد': "No photos yet",
-  'ستظهر هنا أحدث ما يشاركه المستخدمون.': "The latest things people share will appear here.",
+  'ستظهر هنا أحدث ما يشاركه المستخدمون.':
+      "The latest things people share will appear here.",
   'عمليات البحث السابقة': "Recent searches",
   'مسح الكل': "Clear all",
   'تعذر تحميل المحتوى الرائج\n{0}': "Couldn't load trending content\n{0}",
@@ -247,7 +262,8 @@ const Map<String, String> _en = {
   'لا جديد من متابَعيك': "Nothing new from people you follow",
   'تابع حسابات لترى منشوراتها هنا.': "Follow accounts to see their posts here.",
   'لا توجد منشورات بعد': "No posts yet",
-  'شارك أول صورة أو خاطرة مع مجتمعنا.': "Share your first photo or thought with our community.",
+  'شارك أول صورة أو خاطرة مع مجتمعنا.':
+      "Share your first photo or thought with our community.",
   'للجميع': "Everyone",
   'المتابَعون': "Following",
   'لا توجد صورة شخصية لهذا الحساب': "This account has no profile photo",
@@ -258,7 +274,8 @@ const Map<String, String> _en = {
   'تعذر قص الصورة: {0}': "Couldn't crop the photo: {0}",
   'تعديل الصورة': "Edit photo",
   'تم': "Done",
-  'حرّك الصورة بإصبعك، وكبّرها بإصبعين أو بعجلة الفأرة': "Drag the photo with your finger, and zoom with two fingers or the mouse wheel",
+  'حرّك الصورة بإصبعك، وكبّرها بإصبعين أو بعجلة الفأرة':
+      "Drag the photo with your finger, and zoom with two fingers or the mouse wheel",
   'تدوير': "Rotate",
   'الآن': "Now",
   'قبل {0} د': "{0}m ago",
@@ -293,7 +310,8 @@ const Map<String, String> _en = {
   'تم إخفاء المنشور': "Post hidden",
   'تراجع': "Undo",
   'إبلاغ عن هذا المنشور': "Report this post",
-  'اختر السبب الأقرب. لن يعرف صاحب المنشور أنك من أبلغ.': "Choose the closest reason. The post's author won't know it was you.",
+  'اختر السبب الأقرب. لن يعرف صاحب المنشور أنك من أبلغ.':
+      "Choose the closest reason. The post's author won't know it was you.",
   'تم إرسال البلاغ، شكراً لك': "Report sent, thank you",
   'إبلاغ عن التعليق': "Report comment",
   'رد': "Reply",
@@ -306,7 +324,8 @@ const Map<String, String> _en = {
   'الرد على {0}': "Replying to {0}",
   'أضف رداً...': "Add a reply...",
   'إبلاغ عن هذا التعليق': "Report this comment",
-  'اختر السبب الأقرب. لن يعرف صاحب التعليق أنك من أبلغ.': "Choose the closest reason. The comment's author won't know it was you.",
+  'اختر السبب الأقرب. لن يعرف صاحب التعليق أنك من أبلغ.':
+      "Choose the closest reason. The comment's author won't know it was you.",
   'تعذر إرسال البلاغ: {0}': "Couldn't send the report: {0}",
   'تعذر فتح الرابط': "Couldn't open the link",
   'أقل': "Less",
@@ -335,9 +354,11 @@ const Map<String, String> _en = {
   'تعذر تحميل الملف الشخصي': "Couldn't load the profile",
   'جارٍ تحميل الملف الشخصي...': "Loading profile...",
   'هذا الحساب خاص': "This account is private",
-  'أرسل طلب متابعة، وعند موافقة صاحب الحساب ستشاهد منشوراته ومقاطعه.': "Send a follow request, and once the account owner approves you'll see their posts and clips.",
+  'أرسل طلب متابعة، وعند موافقة صاحب الحساب ستشاهد منشوراته ومقاطعه.':
+      "Send a follow request, and once the account owner approves you'll see their posts and clips.",
   'لقد حظرت هذا الحساب': "You've blocked this account",
-  'لن يتمكن من مراسلتك. يمكنك إلغاء الحظر من الزر أعلاه.': "They won't be able to message you. You can unblock from the button above.",
+  'لن يتمكن من مراسلتك. يمكنك إلغاء الحظر من الزر أعلاه.':
+      "They won't be able to message you. You can unblock from the button above.",
   'هذا الحساب غير متاح': "This account isn't available",
   'منشورات': "Posts",
   'متابعين': "Followers",
@@ -347,7 +368,8 @@ const Map<String, String> _en = {
   'إلغاء الحظر': "Unblock",
   'تعذر إلغاء الحظر: {0}': "Couldn't unblock: {0}",
   'تم إلغاء طلب المتابعة': "Follow request canceled",
-  'تم إرسال طلب المتابعة، بانتظار الموافقة': "Follow request sent, awaiting approval",
+  'تم إرسال طلب المتابعة، بانتظار الموافقة':
+      "Follow request sent, awaiting approval",
   'تعذر تحديث المتابعة: {0}': "Couldn't update follow: {0}",
   'تعذر تحميل حالة المتابعة': "Couldn't load follow status",
   'إلغاء المتابعة': "Unfollow",
@@ -367,21 +389,25 @@ const Map<String, String> _en = {
   'فيسبوك': "Facebook",
   'إرسال إلى الأصدقاء': "Send to friends",
   'تعذر تحميل الأصدقاء\n{0}': "Couldn't load friends\n{0}",
-  'ستظهر هنا الحسابات التي تتابعك وتتابعها.': "Accounts that follow you and that you follow will appear here.",
+  'ستظهر هنا الحسابات التي تتابعك وتتابعها.':
+      "Accounts that follow you and that you follow will appear here.",
   'لا يوجد متابعون بعد': "No followers yet",
   'لا يتابع أحداً بعد': "Not following anyone yet",
   'بحث': "Search",
   'تعذر التحميل\n{0}': "Couldn't load\n{0}",
-  'الصورة كبيرة جداً، جرّب صورة أخرى': "The photo is too large, try another one",
+  'الصورة كبيرة جداً، جرّب صورة أخرى':
+      "The photo is too large, try another one",
   'تعذر اختيار الصورة: {0}': "Couldn't pick the photo: {0}",
   'التقاط صورة': "Take a photo",
   'اختيار من ملفات الجهاز': "Choose from device files",
   'إزالة الصورة': "Remove photo",
   'تغيير الصورة الشخصية': "Change profile photo",
-  'الرابط غير صالح، مثال: example.com': "Invalid link, for example: example.com",
+  'الرابط غير صالح، مثال: example.com':
+      "Invalid link, for example: example.com",
   'تعذر الحفظ: {0}': "Couldn't save: {0}",
   'اسمك كما يظهر لمتابعيك': "Your name as it appears to followers",
-  'أحرف إنجليزية صغيرة وأرقام و _ و . (3 إلى 24 حرفاً)': "Lowercase English letters, numbers, _ and . (3 to 24 characters)",
+  'أحرف إنجليزية صغيرة وأرقام و _ و . (3 إلى 24 حرفاً)':
+      "Lowercase English letters, numbers, _ and . (3 to 24 characters)",
   'النبذة': "Bio",
   'عرّف بنفسك': "Tell people about yourself",
   'الرابط': "Link",
@@ -391,41 +417,53 @@ const Map<String, String> _en = {
   'حتى {0} منشورات أو مقاطع': "Up to {0} posts or clips",
   'تعذر تحديث التثبيت: {0}': "Couldn't update the pin: {0}",
   'ابدأ بأول منشور': "Start with your first post",
-  'شارك صورة وستظهر هنا في ملفك.': "Share a photo and it will appear here on your profile.",
+  'شارك صورة وستظهر هنا في ملفك.':
+      "Share a photo and it will appear here on your profile.",
   'ستظهر صور هذا الحساب هنا.': "This account's photos will appear here.",
   'أضف أول منشور': "Add your first post",
   'ابدأ بأول Short': "Start with your first Short",
   'لا توجد Shorts بعد': "No Shorts yet",
-  'شارك رابط Short من يوتيوب وسيظهر هنا في ملفك.': "Share a YouTube Short link and it will appear here on your profile.",
+  'شارك رابط Short من يوتيوب وسيظهر هنا في ملفك.':
+      "Share a YouTube Short link and it will appear here on your profile.",
   'ستظهر Shorts هذا الحساب هنا.': "This account's Shorts will appear here.",
   'أضف أول Short': "Add your first Short",
   'ابدأ بأول فيديو': "Start with your first video",
-  'شارك رابط فيديو من يوتيوب وسيظهر هنا في ملفك.': "Share a YouTube video link and it will appear here on your profile.",
+  'شارك رابط فيديو من يوتيوب وسيظهر هنا في ملفك.':
+      "Share a YouTube video link and it will appear here on your profile.",
   'ستظهر فيديوهات هذا الحساب هنا.': "This account's videos will appear here.",
   'أضف أول فيديو': "Add your first video",
   'لم تعد نشر شيئاً بعد': "You haven't reposted anything yet",
   'لا توجد إعادة نشر بعد': "No reposts yet",
-  'ما تعيد نشره من منشورات الآخرين سيظهر هنا.': "Posts you repost from others will appear here.",
-  'ستظهر هنا المنشورات التي أعاد هذا الحساب نشرها.': "Posts this account reposted will appear here.",
+  'ما تعيد نشره من منشورات الآخرين سيظهر هنا.':
+      "Posts you repost from others will appear here.",
+  'ستظهر هنا المنشورات التي أعاد هذا الحساب نشرها.':
+      "Posts this account reposted will appear here.",
   'قائمتك المحفوظة فارغة': "Your saved list is empty",
-  'احفظ المنشورات التي تريد الرجوع إليها لاحقاً.': "Save posts you want to come back to later.",
+  'احفظ المنشورات التي تريد الرجوع إليها لاحقاً.':
+      "Save posts you want to come back to later.",
   'حظر هذا الحساب؟': "Block this account?",
   'إلغاء الحظر؟': "Unblock?",
-  'لن يتمكن من مراسلتك أو رؤية منشوراتك في ملفك، وسيتم إلغاء متابعتك له. يمكنك إلغاء الحظر في أي وقت.': "They won't be able to message you or see your posts on your profile, and you'll unfollow them. You can unblock at any time.",
-  'سيتمكن من مراسلتك مجدداً إذا كنتما تتابعان بعضكما.': "They'll be able to message you again if you follow each other.",
+  'لن يتمكن من مراسلتك أو رؤية منشوراتك في ملفك، وسيتم إلغاء متابعتك له. يمكنك إلغاء الحظر في أي وقت.':
+      "They won't be able to message you or see your posts on your profile, and you'll unfollow them. You can unblock at any time.",
+  'سيتمكن من مراسلتك مجدداً إذا كنتما تتابعان بعضكما.':
+      "They'll be able to message you again if you follow each other.",
   'حظر': "Block",
   'تم حظر الحساب': "Account blocked",
   'تم إلغاء الحظر': "Unblocked",
   'تعذر تنفيذ العملية: {0}': "Action failed: {0}",
   'إبلاغ عن هذا الحساب': "Report this account",
-  'اختر السبب الأقرب. لن يعرف صاحب الحساب أنك من أبلغ.': "Choose the closest reason. The account owner won't know it was you.",
-  'شاهد هذا المنشور من @{0} على Haigram': "Check out this post by @{0} on Haigram",
+  'اختر السبب الأقرب. لن يعرف صاحب الحساب أنك من أبلغ.':
+      "Choose the closest reason. The account owner won't know it was you.",
+  'شاهد هذا المنشور من @{0} على Haigram':
+      "Check out this post by @{0} on Haigram",
   'تم إرسال {0} إلى @{1}': "Sent {0} to @{1}",
   'تم إرسال {0} إلى {1} أصدقاء': "Sent {0} to {1} friends",
-  'تعذر إرسال {0} إلى بعض الأصدقاء: {1}': "Couldn't send {0} to some friends: {1}",
+  'تعذر إرسال {0} إلى بعض الأصدقاء: {1}':
+      "Couldn't send {0} to some friends: {1}",
   'تم نسخ رابط {0}': "Copied the link to {0}",
   'تعذر تحميل الأصدقاء': "Couldn't load friends",
-  'تابع بعض الحسابات أو دعهم يتابعونك لتظهر هنا وترسل لهم {0}.': "Follow some accounts or let them follow you so they appear here and you can send them {0}.",
+  'تابع بعض الحسابات أو دعهم يتابعونك لتظهر هنا وترسل لهم {0}.':
+      "Follow some accounts or let them follow you so they appear here and you can send them {0}.",
   'لا نتائج': "No results",
   'أضف رسالة...': "Add a message...",
   'إرسال{0}': "Send{0}",
@@ -436,14 +474,16 @@ const Map<String, String> _en = {
   'أضف إلى قصتي': "Add to my story",
   'مشاركة إلى': "Share to",
   'من @{0}': "From @{0}",
-  'ستظهر في قصتك لمدة 24 ساعة مع ذكر صاحبها.': "It will appear in your story for 24 hours, crediting its owner.",
+  'ستظهر في قصتك لمدة 24 ساعة مع ذكر صاحبها.':
+      "It will appear in your story for 24 hours, crediting its owner.",
   'نشر في قصتي': "Post to my story",
   'تمت الإضافة إلى قصتك': "Added to your story",
   'تعذرت الإضافة: {0}': "Couldn't add: {0}",
   'رسالة جديدة': "New message",
   'المحادثات': "Chats",
   'تعذر تحميل الرسائل\n{0}': "Couldn't load messages\n{0}",
-  'لا توجد محادثات بعد\nابدأ محادثة مع أحد أصدقائك': "No conversations yet\nStart a chat with one of your friends",
+  'لا توجد محادثات بعد\nابدأ محادثة مع أحد أصدقائك':
+      "No conversations yet\nStart a chat with one of your friends",
   'مستخدم': "User",
   'نشط الآن': "Active now",
   'ابدأ المحادثة': "Start the conversation",
@@ -460,33 +500,73 @@ const Map<String, String> _en = {
   'علّق على منشورك': "commented on your post",
   'علّق: {0}': "commented: {0}",
   'لديك إشعار جديد': "You have a new notification",
-  'تعذر تحميل الأشخاص الذين تتابعهم: {0}': "Couldn't load the people you follow: {0}",
-  'تابع أصدقاءك لتظهر حساباتهم هنا': "Follow your friends to see their accounts here",
+  'تعذر تحميل الأشخاص الذين تتابعهم: {0}':
+      "Couldn't load the people you follow: {0}",
+  'تابع أصدقاءك لتظهر حساباتهم هنا':
+      "Follow your friends to see their accounts here",
   'تعذر تحميل القصص: {0}': "Couldn't load stories: {0}",
   'تعذر بدء المحادثة: {0}': "Couldn't start the chat: {0}",
   'تعذر تحميل قائمة الأصدقاء\n{0}': "Couldn't load the friends list\n{0}",
-  'لا يوجد أصدقاء متبادلون بعد\nتابعوا بعضكما لتبدآ المحادثة': "No mutual friends yet\nFollow each other to start chatting",
+  'لا يوجد أصدقاء متبادلون بعد\nتابعوا بعضكما لتبدآ المحادثة':
+      "No mutual friends yet\nFollow each other to start chatting",
   'تعذر إرسال الرسالة': "Couldn't send the message",
   'تعذر إرفاق الصورة: {0}': "Couldn't attach the photo: {0}",
   'اختيار من المعرض': "Choose from gallery",
   'حظر المستخدم؟': "Block this user?",
-  'لن تتمكن أنت وهذا المستخدم من إرسال الرسائل لبعضكما.': "You and this user won't be able to message each other.",
-  'سيتمكن هذا المستخدم من مراسلتك مجدداً.': "This user will be able to message you again.",
+  'لن تتمكن أنت وهذا المستخدم من إرسال الرسائل لبعضكما.':
+      "You and this user won't be able to message each other.",
+  'سيتمكن هذا المستخدم من مراسلتك مجدداً.':
+      "This user will be able to message you again.",
   'تم حظر المستخدم': "User blocked",
   'تعذر تحديث الحظر: {0}': "Couldn't update the block: {0}",
   'حذف لدى الجميع': "Delete for everyone",
-  'تُحذف الرسالة من المحادثة عند الطرفين': "The message is deleted from the chat for both sides",
+  'تُحذف الرسالة من المحادثة عند الطرفين':
+      "The message is deleted from the chat for both sides",
   'تعذر حذف الرسالة': "Couldn't delete the message",
   'حذف لدي فقط': "Delete for me only",
-  'تبقى الرسالة ظاهرة للطرف الآخر': "The message stays visible to the other person",
+  'تبقى الرسالة ظاهرة للطرف الآخر':
+      "The message stays visible to the other person",
   'تعذر تحميل حالة الحظر\n{0}': "Couldn't load block status\n{0}",
   'محادثة': "Chat",
   'خيارات المحادثة': "Chat options",
   'عرض الملف الشخصي': "View profile",
   'حظر المستخدم': "Block user",
-  'حظرت هذا المستخدم. ألغِ الحظر لإرسال الرسائل.': "You blocked this user. Unblock to send messages.",
+  'حظرت هذا المستخدم. ألغِ الحظر لإرسال الرسائل.':
+      "You blocked this user. Unblock to send messages.",
   'لا يمكنك مراسلة هذا المستخدم.': "You can't message this user.",
   'تعذر تحميل المحادثة\n{0}': "Couldn't load the chat\n{0}",
+  'بحث في المحادثة': 'Search chat',
+  'اكتب كلمة للبحث': 'Type a word to search',
+  'تعذر البحث في المحادثة': "Couldn't search the chat",
+  'لا توجد نتائج': 'No results',
+  'رسائل غير مقروءة': 'Unread messages',
+  'مسح': 'Clear',
+  'نسخ الرسالة': 'Copy message',
+  'تم نسخ الرسالة': 'Message copied',
+  'إضافة تفاعل': 'Add reaction',
+  'إزالة التفاعل': 'Remove reaction',
+  'تفاعل غير صالح': 'Invalid reaction',
+  'تعذر تحديث التفاعل': "Couldn't update reaction",
+  'اختيار فيديو': 'Choose video',
+  'اختيار ملف': 'Choose file',
+  'تسجيل رسالة صوتية': 'Record voice message',
+  'تعذر قراءة الملف': "Couldn't read the file",
+  'تعذر إرفاق الملف': "Couldn't attach the file",
+  'تعذر إرسال المرفق': "Couldn't send the attachment",
+  'يجب ألا يتجاوز حجم المرفق 20 ميغابايت':
+      'Attachments must be 20 MB or smaller',
+  'نوع مرفق غير صالح': 'Invalid attachment type',
+  'اسم الملف غير صالح': 'Invalid file name',
+  'لم يتم السماح باستخدام الميكروفون': 'Microphone permission was not granted',
+  'تحقق من أذونات الميكروفون': 'Check microphone permissions',
+  'تعذر تسجيل الصوت': "Couldn't record audio",
+  'تعذر بدء التسجيل': "Couldn't start recording",
+  'لم يتم تسجيل صوت': 'No audio was recorded',
+  'تعذر إنهاء التسجيل': "Couldn't finish recording",
+  'جارٍ تسجيل رسالة صوتية': 'Recording a voice message',
+  'تشغيل الرسالة الصوتية': 'Play voice message',
+  'إيقاف الصوت': 'Pause audio',
+  'إزالة المرفق': 'Remove attachment',
   'أرسل أول رسالة لبدء المحادثة': "Send the first message to start the chat",
   'إرسال صورة أو التقاط صورة': "Send or take a photo",
   'الملصقات والرموز التعبيرية': "Stickers and emoji",
@@ -512,10 +592,12 @@ const Map<String, String> _en = {
   'حسابات مقترحة': "Suggested accounts",
   'إخفاء': "Hide",
   'تعذر حفظ الإعداد: {0}': "Couldn't save the setting: {0}",
-  'ميزة زيارات الملف الشخصي متوقفة.\nشغّلها من الزر بالأعلى لتعرف من زار ملفك ويرى الآخرون زياراتك لهم.': "The profile visits feature is off.\nTurn it on with the button at the top to see who visited your profile, and others see your visits to them.",
+  'ميزة زيارات الملف الشخصي متوقفة.\nشغّلها من الزر بالأعلى لتعرف من زار ملفك ويرى الآخرون زياراتك لهم.':
+      "The profile visits feature is off.\nTurn it on with the button at the top to see who visited your profile, and others see your visits to them.",
   'تعذر تحميل الزيارات\n{0}': "Couldn't load visits\n{0}",
   'لا توجد زيارات بعد': "No visits yet",
-  'قد تظهر هنا أسماء الأشخاص الذين شغّلوا سجل الزيارات لديهم وزاروا ملفك الشخصي خلال آخر 30 يوماً. بإمكانهم أيضاً رؤية متى تزور ملفهم الشخصي. يمكنك إيقاف هذا الإعداد في أي وقت.': "People who turned on their visit history and visited your profile in the last 30 days may appear here. They can also see when you visit their profile. You can turn this off at any time.",
+  'قد تظهر هنا أسماء الأشخاص الذين شغّلوا سجل الزيارات لديهم وزاروا ملفك الشخصي خلال آخر 30 يوماً. بإمكانهم أيضاً رؤية متى تزور ملفهم الشخصي. يمكنك إيقاف هذا الإعداد في أي وقت.':
+      "People who turned on their visit history and visited your profile in the last 30 days may appear here. They can also see when you visit their profile. You can turn this off at any time.",
   'تمت المعالجة': "Handled",
   'قبول': "Accept",
   'رفض': "Decline",
@@ -529,31 +611,39 @@ const Map<String, String> _en = {
   'إرسال رسالة...': "Send a message...",
   'فشل الرفع إلى Cloudinary: {0}': "Cloudinary upload failed: {0}",
   'لم يُرجع Cloudinary رابط الملف': "Cloudinary didn't return a file link",
-  'لا يمكن مشاركة منشور من حساب خاص': "A post from a private account can't be shared",
-  'يمكن إضافة الصور والفيديو فقط إلى القصة': "Only photos and videos can be added to a story",
+  'لا يمكن مشاركة منشور من حساب خاص':
+      "A post from a private account can't be shared",
+  'يمكن إضافة الصور والفيديو فقط إلى القصة':
+      "Only photos and videos can be added to a story",
   'لا يمكنك إعادة نشر منشورك': "You can't repost your own post",
-  'لا يمكن إعادة نشر منشور من حساب خاص': "A post from a private account can't be reposted",
+  'لا يمكن إعادة نشر منشور من حساب خاص':
+      "A post from a private account can't be reposted",
   'لا يمكن إعادة نشر القصص': "Stories can't be reposted",
   'الألبوم يحتاج صورتين على الأقل': "An album needs at least two photos",
-  'الألبومات تتطلب تفعيل Cloudinary أو Storage': "Albums require Cloudinary or Storage to be enabled",
+  'الألبومات تتطلب تفعيل Cloudinary أو Storage':
+      "Albums require Cloudinary or Storage to be enabled",
   'المنشور غير متاح': "The post isn't available",
   'المنشور غير موجود': "The post doesn't exist",
   'مستخدم غير صالح': "Invalid user",
   'التعليق غير موجود': "The comment doesn't exist",
   'بلاغ غير صالح': "Invalid report",
-  'لا يمكن بدء محادثة مع مستخدم محظور': "You can't start a chat with a blocked user",
+  'لا يمكن بدء محادثة مع مستخدم محظور':
+      "You can't start a chat with a blocked user",
   'المحادثة لا تخص هذين المستخدمين': "The chat doesn't belong to these users",
-  'يجب أن تكون الرسالة بين حرف واحد و2000 حرف': "A message must be between 1 and 2000 characters",
+  'يجب أن تكون الرسالة بين حرف واحد و2000 حرف':
+      "A message must be between 1 and 2000 characters",
   'ملصق غير صالح': "Invalid sticker",
   'الرسالة غير موجودة': "The message doesn't exist",
   'يمكنك حذف رسائلك فقط': "You can only delete your own messages",
   'المحادثة غير موجودة': "The chat doesn't exist",
-  'لا تملك صلاحية إرسال رسالة في هذه المحادثة': "You don't have permission to send a message in this chat",
+  'لا تملك صلاحية إرسال رسالة في هذه المحادثة':
+      "You don't have permission to send a message in this chat",
   'لا يمكن إرسال الرسائل بعد الحظر': "Messages can't be sent after blocking",
   'يمكنك تثبيت {0} منشورات كحد أقصى': "You can pin up to {0} posts",
   'اسم المستخدم 3 أحرف على الأقل': "Username must be at least 3 characters",
   'اسم المستخدم 24 حرفاً كحد أقصى': "Username must be at most 24 characters",
-  'اسم المستخدم: أحرف إنجليزية صغيرة وأرقام و _ و . فقط': "Username: lowercase English letters, numbers, _ and . only",
+  'اسم المستخدم: أحرف إنجليزية صغيرة وأرقام و _ و . فقط':
+      "Username: lowercase English letters, numbers, _ and . only",
   'تعذر إنشاء اسم مستخدم': "Couldn't create a username",
   'محتوى مزعج أو احتيالي': "Spam or scam",
   'تحرّش أو إساءة': "Harassment or abuse",

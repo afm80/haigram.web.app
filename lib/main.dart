@@ -44,7 +44,9 @@ class _HaigramBootstrapState extends State<HaigramBootstrap> {
   }
 
   void _retry() {
-    setState(() => _startup = _initialize());
+    setState(() {
+      _startup = _initialize();
+    });
   }
 
   @override
@@ -154,7 +156,8 @@ class _StartupErrorScreen extends StatelessWidget {
 class HaigramApp extends StatefulWidget {
   final SharedPreferences preferences;
   final bool showOnboarding;
-  const HaigramApp({super.key, required this.preferences, required this.showOnboarding});
+  const HaigramApp(
+      {super.key, required this.preferences, required this.showOnboarding});
 
   @override
   State<HaigramApp> createState() => _HaigramAppState();
@@ -204,8 +207,8 @@ class _HaigramAppState extends State<HaigramApp> {
   }
 
   Future<void> _setThemeMode(ThemeMode themeMode) async {
-    final saved =
-        await widget.preferences.setBool('dark_mode', themeMode == ThemeMode.dark);
+    final saved = await widget.preferences
+        .setBool('dark_mode', themeMode == ThemeMode.dark);
     if (!saved) throw StateError(tr('تعذر حفظ إعداد المظهر'));
     if (mounted) setState(() => _themeMode = themeMode);
   }
