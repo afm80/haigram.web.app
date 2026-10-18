@@ -347,6 +347,15 @@ class SocialService {
     return controller.stream;
   }
 
+  /// معرّفات من حظرتُهم (الأحدث أولاً).
+  static Stream<List<String>> blockedUserIds() => _db
+      .collection('userBlocks')
+      .doc(_uid)
+      .collection('blocked')
+      .orderBy('createdAt', descending: true)
+      .snapshots()
+      .map((snapshot) => [for (final doc in snapshot.docs) doc.id]);
+
   static Future<bool> isBlockedEither(String otherUid) async {
     final snapshots = await Future.wait([
       _blockRef(_uid, otherUid).get(),
