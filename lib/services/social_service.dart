@@ -1,8 +1,12 @@
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 
 import '../l10n.dart';
 import 'post_service.dart';
@@ -55,7 +59,9 @@ class Conversation {
 
   /// آخر رسالة من الطرف الآخر ولم أفتح المحادثة بعدها.
   bool unreadFor(String uid) {
-    if (lastMessageId.isEmpty || lastSenderUid.isEmpty || lastSenderUid == uid) {
+    if (lastMessageId.isEmpty ||
+        lastSenderUid.isEmpty ||
+        lastSenderUid == uid) {
       return false;
     }
     final read = readAt[uid];
@@ -84,8 +90,8 @@ class Conversation {
         lastMessage: data['lastMessage'] as String? ?? '',
         lastSenderUid: data['lastSenderUid'] as String? ?? '',
         lastMessageId: data['lastMessageId'] as String? ?? '',
-        updatedAt: _readTs(data['updatedAt'],
-            pending: doc.metadata.hasPendingWrites),
+        updatedAt:
+            _readTs(data['updatedAt'], pending: doc.metadata.hasPendingWrites),
         readAt: _tsMap(data['readAt']),
         deliveredAt: _tsMap(data['deliveredAt']),
         clearedAt: _tsMap(data['clearedAt']),
@@ -105,6 +111,13 @@ class ChatMessage {
   final List<String> readBy;
   final String kind;
   final Uint8List? imageBytes;
+  final String? replyToMessageId;
+  final String? replyToText;
+  final String? replyToSenderUid;
+  final Map<String, String> reactions;
+  final String? attachmentUrl;
+  final String? attachmentName;
+  final String? contentType;
 
   /// رابط الصورة عند استعمال Cloudinary/Storage (وضع التجربة يستعمل [imageBytes]).
   final String? imageUrl;
@@ -118,31 +131,60 @@ class ChatMessage {
     required this.readBy,
     required this.kind,
     required this.imageBytes,
+    this.replyToMessageId,
+    this.replyToText,
+    this.replyToSenderUid,
+    this.reactions = const {},
+    this.attachmentUrl,
+    this.attachmentName,
+    this.contentType,
     this.imageUrl,
   });
 
-  /// null إن كانت الرسالة تالفة (حقل ناقص أو بنوع خاطئ): تُتجاهل هي وحدها
-  /// بدل أن يفشل تحميل المحادثة كلها.
-  static ChatMessage? tryFromDoc(
-      QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+  static ChatMessage? fromMap(
+    String id,
+    Map<String, dynamic> data, {
+    bool pendingWrites = false,
+  }) {
     try {
-      final data = doc.data();
       return ChatMessage(
-        id: doc.id,
+        id: id,
         senderUid: data['senderUid'] as String,
-        text: data['text'] as String,
-        createdAt: _readTs(data['createdAt'],
-            pending: doc.metadata.hasPendingWrites),
+        text: data['text'] as String? ?? '',
+        createdAt: _readTs(data['createdAt'], pending: pendingWrites),
         deliveredTo:
             List<String>.from(data['deliveredTo'] as List? ?? const []),
         readBy: List<String>.from(data['readBy'] as List? ?? const []),
         kind: data['kind'] as String? ?? 'text',
         imageBytes: (data['image'] as Blob?)?.bytes,
         imageUrl: data['imageUrl'] as String?,
+        replyToMessageId: data['replyToMessageId'] as String?,
+        replyToText: data['replyToText'] as String?,
+        replyToSenderUid: data['replyToSenderUid'] as String?,
+        reactions: Map<String, String>.from(
+          (data['reactions'] as Map?)?.map(
+                (key, value) => MapEntry(key as String, value as String),
+              ) ??
+              const <String, String>{},
+        ),
+        attachmentUrl: data['attachmentUrl'] as String?,
+        attachmentName: data['attachmentName'] as String?,
+        contentType: data['contentType'] as String?,
       );
     } catch (_) {
       return null;
     }
+  }
+
+  /// null إن كانت الرسالة تالفة (حقل ناقص أو بنوع خاطئ): تُتجاهل هي وحدها
+  /// بدل أن يفشل تحميل المحادثة كلها.
+  static ChatMessage? tryFromDoc(
+      QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    return fromMap(
+      doc.id,
+      doc.data(),
+      pendingWrites: doc.metadata.hasPendingWrites,
+    );
   }
 }
 
@@ -207,11 +249,61 @@ class SocialNotification {
 
 class SocialService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
+  static StreamSubscription<String>? _pushTokenRefreshSub;
   static String get _uid => FirebaseAuth.instance.currentUser!.uid;
   static String get currentUid => _uid;
+  static const _webPushVapidKey =
+      String.fromEnvironment('FB_WEB_PUSH_VAPID_KEY');
+
+  static Stream<RemoteMessage> get foregroundChatMessages =>
+      FirebaseMessaging.onMessage;
+
+  static Future<void> registerChatPushNotifications() async {
+    final messaging = FirebaseMessaging.instance;
+    final permission = await messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+    if (permission.authorizationStatus == AuthorizationStatus.denied) return;
+
+    final token = await messaging.getToken(
+      vapidKey: kIsWeb && _webPushVapidKey.isNotEmpty ? _webPushVapidKey : null,
+    );
+    if (token != null && token.isNotEmpty) await _savePushToken(token);
+    _pushTokenRefreshSub ??= messaging.onTokenRefresh.listen((freshToken) {
+      _savePushToken(freshToken).catchError((Object _) {});
+    });
+  }
+
+  static Future<void> _savePushToken(String token) async {
+    final platform = kIsWeb ? 'web' : defaultTargetPlatform.name;
+    await _db
+        .collection('users')
+        .doc(_uid)
+        .collection('pushTokens')
+        .doc(token)
+        .set({
+      'token': token,
+      'platform': platform,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
 
   static CollectionReference<Map<String, dynamic>> get _chats =>
       _db.collection('chats');
+
+  static TextDirection inferTextDirection(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return TextDirection.ltr;
+    final rune = trimmed.runes.first;
+    final isArabic = (rune >= 0x0600 && rune <= 0x06FF) ||
+        (rune >= 0x0750 && rune <= 0x077F) ||
+        (rune >= 0x08A0 && rune <= 0x08FF) ||
+        (rune >= 0xFB50 && rune <= 0xFDFF) ||
+        (rune >= 0xFE70 && rune <= 0xFEFF);
+    return isArabic ? TextDirection.rtl : TextDirection.ltr;
+  }
 
   static CollectionReference<Map<String, dynamic>> _notifications(String uid) =>
       _db.collection('users').doc(uid).collection('notifications');
@@ -413,7 +505,8 @@ class SocialService {
                 'deliveredAt',
                 conversation.updatedAt,
               ).catchError((Object _) {
-                _deliveredMarked.remove(key); // تُعاد المحاولة عند التحديث التالي
+                _deliveredMarked
+                    .remove(key); // تُعاد المحاولة عند التحديث التالي
               }));
             }
           }
@@ -444,10 +537,8 @@ class SocialService {
   /// [markChatRead] عندما تكون المحادثة ظاهرة فعلاً أمام المستخدم.
   static Stream<List<ChatMessage>> messages(String conversationId,
       {int limit = messagesPageSize, DateTime? since}) {
-    final base = _chats
-        .doc(conversationId)
-        .collection('messages')
-        .orderBy('createdAt');
+    final base =
+        _chats.doc(conversationId).collection('messages').orderBy('createdAt');
     final query = since == null
         ? base.limitToLast(limit)
         : base.where('createdAt',
@@ -456,6 +547,33 @@ class SocialService {
         .map(ChatMessage.tryFromDoc)
         .whereType<ChatMessage>()
         .toList());
+  }
+
+  static Future<List<ChatMessage>> searchMessages(
+    String conversationId,
+    String query,
+  ) async {
+    final term = query.trim().toLowerCase();
+    if (term.isEmpty) return const [];
+
+    final collection = _chats.doc(conversationId).collection('messages');
+    final matches = <ChatMessage>[];
+    QueryDocumentSnapshot<Map<String, dynamic>>? cursor;
+    while (true) {
+      Query<Map<String, dynamic>> pageQuery =
+          collection.orderBy('createdAt', descending: true).limit(80);
+      if (cursor != null) pageQuery = pageQuery.startAfterDocument(cursor);
+      final page = await pageQuery.get();
+      for (final document in page.docs) {
+        final message = ChatMessage.tryFromDoc(document);
+        if (message != null && message.text.toLowerCase().contains(term)) {
+          matches.add(message);
+        }
+      }
+      if (page.docs.length < 80) break;
+      cursor = page.docs.last;
+    }
+    return matches;
   }
 
   /// صفحة أقدم من [before] (تصاعدياً). قد تتضمن رسالة الحدّ نفسها، فيدمجها
@@ -467,8 +585,8 @@ class SocialService {
         .doc(conversationId)
         .collection('messages')
         .where('createdAt',
-            isLessThanOrEqualTo: Timestamp.fromDate(
-                before.add(const Duration(milliseconds: 1))))
+            isLessThanOrEqualTo:
+                Timestamp.fromDate(before.add(const Duration(milliseconds: 1))))
         .orderBy('createdAt', descending: true)
         .limit(limit)
         .get();
@@ -565,28 +683,57 @@ class SocialService {
     return conversationId;
   }
 
-  static Future<void> sendMessage(String conversationId, String text) async {
+  static Future<void> sendMessage(
+    String conversationId,
+    String text, {
+    String? replyToMessageId,
+    String? replyToText,
+    String? replyToSenderUid,
+  }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty || trimmed.length > 2000) {
       throw ArgumentError(tr('يجب أن تكون الرسالة بين حرف واحد و2000 حرف'));
     }
-    await _sendChatMessage(conversationId, text: trimmed, kind: 'text');
+    await _sendChatMessage(
+      conversationId,
+      text: trimmed,
+      kind: 'text',
+      replyToMessageId: replyToMessageId,
+      replyToText: replyToText,
+      replyToSenderUid: replyToSenderUid,
+    );
   }
 
-  static Future<void> sendSticker(String conversationId, String sticker) async {
+  static Future<void> sendSticker(
+    String conversationId,
+    String sticker, {
+    String? replyToMessageId,
+    String? replyToText,
+    String? replyToSenderUid,
+  }) async {
     if (sticker.isEmpty || sticker.length > 24) {
       throw ArgumentError.value(sticker, 'sticker', tr('ملصق غير صالح'));
     }
-    await _sendChatMessage(conversationId, text: sticker, kind: 'sticker');
+    await _sendChatMessage(
+      conversationId,
+      text: sticker,
+      kind: 'sticker',
+      replyToMessageId: replyToMessageId,
+      replyToText: replyToText,
+      replyToSenderUid: replyToSenderUid,
+    );
   }
 
   static Future<void> sendImage(
-      String conversationId, Uint8List imageBytes) async {
+    String conversationId,
+    Uint8List imageBytes, {
+    String? replyToMessageId,
+    String? replyToText,
+    String? replyToSenderUid,
+  }) async {
     if (imageBytes.isEmpty || imageBytes.length > 700 * 1024) {
       throw ArgumentError(tr('حجم الصورة يجب ألا يتجاوز 700 كيلوبايت'));
     }
-    // Cloudinary/Storage إن كانا مفعّلين (رابط فقط في Firestore)، وإلا تُحفظ
-    // البايتات داخل المستند كما في وضع التجربة.
     final url = await PostService.uploadChatImage(imageBytes);
     await _sendChatMessage(
       conversationId,
@@ -594,7 +741,62 @@ class SocialService {
       kind: 'image',
       imageBytes: url == null ? imageBytes : null,
       imageUrl: url,
+      replyToMessageId: replyToMessageId,
+      replyToText: replyToText,
+      replyToSenderUid: replyToSenderUid,
     );
+  }
+
+  static Future<void> sendAttachment(
+    String conversationId, {
+    required Uint8List bytes,
+    required String fileName,
+    required String contentType,
+    required String kind,
+    String? replyToMessageId,
+    String? replyToText,
+    String? replyToSenderUid,
+  }) async {
+    if (!const {'video', 'audio', 'file'}.contains(kind)) {
+      throw ArgumentError.value(kind, 'kind', tr('نوع مرفق غير صالح'));
+    }
+    if (bytes.isEmpty || bytes.length > 20 * 1024 * 1024) {
+      throw ArgumentError(tr('يجب ألا يتجاوز حجم المرفق 20 ميغابايت'));
+    }
+    final safeName = fileName
+        .split(RegExp(r'[/\\]'))
+        .last
+        .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    if (safeName.isEmpty || safeName.length > 160) {
+      throw ArgumentError(tr('اسم الملف غير صالح'));
+    }
+
+    final reference = FirebaseStorage.instance.ref().child(
+          'chats/$conversationId/$_uid/${DateTime.now().microsecondsSinceEpoch}_$safeName',
+        );
+    await reference.putData(
+      bytes,
+      SettableMetadata(contentType: contentType),
+    );
+    final url = await reference.getDownloadURL();
+    try {
+      await _sendChatMessage(
+        conversationId,
+        text: safeName,
+        kind: kind,
+        attachmentUrl: url,
+        attachmentName: safeName,
+        contentType: contentType,
+        replyToMessageId: replyToMessageId,
+        replyToText: replyToText,
+        replyToSenderUid: replyToSenderUid,
+      );
+    } catch (_) {
+      try {
+        await reference.delete();
+      } catch (_) {}
+      rethrow;
+    }
   }
 
   // ===== «حذف لديّ فقط»: معرّفات الرسائل المخفية عن المستخدم الحالي =====
@@ -604,8 +806,8 @@ class SocialService {
 
   static Stream<Set<String>> hiddenMessageIds(String conversationId) =>
       _hiddenDoc(conversationId).snapshots().map(
-            (snapshot) =>
-                Set<String>.from((snapshot.data()?['ids'] as List?) ?? const []),
+            (snapshot) => Set<String>.from(
+                (snapshot.data()?['ids'] as List?) ?? const []),
           );
 
   static Future<void> hideMessageForMe(
@@ -617,6 +819,22 @@ class SocialService {
       },
       SetOptions(merge: true),
     );
+  }
+
+  static Future<void> setMessageReaction(
+    String conversationId,
+    String messageId,
+    String? reaction,
+  ) async {
+    if (reaction != null && (reaction.isEmpty || reaction.runes.length > 8)) {
+      throw ArgumentError.value(reaction, 'reaction', tr('تفاعل غير صالح'));
+    }
+    final field = 'reactions.$_uid';
+    await _chats
+        .doc(conversationId)
+        .collection('messages')
+        .doc(messageId)
+        .update({field: reaction ?? FieldValue.delete()});
   }
 
   /// «حذف لدى الجميع»: يحذف رسالتي (نصاً أو صورة أو ملصقاً) من المحادثة نهائياً.
@@ -641,10 +859,9 @@ class SocialService {
           .orderBy('createdAt', descending: true)
           .limit(2)
           .get();
-      final previousMessages = recentMessages.docs
-          .where((document) => document.id != messageId);
-      final previous =
-          previousMessages.isEmpty ? null : previousMessages.first;
+      final previousMessages =
+          recentMessages.docs.where((document) => document.id != messageId);
+      final previous = previousMessages.isEmpty ? null : previousMessages.first;
       batch.update(chat, {
         'lastMessage': previous?.data()['text'] ?? '',
         'lastSenderUid': previous?.data()['senderUid'] ?? '',
@@ -662,6 +879,12 @@ class SocialService {
     required String kind,
     Uint8List? imageBytes,
     String? imageUrl,
+    String? attachmentUrl,
+    String? attachmentName,
+    String? contentType,
+    String? replyToMessageId,
+    String? replyToText,
+    String? replyToSenderUid,
   }) async {
     final chat = _chats.doc(conversationId);
     final message = chat.collection('messages').doc();
@@ -675,8 +898,7 @@ class SocialService {
         if (!snapshot.exists || current == null) {
           throw StateError(tr('المحادثة غير موجودة'));
         }
-        final participants =
-            List<String>.from(current['participants'] as List);
+        final participants = List<String>.from(current['participants'] as List);
         if (!participants.contains(_uid)) {
           throw StateError(tr('لا تملك صلاحية إرسال رسالة في هذه المحادثة'));
         }
@@ -708,11 +930,19 @@ class SocialService {
           'deliveredTo': [_uid],
           'readBy': [_uid],
           'createdAt': FieldValue.serverTimestamp(),
+          if (replyToMessageId != null) 'replyToMessageId': replyToMessageId,
+          if (replyToText != null) 'replyToText': replyToText,
+          if (replyToSenderUid != null) 'replyToSenderUid': replyToSenderUid,
         };
         if (imageUrl != null) {
           messageData['imageUrl'] = imageUrl;
         } else if (imageBytes != null) {
           messageData['image'] = Blob(imageBytes);
+        }
+        if (attachmentUrl != null) {
+          messageData['attachmentUrl'] = attachmentUrl;
+          messageData['attachmentName'] = attachmentName;
+          messageData['contentType'] = contentType;
         }
         // الردّ على رسالة الطرف الآخر يجعل المحادثة «مقبولة» للطرفين.
         final acceptsNow =
@@ -769,6 +999,38 @@ class SocialService {
     return friends;
   }
 
+  static Stream<Map<String, DateTime>> typingState(String conversationId) =>
+      _chats.doc(conversationId).snapshots().map((snapshot) {
+        final raw = snapshot.data()?['typing'];
+        if (raw is! Map) return const <String, DateTime>{};
+        final now = DateTime.now();
+        final typing = <String, DateTime>{};
+        for (final entry in raw.entries) {
+          if (entry.key is! String || entry.value is! Timestamp) continue;
+          final timestamp = entry.value.toDate();
+          final delta = now.difference(timestamp).inSeconds;
+          if (delta <= 8) {
+            typing[entry.key as String] = timestamp;
+          }
+        }
+        return typing;
+      });
+
+  static Future<void> setTyping(String conversationId,
+      {required bool isTyping}) async {
+    final chat = _chats.doc(conversationId);
+    final snapshot = await chat.get();
+    final typing = Map<String, dynamic>.from(
+      snapshot.data()?['typing'] as Map? ?? const <String, dynamic>{},
+    );
+    if (isTyping) {
+      typing[_uid] = Timestamp.now();
+    } else {
+      typing.remove(_uid);
+    }
+    await chat.set({'typing': typing}, SetOptions(merge: true));
+  }
+
   static Stream<List<SocialNotification>> notifications() =>
       _notifications(_uid)
           .orderBy('createdAt', descending: true)
@@ -802,7 +1064,8 @@ class SocialService {
         .map((snapshot) => [
               for (final doc in snapshot.docs)
                 if (doc.data()['at'] is Timestamp)
-                  ProfileVisit(doc.id, (doc.data()['at'] as Timestamp).toDate()),
+                  ProfileVisit(
+                      doc.id, (doc.data()['at'] as Timestamp).toDate()),
             ]);
   }
 
