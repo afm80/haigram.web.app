@@ -272,9 +272,22 @@ service cloud.firestore {
           && request.auth.uid in resource.data.participants;
       }
 
-      allow get: if request.auth != null
-        && (!exists(/databases/$(database)/documents/chats/$(chatId))
-          || isParticipant());
+      // حقل خريطة (readAt / deliveredAt / clearedAt) يخص المستخدم الحالي فقط:
+      // لا يتغير فيه إلا مدخله، وقيمته وقت صالح لا يتجاوز الآن ولا يتراجع.
+      function touchesOnlyMine(field) {
+        let before = resource.data.get(field, {});
+        let after = request.resource.data[field];
+        return after is map
+          && after.diff(before).affectedKeys().hasOnly([request.auth.uid])
+          && after[request.auth.uid] is timestamp
+          && after[request.auth.uid] <= request.time
+          && (!(request.auth.uid in before)
+            || after[request.auth.uid] > before[request.auth.uid]);
+      }
+
+      // لا نسمح بقراءة مستند غير موجود (كان يكشف هل تراسل مستخدمان أم لا):
+      // البدء يتم بالإنشاء ثم القراءة من الطرفين فقط.
+      allow get: if isParticipant();
       allow list: if isParticipant();
       allow create: if request.auth != null
         && request.resource.data.keys().hasOnly([
@@ -314,8 +327,20 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly([
                 'lastMessage', 'lastSenderUid', 'lastMessageId', 'updatedAt',
-                'accepted'
+                'accepted', 'startedBy'
               ])
+            // «startedBy»: قائمة بمن أرسل رسالة افتتاحية في هذه المحادثة. لا
+            // تُمسح بحذف الرسالة، فلا يمكن تكرار «أرسل ثم احذف» لتجاوز حدّ
+            // الرسالة الواحدة لغير الأصدقاء. تزيد بإضافة مدخل واحد: أنا فقط.
+            && (!request.resource.data.diff(resource.data).affectedKeys()
+                  .hasAny(['startedBy'])
+              || (request.resource.data.startedBy is list
+                && request.resource.data.startedBy
+                  .hasAll(resource.data.get('startedBy', []))
+                && request.resource.data.startedBy.hasAny([request.auth.uid])
+                && request.resource.data.startedBy.size()
+                  <= resource.data.get('startedBy', []).size() + 1
+                && request.resource.data.startedBy.size() <= 2))
             // «accepted» لا يتغير إلا من false إلى true، ومن الطرف الذي ردّ على
             // رسالة الطرف الآخر (آخر مرسل قبل هذه الكتابة ليس أنا).
             && (!request.resource.data.diff(resource.data).affectedKeys()
@@ -368,6 +393,23 @@ service cloud.firestore {
                 && getAfter(/databases/$(database)/documents/chats/$(chatId)/messages/$(request.resource.data.lastMessageId)).data.senderUid
                   == request.resource.data.lastSenderUid))
           )
+          ||
+          // إيصالات المحادثة ومسحها لديّ: كل مستخدم يكتب مدخله فقط.
+          // readAt = وقت آخر رسالة قرأتها، deliveredAt = آخر رسالة وصلتني،
+          // clearedAt = «حذف المحادثة لديّ» (يخفي ما قبله عني فقط).
+          (request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['readAt', 'deliveredAt', 'clearedAt'])
+            && (!request.resource.data.diff(resource.data).affectedKeys()
+                  .hasAny(['readAt'])
+              || touchesOnlyMine('readAt'))
+            && (!request.resource.data.diff(resource.data).affectedKeys()
+                  .hasAny(['deliveredAt'])
+              || touchesOnlyMine('deliveredAt'))
+            && (!request.resource.data.diff(resource.data).affectedKeys()
+                  .hasAny(['clearedAt'])
+              || (touchesOnlyMine('clearedAt')
+                && request.resource.data.clearedAt[request.auth.uid]
+                  == request.time)))
         );
       allow delete: if false;
 
@@ -400,7 +442,9 @@ service cloud.firestore {
           return chatNow().get('accepted', true) == true
             || areMutualFriends()
             || (chatNow().lastMessageId == ''
-              && request.resource.data.kind == 'text')
+              && request.resource.data.kind == 'text'
+              // من افتتح المحادثة مرة (ولو حذف رسالته) لا يفتتحها ثانية.
+              && !(request.auth.uid in chatNow().get('startedBy', [])))
             || (chatNow().lastMessageId != ''
               && chatNow().lastSenderUid != request.auth.uid
               && chatNext().get('accepted', true) == true);
@@ -466,6 +510,10 @@ service cloud.firestore {
             == request.auth.uid
           && getAfter(/databases/$(database)/documents/chats/$(chatId)).data.lastMessageId
             == messageId
+          // في المحادثة غير المقبولة يجب أن يسجّل المرسل نفسه في startedBy
+          // ضمن الكتابة نفسها، وإلا تعطّل حدّ الرسالة الواحدة.
+          && (chatNext().get('accepted', true) == true
+            || request.auth.uid in chatNext().get('startedBy', []))
           && getAfter(/databases/$(database)/documents/chats/$(chatId)).data.lastMessage
             == request.resource.data.text;
         allow update: if isChatParticipant()
