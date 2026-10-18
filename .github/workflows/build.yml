@@ -64,7 +64,7 @@ jobs:
           # اسم التطبيق الظاهر
           sed -i -E "s/android:label=\"[^\"]*\"/android:label=\"$APP_NAME\"/" "$MANIFEST"
           # صلاحيات الشبكة والميكروفون والإشعارات
-          sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO"/>\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n    <application#' "$MANIFEST"
+          sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n    <application#' "$MANIFEST"
 
           grep -n "applicationId\|minSdk" "$GRADLE"
           grep -n "INTERNET\|android:label" "$MANIFEST"
