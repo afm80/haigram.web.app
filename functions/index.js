@@ -366,13 +366,7 @@ exports.notifyChatMessage = onDocumentCreated(
     const title = 'Haigram';
     const body = message.kind === 'image'
       ? '📷 صورة جديدة'
-      : message.kind === 'audio'
-        ? '🎙️ رسالة صوتية'
-        : message.kind === 'video'
-          ? '🎬 فيديو جديد'
-          : message.kind === 'file'
-            ? '📎 ملف مرفق'
-            : String(message.text || 'رسالة جديدة').slice(0, 160);
+      : String(message.text || 'رسالة جديدة').slice(0, 160);
     const response = await getMessaging().sendEachForMulticast({
       tokens: tokenSnapshot.docs.map((doc) => doc.data().token),
       notification: { title, body },
