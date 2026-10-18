@@ -1,5 +1,5 @@
-// يحذف من Cloudinary الملفات اليتيمة: ملفات لا يشير إليها أي منشور في Firestore
-// (منشورات محذوفة، أو قصص انتهت مدتها). يعمل من GitHub Actions.
+// يحذف من Cloudinary الملفات اليتيمة: ملفات لا يشير إليها أي منشور أو رسالة
+// صورة في Firestore (منشورات محذوفة، قصص انتهت مدتها، رسائل محذوفة). يعمل من GitHub Actions.
 //
 // الأسرار المطلوبة (متغيرات بيئة):
 //   CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
@@ -111,15 +111,27 @@ async function main() {
   // 2) كل الملفات التي ما زالت منشورات تشير إليها.
   const referenced = new Set();
   let unparseable = 0;
-  const posts = await db.collection('posts').select('mediaUrl').get();
-  for (const d of posts.docs) {
-    if (expiredIds.has(d.id)) continue;
-    const url = d.get('mediaUrl');
-    if (typeof url !== 'string' || !url.startsWith('https://res.cloudinary.com/')) continue;
+  const addReference = (url) => {
+    if (typeof url !== 'string' || !url.startsWith('https://res.cloudinary.com/')) return;
     const p = parseCloudinaryUrl(url);
     if (!p) unparseable++;
     else referenced.add(`${p.type}:${p.publicId}`);
+  };
+  const posts = await db.collection('posts').select('mediaUrl').get();
+  for (const d of posts.docs) {
+    if (expiredIds.has(d.id)) continue;
+    addReference(d.get('mediaUrl'));
   }
+  // صور المحادثات (chats/*/messages/*.imageUrl) تُحسب أيضاً مشاراً إليها، وإلا
+  // حُذفت بعد 24 ساعة كأنها يتيمة. يتطلب فهرس collection-group على messages.kind
+  // (موجود في firestore.indexes.json)؛ إن لم يُنشر بعد يفشل الاستعلام فيتوقف
+  // السكربت قبل أي حذف.
+  const chatImages = await db
+    .collectionGroup('messages')
+    .where('kind', '==', 'image')
+    .select('imageUrl')
+    .get();
+  for (const d of chatImages.docs) addReference(d.get('imageUrl'));
   console.log(`ملفات مشار إليها: ${referenced.size}`);
 
   // ---- Cloudinary ----
