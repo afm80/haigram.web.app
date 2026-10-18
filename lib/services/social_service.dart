@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../l10n.dart';
+import 'post_service.dart';
+
 class Conversation {
   final String id;
   final List<String> participants;
@@ -52,6 +54,9 @@ class ChatMessage {
   final String kind;
   final Uint8List? imageBytes;
 
+  /// رابط الصورة عند استعمال Cloudinary/Storage (وضع التجربة يستعمل [imageBytes]).
+  final String? imageUrl;
+
   const ChatMessage({
     required this.id,
     required this.senderUid,
@@ -61,6 +66,7 @@ class ChatMessage {
     required this.readBy,
     required this.kind,
     required this.imageBytes,
+    this.imageUrl,
   });
 
   factory ChatMessage.fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
@@ -77,6 +83,7 @@ class ChatMessage {
       readBy: List<String>.from(data['readBy'] as List? ?? const []),
       kind: data['kind'] as String? ?? 'text',
       imageBytes: (data['image'] as Blob?)?.bytes,
+      imageUrl: data['imageUrl'] as String?,
     );
   }
 }
@@ -319,6 +326,10 @@ class SocialService {
     });
   }
 
+  /// رسائل أُرسل لها «تم التسليم» في هذه الجلسة، حتى لا نقرأ المستند نفسه
+  /// عند كل تحديث لقائمة المحادثات.
+  static final Set<String> _deliveredMarked = <String>{};
+
   static Stream<List<Conversation>> conversations() => _chats
           .where('participants', arrayContains: _uid)
           .snapshots()
@@ -328,26 +339,38 @@ class SocialService {
         for (final conversation in items) {
           if (conversation.lastSenderUid != _uid &&
               conversation.lastMessageId.isNotEmpty) {
-            unawaited(_markDelivered(
-              conversation.id,
-              conversation.lastMessageId,
-            ));
+            final key = '${conversation.id}/${conversation.lastMessageId}';
+            if (_deliveredMarked.add(key)) {
+              unawaited(_markDelivered(
+                conversation.id,
+                conversation.lastMessageId,
+              ).catchError((Object _) {
+                _deliveredMarked.remove(key); // تُعاد المحاولة عند التحديث التالي
+              }));
+            }
           }
         }
         return items;
       });
 
-  static Stream<List<ChatMessage>> messages(String conversationId) => _chats
+  /// مستند المحادثة نفسه (accepted وآخر مرسل...) لمعرفة هل يحق لي الإرسال.
+  static Stream<Map<String, dynamic>?> chatStream(String conversationId) =>
+      _chats.doc(conversationId).snapshots().map((snapshot) => snapshot.data());
+
+  /// حجم الصفحة الافتراضي لرسائل المحادثة.
+  static const messagesPageSize = 100;
+
+  /// آخر [limit] رسالة. لا يعلّم الرسائل مقروءة: الشاشة هي من تستدعي
+  /// [markMessagesRead] عندما تكون المحادثة ظاهرة فعلاً أمام المستخدم.
+  static Stream<List<ChatMessage>> messages(String conversationId,
+          {int limit = messagesPageSize}) =>
+      _chats
           .doc(conversationId)
           .collection('messages')
           .orderBy('createdAt')
-          .limitToLast(100)
+          .limitToLast(limit)
           .snapshots()
-          .map((snapshot) {
-        final messages = snapshot.docs.map(ChatMessage.fromDoc).toList();
-        unawaited(_markMessagesRead(snapshot.docs));
-        return messages;
-      });
+          .map((snapshot) => snapshot.docs.map(ChatMessage.fromDoc).toList());
 
   static Future<void> _markDelivered(
       String conversationId, String messageId) async {
@@ -363,24 +386,41 @@ class SocialService {
     });
   }
 
-  static Future<void> _markMessagesRead(
-      List<QueryDocumentSnapshot<Map<String, dynamic>>> documents) async {
-    final batch = _db.batch();
-    var hasUpdates = false;
-    for (final document in documents) {
-      final data = document.data();
-      if (data['senderUid'] == _uid) continue;
-      final deliveredTo =
-          List<String>.from(data['deliveredTo'] as List? ?? const []);
-      final readBy = List<String>.from(data['readBy'] as List? ?? const []);
-      if (readBy.contains(_uid) && deliveredTo.contains(_uid)) continue;
-      batch.update(document.reference, {
-        'deliveredTo': FieldValue.arrayUnion([_uid]),
-        'readBy': FieldValue.arrayUnion([_uid]),
-      });
-      hasUpdates = true;
+  static final Set<String> _readInFlight = <String>{};
+
+  /// يعلّم رسائل الطرف الآخر «مُسلَّمة ومقروءة». يُستدعى فقط عندما تكون
+  /// المحادثة ظاهرة والتطبيق في الواجهة.
+  static Future<void> markMessagesRead(
+      String conversationId, List<ChatMessage> messages) async {
+    final pending = <ChatMessage>[];
+    for (final message in messages) {
+      if (message.senderUid == _uid) continue;
+      if (message.readBy.contains(_uid) && message.deliveredTo.contains(_uid)) {
+        continue;
+      }
+      if (_readInFlight.contains('$conversationId/${message.id}')) continue;
+      pending.add(message);
     }
-    if (hasUpdates) await batch.commit();
+    if (pending.isEmpty) return;
+    final messagesRef = _chats.doc(conversationId).collection('messages');
+    // حد الدفعة الواحدة في Firestore 500 عملية.
+    for (var i = 0; i < pending.length; i += 400) {
+      final chunk = pending.skip(i).take(400).toList();
+      final keys = [for (final m in chunk) '$conversationId/${m.id}'];
+      _readInFlight.addAll(keys);
+      try {
+        final batch = _db.batch();
+        for (final message in chunk) {
+          batch.update(messagesRef.doc(message.id), {
+            'deliveredTo': FieldValue.arrayUnion([_uid]),
+            'readBy': FieldValue.arrayUnion([_uid]),
+          });
+        }
+        await batch.commit();
+      } finally {
+        _readInFlight.removeAll(keys);
+      }
+    }
   }
 
   static Future<bool> areMutualFriends(String otherUid) async {
@@ -435,6 +475,8 @@ class SocialService {
         'lastMessage': '',
         'lastSenderUid': '',
         'lastMessageId': '',
+        // رسالة واحدة نصية لغير الأصدقاء حتى يردّ الطرف الآخر (انظر القواعد).
+        'accepted': false,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -462,11 +504,15 @@ class SocialService {
     if (imageBytes.isEmpty || imageBytes.length > 700 * 1024) {
       throw ArgumentError(tr('حجم الصورة يجب ألا يتجاوز 700 كيلوبايت'));
     }
+    // Cloudinary/Storage إن كانا مفعّلين (رابط فقط في Firestore)، وإلا تُحفظ
+    // البايتات داخل المستند كما في وضع التجربة.
+    final url = await PostService.uploadChatImage(imageBytes);
     await _sendChatMessage(
       conversationId,
-      text: '📷 صورة',
+      text: tr('📷 صورة'),
       kind: 'image',
-      imageBytes: imageBytes,
+      imageBytes: url == null ? imageBytes : null,
+      imageUrl: url,
     );
   }
 
@@ -534,6 +580,7 @@ class SocialService {
     required String text,
     required String kind,
     Uint8List? imageBytes,
+    String? imageUrl,
   }) async {
     final chat = _chats.doc(conversationId);
     final message = chat.collection('messages').doc();
@@ -552,6 +599,22 @@ class SocialService {
       throw StateError(tr('لا يمكن إرسال الرسائل بعد الحظر'));
     }
 
+    // غير الأصدقاء: رسالة أولى نصية فقط، ثم الانتظار حتى يردّ الطرف الآخر.
+    // (القواعد في الخادم هي المرجع؛ هذا فحص مسبق لرسالة خطأ مفهومة.)
+    final chatData = conversation.data()!;
+    final accepted = chatData['accepted'] as bool? ?? true;
+    final lastSender = chatData['lastSenderUid'] as String? ?? '';
+    final hasMessages = (chatData['lastMessageId'] as String? ?? '').isNotEmpty;
+    final replying = hasMessages && lastSender != _uid;
+    if (!accepted && !replying && !await areMutualFriends(otherUid)) {
+      if (hasMessages) {
+        throw StateError(tr('انتظر رد الطرف الآخر لتكمل المراسلة'));
+      }
+      if (kind != 'text') {
+        throw StateError(tr('الرسالة الأولى لغير الأصدقاء نص فقط'));
+      }
+    }
+
     await _db.runTransaction((transaction) async {
       final snapshot = await transaction.get(chat);
       if (!snapshot.exists ||
@@ -567,12 +630,23 @@ class SocialService {
         'readBy': [_uid],
         'createdAt': FieldValue.serverTimestamp(),
       };
-      if (imageBytes != null) messageData['image'] = Blob(imageBytes);
+      if (imageUrl != null) {
+        messageData['imageUrl'] = imageUrl;
+      } else if (imageBytes != null) {
+        messageData['image'] = Blob(imageBytes);
+      }
+      final current = snapshot.data()!;
+      final currentSender = current['lastSenderUid'] as String? ?? '';
+      // الردّ على رسالة الطرف الآخر يجعل المحادثة «مقبولة» للطرفين.
+      final acceptsNow = (current['accepted'] as bool? ?? true) == false &&
+          currentSender.isNotEmpty &&
+          currentSender != _uid;
       transaction.update(chat, {
         'lastMessage': text,
         'lastSenderUid': _uid,
         'lastMessageId': message.id,
         'updatedAt': FieldValue.serverTimestamp(),
+        if (acceptsNow) 'accepted': true,
       });
       transaction.set(message, messageData);
     });

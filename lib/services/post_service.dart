@@ -444,6 +444,17 @@ class PostService {
     return url;
   }
 
+  /// يرفع صورة محادثة إلى Cloudinary أو Storage ويعيد رابطها المباشر.
+  /// يعيد null في وضع التجربة (بلا تخزين خارجي)، فتُحفظ الصورة داخل المستند.
+  static Future<String?> uploadChatImage(Uint8List bytes) async {
+    if (useCloudinary) return _uploadCloudinary(bytes, 'image/jpeg', 'jpg');
+    if (useStorage) {
+      return _upload(bytes, 'photos/${_user.uid}/chat_${_stamp()}.jpg',
+          'image/jpeg', null);
+    }
+    return null;
+  }
+
   /// وضع التجربة: يقسّم الملف إلى قطع ويحفظها في مجموعة media.
   static Future<String> _storeInFirestore(
       Uint8List bytes, void Function(double)? onProgress) async {
