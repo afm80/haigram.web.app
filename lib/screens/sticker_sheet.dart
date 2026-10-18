@@ -16,7 +16,8 @@ String stickerImageUrl(String emoji) {
   return 'https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/$cps.png';
 }
 
-/// إيموجي بشكل خط الجهاز الأصلي (نص عادي، بدون صور من الإنترنت).
+/// إيموجي ملوّن: صورة Twemoji (CC-BY 4.0) فتظهر بألوانها على كل الأجهزة.
+/// (خط الإيموجي في canvaskit كان يظهر أبيض وأسود). يرجع إلى النص إن تعذر التحميل.
 class StickerGlyph extends StatelessWidget {
   final String emoji;
   final double size;
@@ -24,17 +25,24 @@ class StickerGlyph extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final fallback = Text(emoji,
+        maxLines: 1,
+        softWrap: false,
+        style: TextStyle(fontSize: size * 0.8, height: 1.1));
     return SizedBox(
       width: size,
       height: size,
-      child: Center(
-        child: Text(
-          emoji,
-          maxLines: 1,
-          softWrap: false,
-          textScaler: TextScaler.noScaling,
-          style: TextStyle(fontSize: size * 0.8, height: 1.1),
-        ),
+      child: Image.network(
+        stickerImageUrl(emoji),
+        width: size,
+        height: size,
+        cacheWidth: (size * 3).round(),
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.medium,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) => Center(child: fallback),
+        loadingBuilder: (_, child, progress) =>
+            progress == null ? child : const SizedBox.shrink(),
       ),
     );
   }

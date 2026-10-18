@@ -1457,6 +1457,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// النقر مرتين على رسالة: تفاعل ❤️ سريع (وإن كان موجوداً يُزال)، كإنستغرام.
+  /// بقية التفاعلات (😂 👍 🔥 ...) من الضغط المطوّل ← إضافة تفاعل.
+  Future<void> _quickHeart(ChatMessage message) async {
+    final me = SocialService.currentUid;
+    final hasHeart = message.reactions[me] == '❤️';
+    HapticFeedback.lightImpact();
+    try {
+      await SocialService.setMessageReaction(
+        widget.conversationId,
+        message.id,
+        hasHeart ? null : '❤️',
+      );
+    } catch (error) {
+      _showError(tr('تعذر تحديث التفاعل'), error);
+    }
+  }
+
   Future<void> _showReactionPicker(ChatMessage message) async {
     const reactions = ['❤️', '😂', '😮', '😢', '👏', '🔥', '👍', '🙏'];
     final selected = await showModalBottomSheet<String?>(
@@ -1782,6 +1799,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         }
                         final bubble = GestureDetector(
                           behavior: HitTestBehavior.opaque,
+                          onDoubleTap: () => _quickHeart(message),
                           onLongPress: () => _showMessageActions(message, mine),
                           child: Container(
                             constraints: BoxConstraints(
