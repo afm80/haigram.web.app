@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 
@@ -93,8 +94,10 @@ class InboxScreen extends StatelessWidget {
       ];
     }
     // المحادثات التي لم تُرسل فيها أي رسالة بعد لا تظهر في الصندوق.
-    final conversations =
-        snapshot.data!.where((c) => c.lastMessageId.isNotEmpty).toList();
+    // ولا تظهر ما مسحتُها «لديّ» ما لم يصلها نشاط بعد المسح.
+    final conversations = snapshot.data!
+        .where((c) => c.visibleFor(SocialService.currentUid))
+        .toList();
     if (conversations.isEmpty) {
       return [
         SizedBox(
@@ -126,6 +129,7 @@ class InboxScreen extends StatelessWidget {
   ) {
     final colors = context.appColors;
     final otherUid = conversation.otherParticipant(SocialService.currentUid);
+    final unread = conversation.unreadFor(SocialService.currentUid);
     return FutureBuilder<AppUser?>(
       future: UserService.profileOf(otherUid),
       builder: (context, userSnapshot) {
@@ -162,24 +166,39 @@ class InboxScreen extends StatelessWidget {
                       color: Color(0xFF25D366), fontWeight: FontWeight.w600),
                 );
               }
-              return Text(
-                conversation.lastMessage.isEmpty
-                    ? tr('ابدأ المحادثة')
-                    : conversation.lastSenderUid == SocialService.currentUid
-                        ? trf('أنت: {0}', [conversation.lastMessage])
-                        : conversation.lastMessage,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: colors.textDim),
+              return _LastMessagePreview(
+                conversation: conversation,
+                unread: unread,
               );
             },
           ),
-          trailing: conversation.updatedAt.millisecondsSinceEpoch == 0
-              ? null
-              : Text(
+          trailing: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (conversation.updatedAt.millisecondsSinceEpoch != 0)
+                Text(
                   timeAgo(conversation.updatedAt),
-                  style: TextStyle(color: colors.textDim, fontSize: 11),
+                  style: TextStyle(
+                      color: unread ? colors.text : colors.textDim,
+                      fontSize: 11),
                 ),
+              if (unread)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Container(
+                    width: 10,
+                    height: 10,
+                    decoration: const BoxDecoration(
+                      color: AppColors.accent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          // ضغطة مطولة: حذف المحادثة لديّ فقط.
+          onLongPress: () => _confirmAndClearChat(context, conversation.id),
           onTap: () => rootNavigatorOf(context).push(
             appRoute(
               'chat',
@@ -194,6 +213,138 @@ class InboxScreen extends StatelessWidget {
       },
     );
   }
+}
+
+/// معاينة آخر رسالة في الصندوق. تحترم «حذف لديّ فقط»: إن كانت آخر رسالة قد
+/// أخفيتُها لا يظهر نصها هنا.
+class _LastMessagePreview extends StatefulWidget {
+  final Conversation conversation;
+  final bool unread;
+
+  const _LastMessagePreview({
+    required this.conversation,
+    required this.unread,
+  });
+
+  @override
+  State<_LastMessagePreview> createState() => _LastMessagePreviewState();
+}
+
+class _LastMessagePreviewState extends State<_LastMessagePreview> {
+  StreamSubscription<Set<String>>? _sub;
+  Set<String> _hidden = const {};
+
+  @override
+  void initState() {
+    super.initState();
+    _listen();
+  }
+
+  @override
+  void didUpdateWidget(covariant _LastMessagePreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.conversation.id != widget.conversation.id) {
+      _sub?.cancel();
+      _hidden = const {};
+      _listen();
+    }
+  }
+
+  void _listen() {
+    _sub = SocialService.hiddenMessageIds(widget.conversation.id).listen(
+      (ids) {
+        if (mounted) setState(() => _hidden = ids);
+      },
+      onError: (_) {},
+    );
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final c = widget.conversation;
+    final hidden = c.lastMessageId.isNotEmpty && _hidden.contains(c.lastMessageId);
+    final text = hidden
+        ? tr('تم حذف الرسالة')
+        : c.lastMessage.isEmpty
+            ? tr('ابدأ المحادثة')
+            : c.lastSenderUid == SocialService.currentUid
+                ? trf('أنت: {0}', [c.lastMessage])
+                : c.lastMessage;
+    return Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        color: widget.unread ? colors.text : colors.textDim,
+        fontWeight: widget.unread ? FontWeight.w700 : FontWeight.normal,
+        fontStyle: hidden ? FontStyle.italic : FontStyle.normal,
+      ),
+    );
+  }
+}
+
+/// يؤكد ثم يحذف المحادثة لديّ فقط (الطرف الآخر لا يتأثر). true عند النجاح.
+Future<bool> _confirmAndClearChat(
+    BuildContext context, String conversationId) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(tr('حذف المحادثة؟')),
+      content: Text(tr('تُحذف المحادثة من قائمتك فقط، وتبقى لدى الطرف الآخر.')),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: Text(tr('إلغاء')),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(dialogContext, true),
+          child: Text(tr('حذف')),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true) return false;
+  try {
+    await SocialService.clearChatForMe(conversationId);
+    return true;
+  } catch (error) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(friendlyError(error, fallback: tr('تعذر حذف المحادثة')))),
+      );
+    }
+    return false;
+  }
+}
+
+String _two(int n) => n.toString().padLeft(2, '0');
+
+/// الساعة بصيغة 24 ساعة بتوقيت الجهاز.
+String _clock(DateTime t) {
+  final l = t.toLocal();
+  return '${_two(l.hour)}:${_two(l.minute)}';
+}
+
+bool _sameDay(DateTime a, DateTime b) {
+  final x = a.toLocal();
+  final y = b.toLocal();
+  return x.year == y.year && x.month == y.month && x.day == y.day;
+}
+
+String _dayLabel(DateTime t) {
+  final now = DateTime.now();
+  if (_sameDay(t, now)) return tr('اليوم');
+  if (_sameDay(t, now.subtract(const Duration(days: 1)))) return tr('أمس');
+  final l = t.toLocal();
+  return '${l.year}/${_two(l.month)}/${_two(l.day)}';
 }
 
 /// صف واحد «النشاط والمتابعون الجدد» (على طريقة تيكتوك) يفتح صفحة النشاط.
@@ -616,11 +767,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   // الرسائل: اشتراك واحد يُنشأ في initState (لا يُعاد إنشاؤه مع كل build).
   StreamSubscription<List<ChatMessage>>? _messagesSub;
-  List<ChatMessage>? _messages;
+  List<ChatMessage>? _live; // آخر الرسائل مباشرةً
+  final List<ChatMessage> _older = []; // صفحات أقدم حُمّلت عند التمرير
+  DateTime? _anchor; // بعد تحميل الأقدم: يبدأ المباشر من هنا بلا حدّ
+  bool _hasMore = true;
   Object? _messagesError;
-  int _limit = SocialService.messagesPageSize;
   bool _loadingMore = false;
   bool _foreground = true;
+
+  List<ChatMessage>? get _messages {
+    final live = _live;
+    if (live == null) return null;
+    if (_older.isEmpty) return live;
+    final ids = {for (final m in live) m.id};
+    return [..._older.where((m) => !ids.contains(m.id)), ...live];
+  }
 
   // حالة المراسلة مع غير الأصدقاء: رسالة أولى نصية فقط ثم انتظار الردّ.
   StreamSubscription<Map<String, dynamic>?>? _chatSub;
@@ -638,13 +799,30 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ((_chatData?['lastMessageId'] as String?) ?? '').isNotEmpty;
 
   /// أرسلتُ الرسالة الأخيرة ولم يردّ الطرف الآخر: لا يمكنني الإرسال.
+  /// افتتحتُ هذه المحادثة من قبل (حتى لو حذفتُ رسالتي): لا افتتاح ثانٍ.
+  bool get _startedByMe =>
+      (_chatData?['startedBy'] as List?)?.contains(SocialService.currentUid) ??
+      false;
+
   bool get _waitingForReply =>
       _restricted &&
-      _hasMessages &&
-      _chatData?['lastSenderUid'] == SocialService.currentUid;
+      ((_hasMessages &&
+              _chatData?['lastSenderUid'] == SocialService.currentUid) ||
+          (!_hasMessages && _startedByMe));
 
   /// أول رسالة لغير صديق: نص فقط.
-  bool get _firstMessageToStranger => _restricted && !_hasMessages;
+  bool get _firstMessageToStranger =>
+      _restricted && !_hasMessages && !_startedByMe;
+
+  /// وقتٌ مخزّن في خريطة بمستند المحادثة (readAt / deliveredAt / clearedAt).
+  DateTime? _stampOf(String field, String uid) {
+    final raw = _chatData?[field];
+    if (raw is Map) {
+      final value = raw[uid];
+      if (value is Timestamp) return value.toDate();
+    }
+    return null;
+  }
 
   @override
   void initState() {
@@ -695,13 +873,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _messagesSub?.cancel();
     _messagesError = null;
     _messagesSub =
-        SocialService.messages(widget.conversationId, limit: _limit).listen(
+        SocialService.messages(widget.conversationId, since: _anchor).listen(
       (messages) {
         if (!mounted) return;
         setState(() {
-          _messages = messages;
+          _live = messages;
           _messagesError = null;
           _loadingMore = false;
+          // إن رجع أقل من الصفحة فلا يوجد أقدم (قبل تحميل أي صفحة أقدم).
+          if (_anchor == null && _older.isEmpty) {
+            _hasMore = messages.length >= SocialService.messagesPageSize;
+          }
         });
         _markRead();
       },
@@ -715,26 +897,61 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// علامة «مقروءة» فقط عندما تكون المحادثة ظاهرة والتطبيق في الواجهة.
+  /// علامة «مقروءة» فقط عندما تكون المحادثة ظاهرة والتطبيق في الواجهة:
+  /// كتابة واحدة بوقت أحدث رسالة من الطرف الآخر، لا تعديل كل رسالة.
   void _markRead() {
     final messages = _messages;
     if (!_foreground || !mounted || messages == null) return;
-    SocialService.markMessagesRead(widget.conversationId, messages)
+    DateTime? latest;
+    for (final m in messages) {
+      if (m.senderUid == SocialService.currentUid) continue;
+      if (latest == null || m.createdAt.isAfter(latest)) latest = m.createdAt;
+    }
+    if (latest == null) return;
+    final mine = _stampOf('readAt', SocialService.currentUid);
+    if (mine != null && !latest.isAfter(mine)) return;
+    SocialService.markChatRead(widget.conversationId, latest)
         .catchError((Object _) {});
   }
 
-  /// عند الوصول لأعلى القائمة (أقدم الرسائل) نحمّل صفحة أقدم.
+  /// عند الوصول لأعلى القائمة (أقدم الرسائل) نحمّل صفحة أقدم فقط، دون إعادة
+  /// قراءة ما سبق.
   void _onScroll() {
-    if (!_scroll.hasClients || _loadingMore) return;
-    final messages = _messages;
-    // إن رجع أقل من الحد فلا يوجد المزيد.
-    if (messages == null || messages.length < _limit) return;
+    if (!_scroll.hasClients || _loadingMore || !_hasMore) return;
+    if (_live == null) return;
     if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 200) {
+      _loadOlder();
+    }
+  }
+
+  Future<void> _loadOlder() async {
+    final live = _live;
+    if (live == null || live.isEmpty || _loadingMore) return;
+    setState(() => _loadingMore = true);
+    final liveStart = live.first.createdAt;
+    try {
+      final oldest = _older.isNotEmpty ? _older.first : live.first;
+      final page = await SocialService.olderMessages(
+          widget.conversationId, oldest.createdAt);
+      if (!mounted) return;
       setState(() {
-        _loadingMore = true;
-        _limit += SocialService.messagesPageSize;
+        final known = {
+          for (final m in _older) m.id,
+          for (final m in live) m.id,
+        };
+        _older.insertAll(0, page.where((m) => !known.contains(m.id)));
+        _hasMore = page.length >= SocialService.messagesPageSize;
+        _loadingMore = false;
       });
-      _subscribeMessages();
+      if (_anchor == null) {
+        // من الآن يبدأ المباشر من أقدم رسالة حالية ويكبر بلا حدّ، فلا تنشأ
+        // فجوة بين الصفحات الأقدم والرسائل الجديدة.
+        _anchor = liveStart;
+        _subscribeMessages();
+      }
+    } catch (error) {
+      if (mounted) setState(() => _loadingMore = false);
+      _showError(tr('تعذر تحميل الرسائل'), error);
     }
   }
 
@@ -861,6 +1078,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<void> _selectChatAction(String action) async {
     if (action == 'profile') {
       openProfile(context, widget.otherUid);
+      return;
+    }
+    if (action == 'clear') {
+      final cleared =
+          await _confirmAndClearChat(context, widget.conversationId);
+      if (cleared && mounted) Navigator.of(context).pop();
       return;
     }
     if (action == 'block' || action == 'unblock') {
@@ -1033,6 +1256,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ),
                   ),
                   PopupMenuItem(
+                    value: 'clear',
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.delete_outline_rounded),
+                      title: Text(tr('حذف المحادثة لديّ')),
+                    ),
+                  ),
+                  PopupMenuItem(
                     value: blockState.blockedByMe ? 'unblock' : 'block',
                     child: ListTile(
                       contentPadding: EdgeInsets.zero,
@@ -1079,8 +1310,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     if (_messages == null) {
                       return const AppLoading();
                     }
+                    final cleared =
+                        _stampOf('clearedAt', SocialService.currentUid);
+                    final otherRead = _stampOf('readAt', widget.otherUid);
+                    final otherDelivered =
+                        _stampOf('deliveredAt', widget.otherUid);
                     final messages = _messages!
-                        .where((m) => !_hidden.contains(m.id))
+                        .where((m) =>
+                            !_hidden.contains(m.id) &&
+                            (cleared == null || m.createdAt.isAfter(cleared)))
                         .toList();
                     if (messages.isEmpty) {
                       return _MessageState(
@@ -1112,6 +1350,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         final mine =
                             message.senderUid == SocialService.currentUid;
                         final sticker = message.kind == 'sticker';
+                        // مقروءة/مسلَّمة: إيصال المحادثة (readAt/deliveredAt)
+                        // أو الحقول القديمة في الرسالة نفسها (رسائل سابقة).
+                        final isRead = message.readBy.contains(widget.otherUid) ||
+                            (otherRead != null &&
+                                !message.createdAt.isAfter(otherRead));
+                        final isDelivered = isRead ||
+                            message.deliveredTo.contains(widget.otherUid) ||
+                            (otherDelivered != null &&
+                                !message.createdAt.isAfter(otherDelivered));
                           final bubble = GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onLongPress: () =>
@@ -1207,24 +1454,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Icon(
-                                        message.readBy.contains(widget.otherUid)
+                                        isDelivered
                                             ? Icons.done_all_rounded
-                                            : message.deliveredTo
-                                                    .contains(widget.otherUid)
-                                                ? Icons.done_all_rounded
-                                                : Icons.done_rounded,
+                                            : Icons.done_rounded,
                                         size: 14,
-                                        color: message.readBy
-                                                .contains(widget.otherUid)
+                                        color: isRead
                                             ? const Color(0xFFC4B5FD)
-                                            : message.deliveredTo
-                                                    .contains(widget.otherUid)
+                                            : isDelivered
                                                 ? Colors.white70
                                                 : Colors.white54,
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
-                                        timeAgo(message.createdAt),
+                                        _clock(message.createdAt),
                                         style: TextStyle(
                                           color: mine
                                               ? Colors.white70
@@ -1236,7 +1478,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                   )
                                 else
                                   Text(
-                                    timeAgo(message.createdAt),
+                                    _clock(message.createdAt),
                                     style: TextStyle(
                                       color: colors.textDim,
                                       fontSize: 10,
@@ -1246,7 +1488,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             ),
                             ),
                           );
-                        return Align(
+                        final row = Align(
                           alignment: mine
                               ? AlignmentDirectional.centerEnd
                               : AlignmentDirectional.centerStart,
@@ -1271,6 +1513,36 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                     Flexible(child: bubble),
                                   ],
                                 ),
+                        );
+                        // فاصل التاريخ فوق أول رسالة في كل يوم.
+                        final previous = index + 1 < messages.length
+                            ? messages[messages.length - 2 - index]
+                            : null;
+                        if (previous != null &&
+                            _sameDay(previous.createdAt, message.createdAt)) {
+                          return row;
+                        }
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: colors.surfaceHigh,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  _dayLabel(message.createdAt),
+                                  style: TextStyle(
+                                      color: colors.textDim, fontSize: 11),
+                                ),
+                              ),
+                            ),
+                            row,
+                          ],
                         );
                       },
                     );
