@@ -8,6 +8,7 @@ import '../services/presence_service.dart';
 import '../services/social_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
+import 'photo_tools.dart' show fitImageUnderLimit;
 import 'post_widgets.dart' show timeAgo, stopInlineVideos;
 import 'sticker_sheet.dart';
 import 'translate_widgets.dart';
@@ -224,11 +225,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
         imageQuality: 70,
       );
       if (image == null) return;
-      final bytes = await image.readAsBytes();
-      if (bytes.length > 700 * 1024) {
-        _fail(tr('تعذر إرفاق الصورة'), tr('حجم الصورة يجب ألا يتجاوز 700 كيلوبايت'));
-        return;
-      }
+      final bytes = await fitImageUnderLimit(await image.readAsBytes());
       if (mounted) setState(() => _pendingImage = bytes);
     } catch (e) {
       _fail(tr('تعذر إرفاق الصورة'), e);
@@ -424,7 +421,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                             ),
                                           )
                                         : c.kind == 'sticker'
-                                            ? StickerGlyph(c.text, size: 56)
+                                            ? StickerGlyph(c.text, size: 32)
                                             : TranslatableText(
                                                 text: c.text,
                                                 builder: (shown) => Text.rich(

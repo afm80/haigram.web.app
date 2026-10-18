@@ -269,6 +269,12 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
       case 'profileVisits':
         return appRoute<void>(
             'profileVisits', const {}, (_) => const ProfileVisitsScreen());
+      case 'blockedUsers':
+        return appRoute<void>(
+            'blockedUsers', const {}, (_) => const BlockedUsersScreen());
+      case 'savedPosts':
+        return appRoute<void>(
+            'savedPosts', const {}, (_) => const SavedPostsScreen());
       case 'search':
         return appRoute<void>(
             'search', const {}, (_) => const ExploreSearchScreen());

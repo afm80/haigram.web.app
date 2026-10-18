@@ -1,6 +1,8 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:image/image.dart' as img;
@@ -408,4 +410,40 @@ class _CircleGuidePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+
+/// يضمن ألا يتجاوز حجم صورة المحادثة/التعليق [maxBytes]. بعض المتصفحات
+/// (خصوصاً كاميرا الهاتف) تتجاهل خيارات التصغير في image_picker فتعود صورة
+/// ضخمة تُرفض بدل أن تُرسل؛ هنا نعيد ترميزها JPEG بأبعاد/جودة أقل عند الحاجة.
+Future<Uint8List> fitImageUnderLimit(Uint8List bytes,
+    {int maxBytes = 700 * 1024}) async {
+  if (bytes.length <= maxBytes) return bytes;
+  final out = await compute(_shrinkJpeg, <Object>[bytes, maxBytes]);
+  if (out == null) {
+    throw StateError(tr('حجم الصورة يجب ألا يتجاوز 700 كيلوبايت'));
+  }
+  return out;
+}
+
+Uint8List? _shrinkJpeg(List<Object> args) {
+  final bytes = args[0] as Uint8List;
+  final maxBytes = args[1] as int;
+  final decoded = img.decodeImage(bytes);
+  if (decoded == null) return null;
+  var side = 1280;
+  var quality = 70;
+  for (var i = 0; i < 6; i++) {
+    final longest = math.max(decoded.width, decoded.height);
+    final resized = longest > side
+        ? (decoded.width >= decoded.height
+            ? img.copyResize(decoded, width: side)
+            : img.copyResize(decoded, height: side))
+        : decoded;
+    final out = Uint8List.fromList(img.encodeJpg(resized, quality: quality));
+    if (out.length <= maxBytes) return out;
+    side = (side * 0.8).round();
+    quality = math.max(40, quality - 8);
+  }
+  return null;
 }

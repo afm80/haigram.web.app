@@ -16,6 +16,7 @@ import '../services/social_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
+import 'photo_tools.dart' show fitImageUnderLimit;
 import 'post_widgets.dart' show PostDetailScreen, PostImage, timeAgo;
 import 'profile_screen.dart' show FollowActionButton, openChatWith;
 import 'sticker_sheet.dart';
@@ -1303,13 +1304,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         imageQuality: 70,
       );
       if (image == null) return;
-      final bytes = await image.readAsBytes();
+      final bytes = await fitImageUnderLimit(await image.readAsBytes());
       if (!mounted) return;
-      if (bytes.length > 700 * 1024) {
-        _showError(tr('تعذر إرفاق الصورة'),
-            tr('حجم الصورة يجب ألا يتجاوز 700 كيلوبايت'));
-        return;
-      }
       setState(() => _pendingImage = bytes);
     } catch (error) {
       if (mounted) {
@@ -1319,35 +1315,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   friendlyError(error, fallback: tr('تعذر إرفاق الصورة')))),
         );
       }
-    }
-  }
-
-  Future<void> _chooseAttachment() async {
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: Text(tr('اختيار من المعرض')),
-              onTap: () => Navigator.pop(sheetContext, 'image'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt_outlined),
-              title: Text(tr('التقاط صورة')),
-              onTap: () => Navigator.pop(sheetContext, 'camera'),
-            ),
-          ],
-        ),
-      ),
-    );
-    switch (choice) {
-      case 'image':
-        await _pickImage(ImageSource.gallery);
-      case 'camera':
-        await _pickImage(ImageSource.camera);
     }
   }
 
@@ -1945,7 +1912,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                     ),
                                   )
                                 else if (sticker)
-                                  StickerGlyph(message.text, size: 72)
+                                  StickerGlyph(message.text, size: 40)
                                 else
                                   _messageBody(message.text, mine: mine),
                                 if (!sticker) const SizedBox(height: 3),
@@ -2202,15 +2169,26 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
+                        // الأزرار تستدعي المنتقي مباشرة داخل الضغطة (شرط المتصفحات).
                         IconButton(
-                          tooltip: tr('إرسال صورة أو التقاط صورة'),
+                          tooltip: tr('التقاط صورة'),
+                          visualDensity: VisualDensity.compact,
                           onPressed: (_sending || _firstMessageToStranger)
                               ? null
-                              : _chooseAttachment,
-                          icon: const Icon(Icons.add_circle_outline_rounded),
+                              : () => _pickImage(ImageSource.camera),
+                          icon: const Icon(Icons.photo_camera_outlined),
+                        ),
+                        IconButton(
+                          tooltip: tr('إرسال صورة'),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: (_sending || _firstMessageToStranger)
+                              ? null
+                              : () => _pickImage(ImageSource.gallery),
+                          icon: const Icon(Icons.image_outlined),
                         ),
                         IconButton(
                           tooltip: tr('الملصقات والرموز التعبيرية'),
+                          visualDensity: VisualDensity.compact,
                           onPressed: () {
                             FocusScope.of(context).unfocus();
                             showStickerSheet(
@@ -3042,6 +3020,101 @@ class _VisitTile extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// «قائمة الحظر»: الحسابات التي حظرتُها مع زر إلغاء الحظر.
+class BlockedUsersScreen extends StatelessWidget {
+  const BlockedUsersScreen({super.key});
+
+  Future<void> _unblock(BuildContext context, String uid, String name) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(tr('إلغاء الحظر؟')),
+        content: Text(tr('سيتمكن هذا المستخدم من مراسلتك مجدداً إذا كنتما تتابعان بعضكما.')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(tr('إلغاء')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(tr('إلغاء الحظر')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await SocialService.setBlocked(uid, false);
+      PostService.notifyStatsChanged();
+      messenger.showSnackBar(SnackBar(content: Text(tr('تم إلغاء الحظر'))));
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(
+          content:
+              Text(friendlyError(error, fallback: tr('تعذر تحديث الحظر')))));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return Scaffold(
+      backgroundColor: colors.bg,
+      appBar: AppBar(title: Text(tr('قائمة الحظر'))),
+      body: StreamBuilder<List<String>>(
+        stream: SocialService.blockedUserIds(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return ErrorState(
+                error: snapshot.error, title: tr('تعذر تحميل قائمة الحظر'));
+          }
+          if (!snapshot.hasData) return const AppLoading();
+          final ids = snapshot.data!;
+          if (ids.isEmpty) {
+            return _MessageState(
+              message: tr('لم تحظر أي حساب'),
+              icon: Icons.block_rounded,
+            );
+          }
+          return ListView(
+            children: [
+              for (final uid in ids)
+                FutureBuilder<AppUser?>(
+                  future: UserService.profileOf(uid),
+                  builder: (context, userSnap) {
+                    final user = userSnap.data;
+                    final name = user?.displayName ?? tr('مستخدم');
+                    return ListTile(
+                      leading: UserAvatar(
+                        uid: uid,
+                        fallbackName: user?.username ?? '',
+                        profile: user,
+                        radius: 24,
+                      ),
+                      title: Text(name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
+                      subtitle: user == null
+                          ? null
+                          : Text('@${user.username}',
+                              style: TextStyle(
+                                  color: colors.textDim, fontSize: 12)),
+                      trailing: OutlinedButton(
+                        onPressed: () => _unblock(context, uid, name),
+                        child: Text(tr('إلغاء الحظر')),
+                      ),
+                    );
+                  },
+                ),
+            ],
+          );
+        },
+      ),
     );
   }
 }

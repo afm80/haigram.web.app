@@ -9,6 +9,8 @@ import '../services/post_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
 import '../route_state.dart';
+import 'profile_screen.dart' show SavedPostsScreen;
+import 'social_screens.dart' show ProfileVisitsScreen, BlockedUsersScreen;
 
 /// صفحة الإعدادات: المظهر والخصوصية وتسجيل الخروج.
 /// لاحقاً: حذف الحساب.
@@ -291,9 +293,40 @@ class _PrivacySectionState extends State<_PrivacySection> {
               ),
               Divider(height: 1, color: colors.text.withOpacity(0.08)),
               ListTile(
+                leading: const Icon(Icons.people_outline_rounded),
+                title: Text(tr('من زار ملفي')),
+                subtitle: Text(
+                    tr('قائمة من زاروا ملفك الشخصي خلال آخر 30 يوماً'),
+                    style: dim()),
+                trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                onTap: () => Navigator.of(context).push(appRoute<void>(
+                    'profileVisits',
+                    const {},
+                    (_) => const ProfileVisitsScreen())),
+              ),
+              Divider(height: 1, color: colors.text.withOpacity(0.08)),
+              ListTile(
+                leading: const Icon(Icons.block_rounded),
+                title: Text(tr('قائمة الحظر')),
+                subtitle: Text(
+                    tr('الحسابات التي حظرتها، ومنها يمكنك إلغاء الحظر'),
+                    style: dim()),
+                trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                onTap: () => Navigator.of(context).push(appRoute<void>(
+                    'blockedUsers',
+                    const {},
+                    (_) => const BlockedUsersScreen())),
+              ),
+              Divider(height: 1, color: colors.text.withOpacity(0.08)),
+              ListTile(
                 leading: const Icon(Icons.bookmark_border_rounded),
                 title: Text(tr('المحفوظات')),
-                subtitle: Text(tr('خاصة بك دائماً ولا يراها أحد'), style: dim()),
+                subtitle: Text(
+                    tr('المنشورات التي حفظتها بزر العلامة 🔖 تجدها هنا. خاصة بك دائماً ولا يراها أحد'),
+                    style: dim()),
+                trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                onTap: () => Navigator.of(context).push(appRoute<void>(
+                    'savedPosts', const {}, (_) => const SavedPostsScreen())),
               ),
             ],
           ),

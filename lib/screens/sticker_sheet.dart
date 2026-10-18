@@ -16,7 +16,7 @@ String stickerImageUrl(String emoji) {
   return 'https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/$cps.png';
 }
 
-/// ملصق/إيموجي ملوّن: صورة Twemoji، ويرجع إلى النص إن تعذر تحميلها.
+/// إيموجي بشكل خط الجهاز الأصلي (نص عادي، بدون صور من الإنترنت).
 class StickerGlyph extends StatelessWidget {
   final String emoji;
   final double size;
@@ -24,21 +24,17 @@ class StickerGlyph extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fallback = Text(emoji, style: TextStyle(fontSize: size * 0.9));
     return SizedBox(
       width: size,
       height: size,
-      child: Image.network(
-        stickerImageUrl(emoji),
-        width: size,
-        height: size,
-        cacheWidth: (size * 3).round(),
-        fit: BoxFit.contain,
-        filterQuality: FilterQuality.high,
-        gaplessPlayback: true,
-        errorBuilder: (_, __, ___) => Center(child: fallback),
-        loadingBuilder: (_, child, progress) =>
-            progress == null ? child : const SizedBox.shrink(),
+      child: Center(
+        child: Text(
+          emoji,
+          maxLines: 1,
+          softWrap: false,
+          textScaler: TextScaler.noScaling,
+          style: TextStyle(fontSize: size * 0.8, height: 1.1),
+        ),
       ),
     );
   }
@@ -77,9 +73,9 @@ class _StickerSheetState extends State<_StickerSheet> {
     final colors = context.appColors;
     final category = stickerCategories[_index];
     return DraggableScrollableSheet(
-      initialChildSize: 0.65,
-      minChildSize: 0.4,
-      maxChildSize: 0.95,
+      initialChildSize: 0.45,
+      minChildSize: 0.3,
+      maxChildSize: 0.85,
       expand: false,
       builder: (context, scrollController) => Container(
         decoration: BoxDecoration(
@@ -134,9 +130,9 @@ class _StickerSheetState extends State<_StickerSheet> {
                 ],
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 6),
             SizedBox(
-              height: 54,
+              height: 44,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -147,14 +143,14 @@ class _StickerSheetState extends State<_StickerSheet> {
                     onTap: () => setState(() => _index = i),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 180),
-                      width: 52,
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      width: 40,
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: selected
                             ? AppColors.brandPurple.withOpacity(0.12)
                             : colors.surfaceHigh,
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: selected
                               ? AppColors.brandPurple.withOpacity(0.35)
@@ -162,14 +158,14 @@ class _StickerSheetState extends State<_StickerSheet> {
                           width: 1.2,
                         ),
                       ),
-                      child: StickerGlyph(stickerCategories[i].icon, size: 28),
+                      child: StickerGlyph(stickerCategories[i].icon, size: 22),
                     ),
                   );
                 },
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 14, 18, 8),
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
               child: Align(
                 alignment: AlignmentDirectional.centerStart,
                 child: Text(
@@ -186,37 +182,22 @@ class _StickerSheetState extends State<_StickerSheet> {
               child: GridView.builder(
                 key: ValueKey(_index),
                 controller: scrollController,
-                padding: const EdgeInsets.fromLTRB(14, 0, 14, 18),
+                padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
                 gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 74,
-                  mainAxisSpacing: 10,
-                  crossAxisSpacing: 10,
+                  maxCrossAxisExtent: 44,
+                  mainAxisSpacing: 2,
+                  crossAxisSpacing: 2,
                 ),
                 itemCount: category.items.length,
                 itemBuilder: (context, i) {
                   final sticker = category.items[i];
-                  return Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(18),
-                      onTap: () {
-                        Navigator.of(context).pop();
-                        widget.onPick(sticker);
-                      },
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: colors.surfaceHigh,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(
-                            color: colors.textDim.withOpacity(0.08),
-                            width: 1,
-                          ),
-                        ),
-                        child: Center(
-                          child: StickerGlyph(sticker, size: 42),
-                        ),
-                      ),
-                    ),
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      widget.onPick(sticker);
+                    },
+                    child: Center(child: StickerGlyph(sticker, size: 30)),
                   );
                 },
               ),

@@ -2043,6 +2043,19 @@ class _PostGrid extends StatelessWidget {
   }
 }
 
+/// صفحة «المحفوظات» (تُفتح من الإعدادات): المنشورات التي حفظتها.
+class SavedPostsScreen extends StatelessWidget {
+  const SavedPostsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(tr('المحفوظات'))),
+      body: const SafeArea(child: _SavedGrid()),
+    );
+  }
+}
+
 class _SavedGrid extends StatelessWidget {
   const _SavedGrid();
 
