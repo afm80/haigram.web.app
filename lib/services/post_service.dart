@@ -1173,6 +1173,8 @@ class PostService {
     required String ownerUid,
     String kind = 'text',
     Uint8List? imageBytes,
+    String? parentId,
+    String? replyToUsername,
   }) async {
     if (imageBytes != null && (imageBytes.isEmpty || imageBytes.length > 700 * 1024)) {
       throw ArgumentError(tr('حجم الصورة يجب ألا يتجاوز 700 كيلوبايت'));
@@ -1189,6 +1191,13 @@ class PostService {
       'createdAt': FieldValue.serverTimestamp(),
     };
     if (imageBytes != null) data['image'] = Blob(imageBytes);
+    // رد على تعليق: يُخزَّن في نفس المجموعة مع parentId (مستوى واحد فقط مثل إنستغرام).
+    if (parentId != null && parentId.isNotEmpty) {
+      data['parentId'] = parentId;
+      if (replyToUsername != null && replyToUsername.isNotEmpty) {
+        data['replyToUsername'] = replyToUsername;
+      }
+    }
     batch.set(commentRef, data);
     batch.update(_db.collection('posts').doc(postId),
         {'comments': FieldValue.increment(1)});
@@ -1214,11 +1223,18 @@ class PostService {
     } catch (_) {}
   }
 
+  /// يحذف التعليق مع كل ردوده، وينقص عدّاد التعليقات بعدد المحذوف.
   static Future<void> deleteComment(String postId, String commentId) async {
+    final replies = await _commentsRef(postId)
+        .where('parentId', isEqualTo: commentId)
+        .get();
     final batch = _db.batch();
     batch.delete(_commentsRef(postId).doc(commentId));
+    for (final r in replies.docs) {
+      batch.delete(r.reference);
+    }
     batch.update(_db.collection('posts').doc(postId),
-        {'comments': FieldValue.increment(-1)});
+        {'comments': FieldValue.increment(-(1 + replies.docs.length))});
     await batch.commit();
   }
 
@@ -1340,6 +1356,10 @@ class Comment {
   final List<String> likedBy;
   final DateTime createdAt;
 
+  /// معرّف التعليق الأب إن كان هذا ردّاً، و[replyToUsername] من يُرَدّ عليه.
+  final String? parentId;
+  final String? replyToUsername;
+
   Comment(
       {required this.id,
       required this.uid,
@@ -1349,7 +1369,9 @@ class Comment {
       this.kind = 'text',
       this.imageBytes,
       required this.likedBy,
-      required this.createdAt});
+      required this.createdAt,
+      this.parentId,
+      this.replyToUsername});
 
   factory Comment.fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> d) {
     final m = d.data();
@@ -1363,6 +1385,8 @@ class Comment {
       imageBytes: (m['image'] as Blob?)?.bytes,
       likedBy: List<String>.from(m['likedBy'] as List? ?? const []),
       createdAt: (m['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      parentId: m['parentId'] as String?,
+      replyToUsername: m['replyToUsername'] as String?,
     );
   }
 }

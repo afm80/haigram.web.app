@@ -294,6 +294,31 @@ class SocialService {
     });
   }
 
+  /// يرسل بلاغاً عن تعليق بعينه (نفس مجموعة reports مع type = comment).
+  static Future<void> reportComment(
+      String postId, String commentId, String ownerUid, String reason,
+      {String details = ''}) async {
+    if (postId.isEmpty ||
+        commentId.isEmpty ||
+        ownerUid.isEmpty ||
+        ownerUid == _uid ||
+        !reportReasons.containsKey(reason)) {
+      throw ArgumentError(tr('بلاغ غير صالح'));
+    }
+    await _db.collection('reports').add({
+      'type': 'comment',
+      'postId': postId,
+      'commentId': commentId,
+      'targetUid': ownerUid,
+      'reporterUid': _uid,
+      'reason': reason,
+      'details': details.trim().length > 300
+          ? details.trim().substring(0, 300)
+          : details.trim(),
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   static Stream<List<Conversation>> conversations() => _chats
           .where('participants', arrayContains: _uid)
           .snapshots()
