@@ -197,6 +197,7 @@ const Map<String, String> _en = {
   'إعجاب بالتعليق': "Like comment",
   'الملصقات': "Stickers",
   'الأحدث': "Recent",
+  'رجوع': "Back",
   'لا توجد ملصقات حديثة بعد': "No recent stickers yet",
   'إرسال صورة': "Send a photo",
   'أضف تعليقاً...': "Add a comment...",
