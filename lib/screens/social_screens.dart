@@ -2110,22 +2110,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               ),
               if (_typingUsers.keys
                   .any((uid) => uid != SocialService.currentUid))
-                SafeArea(
-                  top: false,
-                  child: Container(
-                    width: double.infinity,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    color: colors.surfaceHigh,
-                    child: Text(
-                      tr('يكتب الآن…'),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: colors.textDim,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
+                    child: _TypingBubble(otherUid: widget.otherUid),
                   ),
                 ),
               if (!blockState.blocked && _waitingForReply)
@@ -3451,6 +3440,71 @@ class _PendingImagesStrip extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+
+/// فقاعة «يكتب الآن» مثل إنستغرام: صورة الشخص مع ثلاث نقاط متحركة.
+class _TypingBubble extends StatefulWidget {
+  final String otherUid;
+  const _TypingBubble({required this.otherUid});
+
+  @override
+  State<_TypingBubble> createState() => _TypingBubbleState();
+}
+
+class _TypingBubbleState extends State<_TypingBubble>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        UserAvatar(uid: widget.otherUid, radius: 12),
+        const SizedBox(width: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: colors.surfaceHigh,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, _) => Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(3, (i) {
+                final t = (_controller.value + i * 0.18) % 1.0;
+                final wave = Curves.easeInOut
+                    .transform(t < 0.5 ? t * 2 : 2 - t * 2);
+                return Container(
+                  width: 7,
+                  height: 7,
+                  margin: EdgeInsets.only(left: i == 0 ? 0 : 4),
+                  transform: Matrix4.translationValues(0, -4 * wave, 0),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: colors.textDim.withOpacity(0.45 + 0.45 * wave),
+                  ),
+                );
+              }),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
