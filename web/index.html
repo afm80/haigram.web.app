@@ -173,7 +173,8 @@
     #install-banner button {
       border: 0; border-radius: 10px; padding: 9px 14px; font-weight: 700; cursor: pointer;
     }
-    #install-yes { background: #9A1FA8; color: #fff; }
+    #install-yes { background: linear-gradient(90deg, #9A1FA8, #C02C9E); color: #fff; }
+    #install-logo { width: 44px; height: 44px; flex: none; border-radius: 12px; display: block; }
     #install-no { background: transparent; color: #9AA2B5; }
     #install-text { flex: 1; }
     /* نص تعريفي مقروء لمحركات البحث والقارئات الصوتية، غير ظاهر بصرياً. */
@@ -232,6 +233,7 @@
     </div>
   </noscript>
   <div id="install-banner">
+    <img id="install-logo" src="icons/Icon-192.png" width="44" height="44" alt="Haigram">
     <div id="install-text"></div>
     <button id="install-yes">تثبيت</button>
     <button id="install-no">لاحقاً</button>
