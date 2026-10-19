@@ -109,21 +109,56 @@ class _StoriesBarState extends State<StoriesBar> {
       valueListenable: installState,
       builder: (context, state, _) {
         if (state != 'prompt' && state != 'ios') return const SizedBox.shrink();
-        return _cell(
-          label: tr('تثبيت التطبيق'),
-          child: GestureDetector(
-            onTap: () => _installTapped(state),
-            child: Container(
-              width: 66,
-              height: 66,
-              padding: const EdgeInsets.all(3),
-              decoration: const BoxDecoration(
-                  shape: BoxShape.circle, gradient: AppColors.storyGradient),
-              child: Container(
-                decoration: BoxDecoration(
-                    shape: BoxShape.circle, color: context.appColors.bg),
-                child: const Icon(Icons.download_rounded,
-                    size: 28, color: AppColors.brandPurple),
+        // زر أفقي متناسق: الشعار + أيقونة التثبيت + نص «تثبيت التطبيق» بجانبها.
+        final colors = context.appColors;
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: Padding(
+              // يتمركز رأسياً مع حلقات القصص (ارتفاعها 66).
+              padding: const EdgeInsets.only(top: 9),
+              child: GestureDetector(
+                onTap: () => _installTapped(state),
+                child: Container(
+                  height: 48,
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(24),
+                    gradient: AppColors.storyGradient,
+                  ),
+                  child: Container(
+                    padding: const EdgeInsetsDirectional.only(
+                        start: 10, end: 6),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(22),
+                      color: colors.bg,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const HaigramLogo(size: 28),
+                        const SizedBox(width: 8),
+                        Text(
+                          tr('تثبيت التطبيق'),
+                          maxLines: 1,
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: AppColors.brandPurple),
+                          child: const Icon(Icons.download_rounded,
+                              size: 18, color: Colors.white),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
           ),

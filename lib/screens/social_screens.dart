@@ -1887,7 +1887,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             constraints: BoxConstraints(
                                 maxWidth: MediaQuery.sizeOf(context).width *
                                     (mine ? 0.78 : 0.70)),
-                            margin: const EdgeInsets.symmetric(vertical: 4),
+                            margin: const EdgeInsets.only(top: 4),
                             padding: sticker
                                 ? const EdgeInsets.symmetric(
                                     horizontal: 4, vertical: 2)
@@ -1977,43 +1977,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                   StickerMessage(message.text)
                                 else
                                   _messageBody(message.text, mine: mine),
-                                if (!sticker) const SizedBox(height: 3),
-                                if (mine)
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        isDelivered
-                                            ? Icons.done_all_rounded
-                                            : Icons.done_rounded,
-                                        size: 16,
-                                        // قُرئت: علامتان زرقاوان (مثل واتساب).
-                                        color: isRead
-                                            ? const Color(0xFF4FC3F7)
-                                            : isDelivered
-                                                ? Colors.white70
-                                                : Colors.white54,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        _clock(message.createdAt),
-                                        style: TextStyle(
-                                          color: mine
-                                              ? Colors.white70
-                                              : colors.textDim,
-                                          fontSize: 10,
-                                        ),
-                                      ),
-                                    ],
-                                  )
-                                else
-                                  Text(
-                                    _clock(message.createdAt),
-                                    style: TextStyle(
-                                      color: colors.textDim,
-                                      fontSize: 10,
-                                    ),
-                                  ),
                                 if (reactionCounts.isNotEmpty)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 5),
@@ -2046,12 +2009,51 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             ),
                           ),
                         );
+                        // علامتا القراءة والوقت أسفل الفقاعة (خارجها).
+                        final meta = Padding(
+                          padding: const EdgeInsetsDirectional.only(
+                              top: 2, bottom: 4, start: 4, end: 4),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (mine) ...[
+                                Icon(
+                                  isDelivered
+                                      ? Icons.done_all_rounded
+                                      : Icons.done_rounded,
+                                  size: 16,
+                                  // قُرئت: علامتان زرقاوان (مثل واتساب).
+                                  color: isRead
+                                      ? const Color(0xFF4FC3F7)
+                                      : isDelivered
+                                          ? colors.textDim
+                                          : colors.textDim.withOpacity(0.6),
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+                              Text(
+                                _clock(message.createdAt),
+                                style: TextStyle(
+                                  color: colors.textDim,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                        final bubbleWithMeta = Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: mine
+                              ? CrossAxisAlignment.end
+                              : CrossAxisAlignment.start,
+                          children: [bubble, meta],
+                        );
                         final row = Align(
                           alignment: mine
                               ? AlignmentDirectional.centerEnd
                               : AlignmentDirectional.centerStart,
                           child: mine
-                              ? bubble
+                              ? bubbleWithMeta
                               : Row(
                                   mainAxisSize: MainAxisSize.min,
                                   crossAxisAlignment: CrossAxisAlignment.end,
@@ -2059,7 +2061,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                     // النقر على صورة المرسل يفتح حسابه.
                                     Padding(
                                       padding: const EdgeInsetsDirectional.only(
-                                          end: 6, bottom: 4),
+                                          end: 6, bottom: 22),
                                       child: UserAvatar(
                                         uid: message.senderUid,
                                         radius: 14,
@@ -2067,7 +2069,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                             context, message.senderUid),
                                       ),
                                     ),
-                                    Flexible(child: bubble),
+                                    Flexible(child: bubbleWithMeta),
                                   ],
                                 ),
                         );
