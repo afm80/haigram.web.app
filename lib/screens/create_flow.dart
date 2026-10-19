@@ -306,9 +306,10 @@ class _CaptureScreenState extends State<CaptureScreen> {
     } on MediaError catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() => _error =
             friendlyError(e, fallback: tr('تعذر فتح الكاميرا أو الملفات')));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -495,9 +496,10 @@ class _ComposeScreenState extends State<ComposeScreen> {
     } on MediaError catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(
             () => _error = friendlyError(e, fallback: tr('تعذر اختيار الصور')));
+      }
     }
   }
 

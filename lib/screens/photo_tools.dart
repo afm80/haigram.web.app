@@ -4,7 +4,6 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:image/image.dart' as img;
 
 import '../services/user_service.dart';

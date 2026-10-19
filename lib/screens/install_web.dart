@@ -28,8 +28,9 @@ ValueListenable<String> get installState => _state;
 /// يفتح نافذة التثبيت الرسمية (أندرويد/كروم). يرجع true عند القبول.
 Future<bool> promptInstall() async {
   try {
-    final r = await js_util.promiseToFuture<Object?>(
-        js_util.callMethod<Object?>(html.window, 'haigramInstall', []));
+    final Object promise =
+        js_util.callMethod<Object>(html.window, 'haigramInstall', []);
+    final r = await js_util.promiseToFuture<Object?>(promise);
     return r == true;
   } catch (_) {
     return false;

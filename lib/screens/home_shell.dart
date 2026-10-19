@@ -91,8 +91,9 @@ class _HomeShellState extends State<HomeShell> {
                   onRetry: () =>
                       setState(() => _profile = UserService.ensureProfile())));
         }
-        if (!snap.hasData)
+        if (!snap.hasData) {
           return const Scaffold(body: Center(child: HaigramLogo(size: 96)));
+        }
         return _Tabs(
           themeMode: widget.themeMode,
           onThemeModeChanged: widget.onThemeModeChanged,

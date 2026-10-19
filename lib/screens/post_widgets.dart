@@ -69,9 +69,10 @@ class _PostCardState extends State<PostCard> {
   Future<void> _copyPostLink() async {
     await Clipboard.setData(
         ClipboardData(text: PostService.postLink(widget.post)));
-    if (mounted)
+    if (mounted) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(tr('تم نسخ رابط المنشور'))));
+    }
   }
 
   @override
@@ -872,8 +873,9 @@ class PostDetailScreen extends StatelessWidget {
           initialData: post,
           builder: (context, snap) {
             final live = snap.data;
-            if (live == null)
+            if (live == null) {
               return Center(child: Text(tr('هذا المنشور لم يعد متاحاً')));
+            }
             return ListView(
                 children: [
                   PostCard(post: live, autoPlayVideo: true, expandText: true)
@@ -1205,7 +1207,7 @@ class _ShortActionsBarState extends State<_ShortActionsBar> {
   late final Stream<Post?> _live = PostService.postStream(widget.post.id);
 
   Widget _btn(IconData icon, String label, VoidCallback onTap,
-      {Color color = Colors.white, String? tooltip}) {
+      {Color color = Colors.white}) {
     return TextButton.icon(
       onPressed: onTap,
       style: TextButton.styleFrom(

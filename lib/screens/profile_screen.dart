@@ -1282,13 +1282,15 @@ class _UserListState extends State<_UserList> {
           child: FutureBuilder<List<AppUser>>(
             future: _users,
             builder: (context, snap) {
-              if (snap.hasError)
+              if (snap.hasError) {
                 return ErrorState(
                     error: snap.error,
                     title: tr('تعذر التحميل'),
                     onRetry: () => setState(() => _users = _load()));
-              if (!snap.hasData)
+              }
+              if (!snap.hasData) {
                 return const AppLoading();
+              }
               final list = snap.data!
                   .where((u) =>
                       u.username.contains(_q) ||
@@ -1968,7 +1970,6 @@ class _PostGrid extends StatelessWidget {
   final List<Post> list;
   final Set<String> pinnedIds;
   final bool canPin;
-  final bool shrink; // داخل ListView
   final bool openAsShorts; // الضغط يفتح عارض الشورتز العمودي (تمرير بين المقاطع)
   final double aspectRatio; // عرض/ارتفاع البطاقة
   final double tileWidth; // عرض البطاقة التقريبي لحساب عدد الأعمدة
@@ -1977,7 +1978,6 @@ class _PostGrid extends StatelessWidget {
     required this.list,
     this.pinnedIds = const <String>{},
     this.canPin = false,
-    this.shrink = false,
     this.openAsShorts = false,
     this.aspectRatio = 1,
     this.tileWidth = 150,
@@ -1988,8 +1988,6 @@ class _PostGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) => GridView.builder(
-        shrinkWrap: shrink,
-        physics: shrink ? const NeverScrollableScrollPhysics() : null,
         padding: const EdgeInsets.all(2),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: (constraints.maxWidth / tileWidth)
@@ -2085,8 +2083,9 @@ class _SavedGrid extends StatelessWidget {
     return StreamBuilder<List<Post>>(
       stream: PostService.savedPosts(),
       builder: (context, snap) {
-        if (snap.hasError)
+        if (snap.hasError) {
           return ErrorState(error: snap.error, title: tr('تعذر التحميل'));
+        }
         if (!snap.hasData) return const AppLoading();
         final list = snap.data!;
         if (list.isEmpty) {
@@ -2267,8 +2266,7 @@ String _compactCount(int n) {
 /// أعداد المشاهدات والإعجابات والتعليقات والمشاركات أسفل كرت الفيديو/المنشور.
 class _CardStats extends StatelessWidget {
   final Post post;
-  final bool showViews;
-  const _CardStats({required this.post, this.showViews = false});
+  const _CardStats({required this.post});
 
   Widget _item(Widget icon, int count) => Padding(
         padding: const EdgeInsetsDirectional.only(end: 8),
@@ -2314,11 +2312,6 @@ class _CardStats extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (showViews)
-                  _item(
-                      const Icon(Icons.play_arrow_rounded,
-                          size: 16, color: Colors.white, shadows: shadow),
-                      post.views),
                 _item(
                     const Icon(Icons.favorite_rounded,
                         size: size, color: Colors.white, shadows: shadow),

@@ -91,7 +91,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     AppPalette.light.bg,
                     AppPalette.light.bg
                   ],
-            stops: [0, 0.55, 1],
+            stops: const [0, 0.55, 1],
           ),
         ),
         child: SafeArea(
