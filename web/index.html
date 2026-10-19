@@ -59,7 +59,21 @@
 
   <link rel="icon" type="image/png" href="favicon.png"/>
   <link rel="manifest" href="manifest.json">
-  <title>Haigram</title>
+  <title>Haigram — شارك صورك وقصصك ومنشوراتك</title>
+  <link rel="canonical" href="https://haigram.web.app/">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Haigram",
+    "url": "https://haigram.web.app/",
+    "description": "Haigram تطبيق اجتماعي لمشاركة الصور والمنشورات والقصص، واكتشاف محتوى جديد والتواصل مع الأصدقاء.",
+    "applicationCategory": "SocialNetworkingApplication",
+    "operatingSystem": "Web",
+    "inLanguage": "ar",
+    "image": "https://haigram.web.app/icons/og-image.png"
+  }
+  </script>
 
   <!-- تم حذف سكربت تغيير عرض الـviewport: كان يجعل عرض الصفحة أكبر من شاشة الجوال/الآيباد (تخطيط بعرض ~924 على شاشة 768) فتظهر الواجهة مقصوصة. نستخدم width=device-width القياسي. -->
 
@@ -161,6 +175,18 @@
     #install-yes { background: #9A1FA8; color: #fff; }
     #install-no { background: transparent; color: #9AA2B5; }
     #install-text { flex: 1; }
+    /* نص تعريفي مقروء لمحركات البحث والقارئات الصوتية، غير ظاهر بصرياً. */
+    .seo-intro {
+      position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+      overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
+    }
+    .noscript-msg {
+      position: fixed; inset: 0; z-index: 100000; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; padding: 24px; text-align: center;
+      background: #0B0B12; color: #F3F5F9; font: 16px/1.9 system-ui, sans-serif;
+    }
+    .noscript-msg h1 { margin: 0 0 10px; font-size: 26px; }
+    .noscript-msg p { margin: 0; max-width: 360px; color: #9AA2B5; }
   </style>
 </head>
 <body>
@@ -189,6 +215,21 @@
       } catch (e) {}
     })();
   </script>
+  <main class="seo-intro" dir="rtl" lang="ar">
+    <h1>Haigram — شارك صورك وقصصك ومنشوراتك</h1>
+    <p>Haigram تطبيق اجتماعي لمشاركة الصور والمنشورات والقصص، واكتشاف محتوى جديد والتواصل مع الأصدقاء.</p>
+    <ul>
+      <li>المنشورات والصور: انشر لحظاتك وتابع منشورات أصدقائك.</li>
+      <li>القصص: شارك قصصاً سريعة تظهر لمتابعيك.</li>
+      <li>المحادثات والاكتشاف: تواصل مع الآخرين واكتشف حسابات ومحتوى جديداً.</li>
+    </ul>
+  </main>
+  <noscript>
+    <div class="noscript-msg" dir="rtl">
+      <h1>Haigram</h1>
+      <p>Haigram تطبيق اجتماعي لمشاركة الصور والمنشورات والقصص، واكتشاف محتوى جديد والتواصل مع الأصدقاء. يرجى تفعيل جافاسكربت في المتصفح لتشغيل التطبيق.</p>
+    </div>
+  </noscript>
   <div id="install-banner">
     <div id="install-text"></div>
     <button id="install-yes">تثبيت</button>
