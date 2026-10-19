@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:http/http.dart' as http;
 
 import '../l10n.dart';
 import '../net_error.dart';
@@ -13,7 +16,6 @@ import 'profile_screen.dart' show SavedPostsScreen;
 import 'social_screens.dart' show ProfileVisitsScreen, BlockedUsersScreen;
 
 /// صفحة الإعدادات: المظهر والخصوصية وتسجيل الخروج.
-/// لاحقاً: حذف الحساب.
 class SettingsScreen extends StatelessWidget {
   final Future<void> Function(ThemeMode) onThemeModeChanged;
 
@@ -68,6 +70,92 @@ class SettingsScreen extends StatelessWidget {
             content: Text(friendlyError(error,
                 fallback: tr('تعذر تسجيل الخروج')))),
       );
+    }
+  }
+
+  Future<void> _confirmDeleteAccount(BuildContext context) async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(tr('حذف الحساب؟')),
+        content: Text(tr(
+            'سيتم حذف حسابك وكل منشوراتك وقصصك وتعليقاتك ومحادثاتك نهائياً، ولا يمكن التراجع عن ذلك.')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(tr('إلغاء')),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(tr('حذف الحساب')),
+          ),
+        ],
+      ),
+    );
+    if (shouldDelete != true || !context.mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    // نافذة انتظار لا تُغلق باللمس حتى ينتهي الحذف.
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: const Center(child: CircularProgressIndicator()),
+      ),
+    );
+
+    var deleted = false;
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw Exception('not signed in');
+      final token = await user.getIdToken(true);
+      const projectId = String.fromEnvironment('FB_PROJECT_ID');
+      final response = await http.post(
+        Uri.parse(
+            'https://us-central1-$projectId.cloudfunctions.net/deleteMyAccount'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'data': {}}),
+      );
+      if (response.statusCode != 200) {
+        String message = tr('تعذر حذف الحساب');
+        try {
+          final body = jsonDecode(utf8.decode(response.bodyBytes));
+          final serverMessage = body['error']?['message'];
+          if (serverMessage is String && serverMessage.isNotEmpty) {
+            message = serverMessage;
+          }
+        } catch (_) {}
+        throw Exception(message);
+      }
+      deleted = true;
+    } catch (error) {
+      navigator.pop(); // يغلق نافذة الانتظار
+      final text = error.toString().replaceFirst('Exception: ', '');
+      messenger.showSnackBar(
+        SnackBar(content: Text(text.isEmpty ? tr('تعذر حذف الحساب') : text)),
+      );
+      return;
+    }
+
+    if (deleted) {
+      navigator.pop(); // يغلق نافذة الانتظار
+      navigator.pop(); // يغلق صفحة الإعدادات
+      try {
+        if (!kIsWeb) {
+          try {
+            await GoogleSignIn().signOut();
+          } catch (_) {}
+        }
+        await FirebaseAuth.instance.signOut();
+      } catch (_) {}
+      UserService.me = null;
+      RouteStore.clear();
     }
   }
 
@@ -149,17 +237,34 @@ class SettingsScreen extends StatelessWidget {
                 color: colors.surface,
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: ListTile(
-                leading: const Icon(Icons.logout_rounded,
-                    color: AppColors.brandPurple),
-                title: Text(
-                  tr('تسجيل الخروج'),
-                  style: TextStyle(color: AppColors.brandPurple),
-                ),
-                onTap: () => _confirmSignOut(context),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.logout_rounded,
+                        color: AppColors.brandPurple),
+                    title: Text(
+                      tr('تسجيل الخروج'),
+                      style: TextStyle(color: AppColors.brandPurple),
+                    ),
+                    onTap: () => _confirmSignOut(context),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  Divider(height: 1, color: colors.text.withOpacity(0.08)),
+                  ListTile(
+                    leading: const Icon(Icons.delete_forever_rounded,
+                        color: Colors.red),
+                    title: Text(
+                      tr('حذف الحساب'),
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                    onTap: () => _confirmDeleteAccount(context),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
