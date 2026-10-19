@@ -260,6 +260,9 @@
     })();
 
     // ---- نافذة "إضافة إلى الشاشة الرئيسية" ----
+    // تُعرّض أيضاً دوال للتطبيق (Flutter) كي يعرض زر «تثبيت التطبيق» للزوار:
+    //   window.haigramInstallState() => 'standalone' | 'prompt' | 'ios' | 'none'
+    //   window.haigramInstall()      => Promise<bool>  (يفتح نافذة التثبيت الرسمية)
     (function () {
       var banner = document.getElementById('install-banner');
       var text = document.getElementById('install-text');
@@ -268,13 +271,39 @@
       var deferred = null;
 
       var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+      var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
       var dismissed = false;
       try {
         dismissed = localStorage.getItem('installDismissed') === '1';
       } catch (error) {
         console.warn('Unable to read install prompt preference:', error);
       }
-      if (standalone || dismissed) return;
+
+      function notify() {
+        window.dispatchEvent(new Event('haigram-install-state'));
+      }
+      window.haigramInstallState = function () {
+        if (standalone) return 'standalone';
+        if (deferred) return 'prompt';
+        if (isIOS) return 'ios';
+        return 'none';
+      };
+      window.haigramInstall = async function () {
+        if (!deferred) return false;
+        var installPrompt = deferred;
+        deferred = null;
+        notify();
+        try {
+          await installPrompt.prompt();
+          var choice = await installPrompt.userChoice;
+          return !!choice && choice.outcome === 'accepted';
+        } catch (error) {
+          console.error('Unable to open the install prompt:', error);
+          return false;
+        }
+      };
+
+      if (standalone) return;
 
       function show() {
         if (window.haigramAppReady) banner.style.display = 'flex';
@@ -287,43 +316,42 @@
           console.warn('Unable to save install prompt preference:', error);
         }
       }
-      window.haigramShowInstallBanner = show;
+      window.haigramShowInstallBanner = function () {
+        if (!dismissed) show();
+      };
       window.haigramHideInstallBanner = function () {
         banner.style.display = 'none';
       };
-      no.onclick = hide;
+      no.onclick = function () { dismissed = true; hide(); };
 
       // أندرويد / كروم: الحدث الرسمي
       window.addEventListener('beforeinstallprompt', function (e) {
         e.preventDefault();
         deferred = e;
+        notify();
+        if (dismissed) return;
         text.textContent = 'ثبّت Haigram على شاشتك الرئيسية لتجربة أسرع';
         yes.style.display = '';
         setTimeout(show, 2500);
       });
       yes.onclick = async function () {
-        if (!deferred) return hide();
-        var installPrompt = deferred;
-        deferred = null;
         yes.disabled = true;
-        try {
-          await installPrompt.prompt();
-          await installPrompt.userChoice;
-          hide();
-        } catch (error) {
-          console.error('Unable to open the install prompt:', error);
-          text.textContent = 'تعذر فتح التثبيت. استخدم قائمة المتصفح واختر "تثبيت التطبيق".';
-          yes.style.display = 'none';
-          no.textContent = 'إغلاق';
-        } finally {
-          yes.disabled = false;
-        }
+        var ok = await window.haigramInstall();
+        yes.disabled = false;
+        if (ok) return hide();
+        text.textContent = 'تعذر فتح التثبيت. استخدم قائمة المتصفح واختر \"تثبيت التطبيق\".';
+        yes.style.display = 'none';
+        no.textContent = 'إغلاق';
       };
-      window.addEventListener('appinstalled', hide);
+      window.addEventListener('appinstalled', function () {
+        deferred = null;
+        standalone = true;
+        hide();
+        notify();
+      });
 
       // آيفون / سفاري: لا يوجد حدث، فنعرض تعليمات يدوية
-      var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-      if (isIOS) {
+      if (isIOS && !dismissed) {
         text.innerHTML = 'للتثبيت على آيفون: اضغط زر <b>المشاركة</b> ⬆️ ثم <b>إضافة إلى الشاشة الرئيسية</b>';
         yes.style.display = 'none';
         no.textContent = 'حسناً';
