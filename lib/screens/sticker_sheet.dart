@@ -91,6 +91,50 @@ List<String>? parseStickers(String text) {
   return out;
 }
 
+/// يحوّل [text] إلى أجزاء نص عادية + صور إيموجي ملوّنة (WidgetSpan) داخل السطر نفسه.
+/// يُستخدم لعرض الرسائل المختلطة (نص + إيموجي) أو أكثر من 3 إيموجي بألوانها
+/// بدل خط الإيموجي الأبيض والأسود في canvaskit.
+List<InlineSpan> inlineEmojiSpans(String text, TextStyle style) {
+  final all = _allStickers;
+  final spans = <InlineSpan>[];
+  final buf = StringBuffer();
+  void flush() {
+    if (buf.isEmpty) return;
+    spans.add(TextSpan(text: buf.toString(), style: style));
+    buf.clear();
+  }
+
+  final size = (style.fontSize ?? 15) * 1.3;
+  var i = 0;
+  while (i < text.length) {
+    String? found;
+    if (text.codeUnitAt(i) >= 0x80) {
+      final remaining = text.length - i;
+      final maxLen = _maxStickerLen < remaining ? _maxStickerLen : remaining;
+      for (var len = maxLen; len >= 1; len--) {
+        final part = text.substring(i, i + len);
+        if (all.contains(part) || all.contains('$part\uFE0F')) {
+          found = part;
+          break;
+        }
+      }
+    }
+    if (found == null) {
+      buf.writeCharCode(text.codeUnitAt(i));
+      i++;
+    } else {
+      flush();
+      spans.add(WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: StickerGlyph(found, size: size),
+      ));
+      i += found.length;
+    }
+  }
+  flush();
+  return spans;
+}
+
 /// هل الرسالة كلها ملصقات فقط (حتى 3 ملصقات)؟ فتُعرض كبيرة مثل واتساب.
 /// الحد 24 حرفاً يطابق قواعد Firestore الحالية فلا تحتاج تعديلها.
 bool isStickerOnly(String text) {
