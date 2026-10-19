@@ -16,6 +16,7 @@ import 'profile_screen.dart';
 import '../route_state.dart';
 
 import '../l10n.dart';
+import 'install_stub.dart' if (dart.library.html) 'install_web.dart';
 /// يتذكر القصص التي شوهدت خلال الجلسة (لتحويل الحلقة إلى رمادية).
 class StoryViewed {
   static final Set<String> _seen = {};
@@ -79,10 +80,12 @@ class _StoriesBarState extends State<StoriesBar> {
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                 children: [
-                  // الزائر لا قصة له: نخفي خلية «قصتك».
+                  // الزائر لا قصة له: بدل خلية «قصتك» نعرض «تثبيت التطبيق».
                   if (isLoggedIn)
                     _myItem(mine.isEmpty ? null : mine.first,
-                        () => _open(ordered, 0)),
+                        () => _open(ordered, 0))
+                  else
+                    _installItem(),
                   for (var i = 0; i < rest.length; i++)
                     _item(
                       uid: rest[i].uid,
@@ -95,6 +98,56 @@ class _StoriesBarState extends State<StoriesBar> {
             },
           );
         },
+      ),
+    );
+  }
+
+  /// خلية «تثبيت التطبيق» للزوار فقط (تظهر حيث تظهر «قصتك» للمسجَّلين).
+  /// تختفي إذا كان التطبيق مثبَّتاً أو المتصفح لا يدعم التثبيت.
+  Widget _installItem() {
+    return ValueListenableBuilder<String>(
+      valueListenable: installState,
+      builder: (context, state, _) {
+        if (state != 'prompt' && state != 'ios') return const SizedBox.shrink();
+        return _cell(
+          label: tr('تثبيت التطبيق'),
+          child: GestureDetector(
+            onTap: () => _installTapped(state),
+            child: Container(
+              width: 66,
+              height: 66,
+              padding: const EdgeInsets.all(3),
+              decoration: const BoxDecoration(
+                  shape: BoxShape.circle, gradient: AppColors.storyGradient),
+              child: Container(
+                decoration: BoxDecoration(
+                    shape: BoxShape.circle, color: context.appColors.bg),
+                child: const Icon(Icons.download_rounded,
+                    size: 28, color: AppColors.brandPurple),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _installTapped(String state) async {
+    if (state == 'prompt') {
+      await promptInstall();
+      return;
+    }
+    // آيفون/سفاري: لا يوجد حدث تثبيت، نعرض الخطوات.
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('تثبيت التطبيق')),
+        content: Text(tr(
+            'اضغط زر المشاركة في سفاري ثم اختر «إضافة إلى الشاشة الرئيسية».')),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(), child: Text(tr('حسناً'))),
+        ],
       ),
     );
   }
