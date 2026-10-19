@@ -130,7 +130,16 @@ service cloud.firestore {
         allow get: if request.auth != null
           && (request.auth.uid == uid || isAdmin());
         allow list: if isAdmin();
-        allow write: if false;
+        // الحظر من لوحة التحكم بدون Cloud Functions: الأدمن وحده ينشئ/يحذف مستند الحظر.
+        // وبمجرد وجوده ترفض القواعد كل عمليات المستخدم (isActiveUser) ويُخرجه التطبيق فوراً.
+        allow create: if isAdmin()
+          && uid != request.auth.uid
+          && request.resource.data.keys().hasOnly(['uid', 'blockedBy', 'blockedAt'])
+          && request.resource.data.uid == uid
+          && request.resource.data.blockedBy == request.auth.uid
+          && request.resource.data.blockedAt == request.time;
+        allow delete: if isAdmin();
+        allow update: if false;
       }
 
     match /posts/{postId} {
@@ -192,6 +201,12 @@ service cloud.firestore {
           && request.resource.data.comments >= 0
           && request.resource.data.comments < resource.data.get('comments', 0))
       );
+      // لوحة التحكم عند حذف حساب: إنقاص عدّاد إعجابات المنشورات التي أعجب بها المحذوف.
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes'])
+        && request.resource.data.likes is int
+        && request.resource.data.likes >= 0
+        && request.resource.data.likes < resource.data.likes;
       allow delete: if isActiveUser()
         && (isAdmin() || resource.data.uid == request.auth.uid);
 
@@ -200,6 +215,9 @@ service cloud.firestore {
         allow read: if isActiveUser()
           && (request.auth.uid == uid || parentPostReadable(postId));
         allow write: if isActiveUser() && request.auth.uid == uid;
+        // لوحة التحكم: قراءة/حذف الإعجابات عند حذف منشور أو حساب.
+        allow read: if isAdmin();
+        allow delete: if isAdmin();
       }
 
       // مشاهدات القصص: كل مشاهد يسجّل نفسه فقط (وقت الخادم)، ويقرؤها صاحب القصة وحده.
@@ -211,7 +229,9 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/posts/$(postId)).data.uid != viewerUid
           && request.resource.data.keys().hasOnly(['at'])
           && request.resource.data.at == request.time;
-        allow delete: if false;
+        // لوحة التحكم: قراءة/حذف المشاهدات عند حذف منشور (قصة).
+        allow read: if isAdmin();
+        allow delete: if isAdmin();
       }
 
       // التعليقات: يكتبها أي مستخدم مسجّل، ويحذفها صاحبها أو صاحب المنشور
@@ -268,6 +288,12 @@ service cloud.firestore {
               && resource.data.get('likedBy', []).hasAny([request.auth.uid])
               && !request.resource.data.likedBy.hasAny([request.auth.uid]))
           );
+        // لوحة التحكم عند حذف حساب: إزالة إعجابه من التعليقات (تنقيص likedBy فقط).
+        allow update: if isAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy'])
+          && request.resource.data.likedBy is list
+          && request.resource.data.likedBy.size()
+            < resource.data.get('likedBy', []).size();
         allow delete: if isActiveUser() && (
           isAdmin() ||
           resource.data.uid == request.auth.uid ||
@@ -425,7 +451,8 @@ service cloud.firestore {
                 && request.resource.data.clearedAt[request.auth.uid]
                   == request.time)))
         );
-      allow delete: if false;
+      // لوحة التحكم عند حذف حساب: حذف المحادثة (الرسائل الفرعية تبقى غير قابلة للقراءة).
+      allow delete: if isAdmin();
 
       match /messages/{messageId} {
         function isChatParticipant() {
@@ -586,7 +613,7 @@ service cloud.firestore {
           && request.resource.data.ids is list
           && request.resource.data.ids.size() <= 500
           && request.resource.data.updatedAt == request.time;
-        allow delete: if false;
+        allow delete: if isAdmin();
       }
     }
 
@@ -600,6 +627,9 @@ service cloud.firestore {
         && request.resource.data.createdAt == request.time;
       allow update: if false;
       allow delete: if isActiveUser() && request.auth.uid == uid;
+      // لوحة التحكم عند حذف حساب: قراءة/حذف قائمة حظره.
+      allow read: if isAdmin();
+      allow delete: if isAdmin();
     }
 
     // البلاغات: الإنشاء فقط من المستخدم المسجّل، والقراءة والحذف للأدمن فقط (لوحة التحكم).
@@ -644,7 +674,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['online', 'updatedAt'])
         && request.resource.data.online is bool
         && request.resource.data.updatedAt == request.time;
-      allow delete: if isActiveUser() && request.auth.uid == uid;
+      allow delete: if (isActiveUser() && request.auth.uid == uid) || isAdmin();
     }
 
     // قطع الملفات (وضع التجربة): كل قطعة تحمل uid صاحبها، لا تُعدَّل، ويحذفها صاحبها فقط
@@ -654,7 +684,8 @@ service cloud.firestore {
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.data.size() < 950000;
       allow update: if false;
-      allow delete: if isActiveUser() && resource.data.uid == request.auth.uid;
+      allow delete: if isAdmin()
+        || (isActiveUser() && resource.data.uid == request.auth.uid);
     }
 
     // حجز أسماء المستخدمين (فريدة). القراءة المفردة مفتوحة للتحقق من التوفر قبل التسجيل.
@@ -664,12 +695,15 @@ service cloud.firestore {
         && request.resource.data.uid == request.auth.uid
         && name.matches('^[a-z0-9._]{3,24}$');
       allow update: if false;
-      allow delete: if isActiveUser() && resource.data.uid == request.auth.uid;
+      allow delete: if isAdmin()
+        || (isActiveUser() && resource.data.uid == request.auth.uid);
     }
 
     // الملف الشخصي: الاسم + اسم المستخدم + النبذة
     match /users/{uid} {
       allow read: if isActiveUser();
+      // لوحة التحكم: حذف ملف الحساب ضمن حذف المستخدم.
+      allow delete: if isAdmin();
       allow create, update: if isActiveUser()
         && request.auth.uid == uid
         && request.resource.data.username is string
@@ -694,6 +728,10 @@ service cloud.firestore {
     }
 
     match /users/{uid}/{sub}/{doc} {
+      // لوحة التحكم عند حذف حساب: قراءة وحذف كل المجموعات الفرعية للمستخدم.
+      allow read: if isAdmin();
+      allow delete: if isAdmin();
+
       // طلبات المتابعة: يقرؤها صاحب الحساب أو مرسل الطلب فقط. المحفوظات لصاحبها، والإعجابات حسب إعدادات صاحبها،
       // وباقي المجموعات (المتابَعون/المتابِعون) مفتوحة للقراءة لأن العدّادات تعتمد عليها.
       allow read: if isActiveUser()
@@ -774,6 +812,14 @@ service cloud.firestore {
           || (sub == 'followers' && doc == request.auth.uid)
           || (sub == 'followRequests' && doc == request.auth.uid)
           || (sub == 'notifications' && request.auth.uid == uid));
+    }
+
+    // لوحة التحكم (بدون Cloud Functions): استعلامات المجموعات (collection group) للأدمن فقط.
+    match /{path=**}/comments/{commentId} {
+      allow read: if isAdmin();
+    }
+    match /{path=**}/notifications/{notificationId} {
+      allow read: if isAdmin();
     }
   }
 }
