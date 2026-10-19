@@ -1284,7 +1284,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ),
           body: Center(
             child: InteractiveViewer(
-              child: Image.network(PostService.optimizedImageUrl(url, 1600)),
+              minScale: 1,
+              maxScale: 5,
+              child: SizedBox.expand(
+                child: Image.network(
+                  PostService.optimizedImageUrl(url, 1600),
+                  fit: BoxFit.contain,
+                  filterQuality: FilterQuality.high,
+                  loadingBuilder: (context, child, progress) => progress == null
+                      ? child
+                      : const Center(
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white)),
+                ),
+              ),
             ),
           ),
         ),
@@ -1299,9 +1312,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     try {
       final image = await _picker.pickImage(
         source: source,
-        maxWidth: 1280,
-        maxHeight: 1280,
-        imageQuality: 70,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 80,
       );
       if (image == null) return;
       final bytes = await fitImageUnderLimit(await image.readAsBytes());
@@ -1890,12 +1903,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                         : _openImage(message.imageBytes!),
                                     child: ClipRRect(
                                       borderRadius: BorderRadius.circular(13),
-                                      child: message.imageUrl != null
+                                      child: ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          maxHeight: 360,
+                                          maxWidth: (MediaQuery.sizeOf(context)
+                                                      .width *
+                                                  0.62)
+                                              .clamp(220.0, 300.0),
+                                        ),
+                                        child: message.imageUrl != null
                                           ? Image.network(
                                               PostService.optimizedImageUrl(
-                                                  message.imageUrl!, 440),
-                                              width: 220,
+                                                  message.imageUrl!, 800),
+                                              width: 280,
                                               fit: BoxFit.cover,
+                                              filterQuality: FilterQuality.high,
                                               loadingBuilder:
                                                   (context, child, progress) =>
                                                       progress == null
@@ -1924,9 +1946,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                             )
                                           : Image.memory(
                                               message.imageBytes!,
-                                              width: 220,
+                                              width: 280,
                                               fit: BoxFit.cover,
+                                              filterQuality: FilterQuality.high,
                                             ),
+                                      ),
                                     ),
                                   )
                                 else if (sticker)
