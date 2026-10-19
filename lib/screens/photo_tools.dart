@@ -417,9 +417,10 @@ class _CircleGuidePainter extends CustomPainter {
 /// (خصوصاً كاميرا الهاتف) تتجاهل خيارات التصغير في image_picker فتعود صورة
 /// ضخمة تُرفض بدل أن تُرسل؛ هنا نعيد ترميزها JPEG بأبعاد/جودة أقل عند الحاجة.
 Future<Uint8List> fitImageUnderLimit(Uint8List bytes,
-    {int maxBytes = 700 * 1024}) async {
+    {int maxBytes = 700 * 1024, int maxSide = 1280, int quality = 70}) async {
   if (bytes.length <= maxBytes) return bytes;
-  final out = await compute(_shrinkJpeg, <Object>[bytes, maxBytes]);
+  final out =
+      await compute(_shrinkJpeg, <Object>[bytes, maxBytes, maxSide, quality]);
   if (out == null) {
     throw StateError(tr('حجم الصورة يجب ألا يتجاوز 700 كيلوبايت'));
   }
@@ -431,8 +432,8 @@ Uint8List? _shrinkJpeg(List<Object> args) {
   final maxBytes = args[1] as int;
   final decoded = img.decodeImage(bytes);
   if (decoded == null) return null;
-  var side = 1280;
-  var quality = 70;
+  var side = args.length > 2 ? args[2] as int : 1280;
+  var quality = args.length > 3 ? args[3] as int : 70;
   for (var i = 0; i < 6; i++) {
     final longest = math.max(decoded.width, decoded.height);
     final resized = longest > side

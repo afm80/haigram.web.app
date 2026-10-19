@@ -775,8 +775,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _sending = false;
   bool _draftRestored = false;
   String? _failedText;
-  Uint8List? _failedImage;
-  Uint8List? _pendingImage; // صورة مرفقة بانتظار الإرسال اليدوي
+  List<Uint8List> _failedImages = const [];
+  // صور مرفقة بانتظار الإرسال اليدوي (حتى 10، كإنستغرام).
+  final List<Uint8List> _pendingImages = [];
+  static const _maxAttach = 10;
   Set<String> _hidden = const {};
   StreamSubscription<Set<String>>? _hiddenSub;
 
@@ -1194,32 +1196,38 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<void> _send() async {
     if (_sending) return;
     final text = _text.text.trim();
-    final image = _pendingImage;
+    final images = List<Uint8List>.of(_pendingImages);
     final replyTarget = _replyTarget;
-    if (text.isEmpty && image == null) return;
+    if (text.isEmpty && images.isEmpty) return;
     _text.clear();
     setState(() {
-      _pendingImage = null;
+      _pendingImages.clear();
       _failedText = null;
-      _failedImage = null;
+      _failedImages = const [];
     });
 
-    if (image != null) {
+    if (images.isNotEmpty) {
       setState(() => _sending = true);
+      var sent = 0;
       try {
-        await SocialService.sendImage(
-          widget.conversationId,
-          image,
-          replyToMessageId: replyTarget?.id,
-          replyToText: replyTarget?.text,
-          replyToSenderUid: replyTarget?.senderUid,
-        );
+        for (final image in images) {
+          // الردّ يُرفق بأول صورة فقط.
+          await SocialService.sendImage(
+            widget.conversationId,
+            image,
+            replyToMessageId: sent == 0 ? replyTarget?.id : null,
+            replyToText: sent == 0 ? replyTarget?.text : null,
+            replyToSenderUid: sent == 0 ? replyTarget?.senderUid : null,
+          );
+          sent++;
+        }
       } catch (e) {
         if (mounted) {
-          if (_pendingImage == null) setState(() => _pendingImage = image);
+          final rest = images.sublist(sent);
+          if (_pendingImages.isEmpty) _pendingImages.addAll(rest);
           if (_text.text.isEmpty) _text.text = text;
           setState(() {
-            _failedImage = image;
+            _failedImages = rest;
             _failedText = text.isEmpty ? null : text;
           });
         }
@@ -1252,7 +1260,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           setState(() {
             _replyTarget = null;
             _failedText = null;
-            _failedImage = null;
+            _failedImages = const [];
           });
         }
       } catch (e) {
@@ -1260,7 +1268,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           if (_text.text.isEmpty) _text.text = text;
           setState(() {
             _failedText = text;
-            _failedImage = null;
+            _failedImages = const [];
           });
         }
         _showError(tr('تعذر إرسال الرسالة'), e);
@@ -1274,20 +1282,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute<void>(
         fullscreenDialog: true,
-        builder: (_) => Scaffold(
-          backgroundColor: Colors.black,
-          extendBodyBehindAppBar: true,
-          appBar: AppBar(
-            backgroundColor: Colors.transparent,
-            foregroundColor: Colors.white,
-            elevation: 0,
-          ),
-          body: Center(
-            child: InteractiveViewer(
-              child: Image.network(PostService.optimizedImageUrl(url, 1600)),
-            ),
-          ),
-        ),
+        builder: (_) => _NetworkImageViewer(url: url),
       ),
     );
   }
@@ -1296,17 +1291,46 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Future<void> _pickImage(ImageSource source) async {
     if (_sending) return;
-    try {
-      final image = await _picker.pickImage(
-        source: source,
-        maxWidth: 1280,
-        maxHeight: 1280,
-        imageQuality: 70,
+    final remote = PostService.useRemoteMedia;
+    final maxBytes = remote ? 4 * 1024 * 1024 : 700 * 1024;
+    final side = remote ? 1600.0 : 1280.0;
+    final quality = remote ? 85 : 70;
+    final room = _maxAttach - _pendingImages.length;
+    if (room <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('الحد الأقصى 10 صور في الرسالة الواحدة'))),
       );
-      if (image == null) return;
-      final bytes = await fitImageUnderLimit(await image.readAsBytes());
+      return;
+    }
+    try {
+      final List<XFile> files;
+      if (source == ImageSource.gallery) {
+        files = await _picker.pickMultiImage(
+          maxWidth: side,
+          maxHeight: side,
+          imageQuality: quality,
+        );
+      } else {
+        final shot = await _picker.pickImage(
+          source: source,
+          maxWidth: side,
+          maxHeight: side,
+          imageQuality: quality,
+        );
+        files = shot == null ? const [] : [shot];
+      }
+      if (files.isEmpty) return;
+      final added = <Uint8List>[];
+      for (final file in files.take(room)) {
+        added.add(await fitImageUnderLimit(
+          await file.readAsBytes(),
+          maxBytes: maxBytes,
+          maxSide: side.round(),
+          quality: quality,
+        ));
+      }
       if (!mounted) return;
-      setState(() => _pendingImage = bytes);
+      setState(() => _pendingImages.addAll(added));
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1884,50 +1908,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                 if (message.kind == 'image' &&
                                     (message.imageUrl != null ||
                                         message.imageBytes != null))
-                                  GestureDetector(
+                                  _ChatImage(
+                                    url: message.imageUrl,
+                                    bytes: message.imageBytes,
                                     onTap: () => message.imageUrl != null
                                         ? _openNetworkImage(message.imageUrl!)
                                         : _openImage(message.imageBytes!),
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(13),
-                                      child: message.imageUrl != null
-                                          ? Image.network(
-                                              PostService.optimizedImageUrl(
-                                                  message.imageUrl!, 440),
-                                              width: 220,
-                                              fit: BoxFit.cover,
-                                              loadingBuilder:
-                                                  (context, child, progress) =>
-                                                      progress == null
-                                                          ? child
-                                                          : const SizedBox(
-                                                              width: 220,
-                                                              height: 160,
-                                                              child: Center(
-                                                                child: CircularProgressIndicator(
-                                                                    strokeWidth:
-                                                                        2),
-                                                              ),
-                                                            ),
-                                              errorBuilder: (context, _, __) =>
-                                                  SizedBox(
-                                                width: 220,
-                                                height: 120,
-                                                child: Center(
-                                                  child: Text(
-                                                      tr('تعذر تحميل صورة'),
-                                                      style: TextStyle(
-                                                          color:
-                                                              colors.textDim)),
-                                                ),
-                                              ),
-                                            )
-                                          : Image.memory(
-                                              message.imageBytes!,
-                                              width: 220,
-                                              fit: BoxFit.cover,
-                                            ),
-                                    ),
                                   )
                                 else if (sticker)
                                   StickerGlyph(message.text, size: 40)
@@ -2106,7 +2092,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       style: TextStyle(color: colors.textDim, fontSize: 12),
                     ),
                   ),
-                if (_failedText != null || _failedImage != null)
+                if (_failedText != null || _failedImages.isNotEmpty)
                   Container(
                     margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                     padding:
@@ -2128,8 +2114,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               ? null
                               : () {
                                   setState(() {
-                                    if (_failedImage != null) {
-                                      _pendingImage ??= _failedImage;
+                                    if (_failedImages.isNotEmpty &&
+                                        _pendingImages.isEmpty) {
+                                      _pendingImages.addAll(_failedImages);
                                     }
                                     if (_failedText != null &&
                                         _text.text.isEmpty) {
@@ -2144,10 +2131,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       ],
                     ),
                   ),
-                if (_pendingImage != null)
-                  PendingImagePreview(
-                    bytes: _pendingImage!,
-                    onRemove: () => setState(() => _pendingImage = null),
+                if (_pendingImages.isNotEmpty)
+                  _PendingImagesStrip(
+                    images: _pendingImages,
+                    onRemove: (index) =>
+                        setState(() => _pendingImages.removeAt(index)),
                   ),
                 if (_replyTarget != null)
                   Container(
@@ -3238,4 +3226,168 @@ class _MessageState extends StatelessWidget {
           ),
         ),
       );
+}
+
+
+/// صورة داخل فقاعة المحادثة: أكبر وأوضح، تحافظ على النسبة (حتى ارتفاع معقول)،
+/// وتعود للرابط الأصلي إن فشل الرابط المُحسَّن.
+class _ChatImage extends StatelessWidget {
+  final String? url;
+  final Uint8List? bytes;
+  final VoidCallback onTap;
+  const _ChatImage({this.url, this.bytes, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final width =
+        (MediaQuery.sizeOf(context).width * 0.62).clamp(200.0, 300.0).toDouble();
+    Widget placeholder(double height) => SizedBox(
+          width: width,
+          height: height,
+          child: const Center(
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        );
+    Widget failed() => SizedBox(
+          width: width,
+          height: 120,
+          child: Center(
+            child: Text(tr('تعذر تحميل صورة'),
+                style: TextStyle(color: colors.textDim)),
+          ),
+        );
+    Widget network(String address, {required Widget Function() onError}) =>
+        Image.network(
+          address,
+          width: width,
+          fit: BoxFit.cover,
+          loadingBuilder: (context, child, progress) =>
+              progress == null ? child : placeholder(200),
+          errorBuilder: (context, _, __) => onError(),
+        );
+
+    final Widget image;
+    if (url != null) {
+      final raw = url!;
+      final optimized = PostService.optimizedImageUrl(raw, 800);
+      image = network(
+        optimized,
+        onError: () => optimized == raw ? failed() : network(raw, onError: failed),
+      );
+    } else {
+      image = Image.memory(bytes!, width: width, fit: BoxFit.cover);
+    }
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(13),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 380),
+          child: image,
+        ),
+      ),
+    );
+  }
+}
+
+/// عرض الصورة بملء الشاشة (رابط): تكبير بالقرص، ومؤشر تحميل، وعودة للأصل عند الفشل.
+class _NetworkImageViewer extends StatelessWidget {
+  final String url;
+  const _NetworkImageViewer({required this.url});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget loading(BuildContext context, Widget child, ImageChunkEvent? p) =>
+        p == null
+            ? child
+            : const Center(
+                child: CircularProgressIndicator(color: Colors.white),
+              );
+    Widget failed() => Center(
+          child: Text(tr('تعذر تحميل صورة'),
+              style: const TextStyle(color: Colors.white70)),
+        );
+    final optimized = PostService.optimizedImageUrl(url, 1600);
+    return Scaffold(
+      backgroundColor: Colors.black,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          tooltip: tr('إغلاق'),
+          icon: const Icon(Icons.close_rounded),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
+      body: SizedBox.expand(
+        child: InteractiveViewer(
+          minScale: 1,
+          maxScale: 5,
+          child: Center(
+            child: Image.network(
+              optimized,
+              fit: BoxFit.contain,
+              loadingBuilder: loading,
+              errorBuilder: (context, _, __) => optimized == url
+                  ? failed()
+                  : Image.network(
+                      url,
+                      fit: BoxFit.contain,
+                      loadingBuilder: loading,
+                      errorBuilder: (context, _, __) => failed(),
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// شريط معاينة الصور المرفقة قبل الإرسال، مع زر إزالة لكل صورة.
+class _PendingImagesStrip extends StatelessWidget {
+  final List<Uint8List> images;
+  final void Function(int index) onRemove;
+  const _PendingImagesStrip({required this.images, required this.onRemove});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 102,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
+        itemCount: images.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (context, index) => Stack(
+          clipBehavior: Clip.none,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.memory(images[index],
+                  width: 84, height: 88, fit: BoxFit.cover),
+            ),
+            PositionedDirectional(
+              top: -6,
+              end: -6,
+              child: GestureDetector(
+                onTap: () => onRemove(index),
+                child: Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: const BoxDecoration(
+                      color: Colors.black87, shape: BoxShape.circle),
+                  child: const Icon(Icons.close_rounded,
+                      size: 16, color: Colors.white),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
