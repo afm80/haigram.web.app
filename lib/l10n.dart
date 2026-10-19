@@ -596,6 +596,10 @@ const Map<String, String> _en = {
   'قبول': "Accept",
   'رفض': "Decline",
   'قصتك': "Your story",
+  'تثبيت التطبيق': 'Install app',
+  'اضغط زر المشاركة في سفاري ثم اختر «إضافة إلى الشاشة الرئيسية».':
+      'Tap the Share button in Safari, then choose "Add to Home Screen".',
+  'حسناً': 'OK',
   'حذف القصة؟': "Delete story?",
   'المشاهدون': "Viewers",
   'لا توجد مشاهدات بعد': "No views yet",
