@@ -173,6 +173,9 @@ class PostService {
 
   static String get uidOrEmpty => FirebaseAuth.instance.currentUser?.uid ?? '';
 
+  /// زائر يتصفح بدون تسجيل دخول: قراءة فقط، وبقراءة واحدة بدل المتابعة اللحظية.
+  static bool get isGuest => FirebaseAuth.instance.currentUser == null;
+
   static User get currentUser => _user;
 
   /// يزداد عند أي فعل يغيّر الأعداد (متابعة، إعجاب، نشر، حذف) فتعيد
@@ -184,6 +187,7 @@ class PostService {
   static String get username {
     final m = UserService.me;
     if (m != null && m.username.isNotEmpty) return m.username;
+    if (isGuest) return '';
     final u = _user;
     return (u.displayName?.trim().isNotEmpty ?? false)
         ? u.displayName!
@@ -219,11 +223,11 @@ class PostService {
   /// مع [uid]: منشورات ذلك المستخدم إن كان لي حق رؤيتها.
   static Stream<List<Post>> stream(PostType t, {String? uid, int limit = 40}) {
     if (uid == null) {
-      return _byType(t)
-          .where('authorPrivate', isEqualTo: false)
-          .limit(limit)
-          .snapshots()
-          .map((s) => _parse(s.docs));
+      final q = _byType(t).where('authorPrivate', isEqualTo: false).limit(limit);
+      if (isGuest) {
+        return Stream.fromFuture(q.get().then((s) => _parse(s.docs)));
+      }
+      return q.snapshots().map((s) => _parse(s.docs));
     }
     return Stream.fromFuture(_scopeToAuthor(_byType(t), uid)).asyncExpand(
         (q) => q.limit(limit).snapshots().map((s) => _parse(s.docs)));
@@ -278,6 +282,7 @@ class PostService {
 
   /// يحمّل المخفيّات من حسابي. أي فشل (مثل قواعد لم تُنشر بعد) يُتجاهل.
   static Future<void> loadHiddenIds() async {
+    if (isGuest) return;
     try {
       final snap = await _hiddenRef.get();
       hiddenIds.value = {...hiddenIds.value, ...snap.docs.map((d) => d.id)};
@@ -318,8 +323,10 @@ class PostService {
                   .where('type', whereIn: const ['photo', 'text'])
                   .orderBy('createdAt', descending: true),
               uid))
-          .asyncExpand((q) =>
-              q.limit(limit).snapshots().map((s) => _parse(s.docs)));
+          .asyncExpand((q) => isGuest
+              ? Stream.fromFuture(
+                  q.limit(limit).get().then((s) => _parse(s.docs)))
+              : q.limit(limit).snapshots().map((s) => _parse(s.docs)));
 
   static Future<List<Post>> search(String text) async {
     final snap = await _db
@@ -576,7 +583,9 @@ class PostService {
       .limit(1);
 
   /// هل أعدت نشر هذا المنشور؟ (يعمل أيضاً إن كان [p] نفسه إعادة نشر.)
-  static Stream<bool> isReposted(Post p) => _myRepostQuery(p.repostedFromPostId ?? p.id)
+  static Stream<bool> isReposted(Post p) => isGuest
+      ? Stream.value(false)
+      : _myRepostQuery(p.repostedFromPostId ?? p.id)
       .snapshots()
       .map((s) => s.docs.isNotEmpty);
 
@@ -732,20 +741,23 @@ class PostService {
   static DocumentReference<Map<String, dynamic>> _likeRef(String postId) =>
       _db.collection('posts').doc(postId).collection('likes').doc(_user.uid);
 
-  static Stream<bool> isLiked(String postId) =>
-      _likeRef(postId).snapshots().map((s) => s.exists);
+  static Stream<bool> isLiked(String postId) => isGuest
+      ? Stream.value(false)
+      : _likeRef(postId).snapshots().map((s) => s.exists);
 
   /// عدد الإعجابات الحي للمنشور.
-  static Stream<int> likeCount(String postId) => _db
-      .collection('posts')
-      .doc(postId)
-      .snapshots()
-      .map((s) => ((s.data()?['likes'] ?? 0) as num).toInt());
+  static Stream<int> likeCount(String postId) {
+    final ref = _db.collection('posts').doc(postId);
+    int n(DocumentSnapshot<Map<String, dynamic>> s) =>
+        ((s.data()?['likes'] ?? 0) as num).toInt();
+    if (isGuest) return Stream.fromFuture(ref.get().then(n));
+    return ref.snapshots().map(n);
+  }
 
   // ---- مشاهدات القصص ----
   /// يسجّل أن المستخدم الحالي شاهد القصة (مرة واحدة لكل مستخدم). لا يسجّل لصاحبها.
   static Future<void> recordStoryView(Post story) async {
-    if (story.uid == _user.uid) return;
+    if (isGuest || story.uid == _user.uid) return;
     await _db
         .collection('posts')
         .doc(story.id)
@@ -810,14 +822,17 @@ class PostService {
   static DocumentReference<Map<String, dynamic>> _saveRef(String postId) =>
       _db.collection('users').doc(_user.uid).collection('saved').doc(postId);
 
-  static Stream<bool> isSaved(String postId) =>
-      _saveRef(postId).snapshots().map((s) => s.exists);
+  static Stream<bool> isSaved(String postId) => isGuest
+      ? Stream.value(false)
+      : _saveRef(postId).snapshots().map((s) => s.exists);
 
   static Future<void> toggleSave(String postId, bool saved) => saved
       ? _saveRef(postId).delete()
       : _saveRef(postId).set({'at': FieldValue.serverTimestamp()});
 
-  static Stream<bool> isFollowing(String targetUid) => _db
+  static Stream<bool> isFollowing(String targetUid) => isGuest
+      ? Stream.value(false)
+      : _db
       .collection('users')
       .doc(_user.uid)
       .collection('following')
@@ -835,6 +850,7 @@ class PostService {
 
   /// حالة علاقتي بحساب: لا شيء / طلب معلّق / أتابعه.
   static Stream<FollowState> followState(String targetUid) {
+    if (isGuest) return Stream.value(FollowState.none);
     late final StreamController<FollowState> controller;
     StreamSubscription<bool>? followSub;
     StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? requestSub;
@@ -952,15 +968,18 @@ class PostService {
   }
 
   // ===== طلبات المتابعة الواردة إلى حسابي الخاص =====
-  static Stream<List<String>> incomingFollowRequestIds() => _db
+  static Stream<List<String>> incomingFollowRequestIds() => isGuest
+      ? Stream.value(const <String>[])
+      : _db
       .collection('users')
       .doc(_user.uid)
       .collection('followRequests')
       .snapshots()
       .map((s) => s.docs.map((d) => d.id).toList());
 
-  static Stream<bool> hasIncomingRequest(String requesterUid) =>
-      _requestRef(_user.uid, requesterUid).snapshots().map((s) => s.exists);
+  static Stream<bool> hasIncomingRequest(String requesterUid) => isGuest
+      ? Stream.value(false)
+      : _requestRef(_user.uid, requesterUid).snapshots().map((s) => s.exists);
 
   static void _approveInto(WriteBatch batch, String requesterUid,
       {required bool notify}) {
@@ -1030,7 +1049,9 @@ class PostService {
           .count ??
       0;
 
-  static Stream<List<String>> followingIds() => _db
+  static Stream<List<String>> followingIds() => isGuest
+      ? Stream.value(const <String>[])
+      : _db
       .collection('users')
       .doc(_user.uid)
       .collection('following')
@@ -1094,10 +1115,9 @@ class PostService {
   }
 
   // ---- منشور واحد، حذف ----
-  static Stream<Post?> postStream(String id) => _db
-      .collection('posts')
-      .doc(id)
-      .snapshots()
+  static Stream<Post?> postStream(String id) => (isGuest
+          ? Stream.fromFuture(_db.collection('posts').doc(id).get())
+          : _db.collection('posts').doc(id).snapshots())
       .map<Post?>(
           (d) => d.exists && !Post.isLegacyVideo(d) ? Post.fromDoc(d) : null)
       .transform(StreamTransformer<Post?, Post?>.fromHandlers(
@@ -1136,7 +1156,9 @@ class PostService {
   }
 
   // ---- المحفوظات ----
-  static Stream<List<Post>> savedPosts() => _db
+  static Stream<List<Post>> savedPosts() => isGuest
+      ? Stream.value(const <Post>[])
+      : _db
           .collection('users')
           .doc(_user.uid)
           .collection('saved')
@@ -1171,10 +1193,11 @@ class PostService {
           String postId) =>
       _db.collection('posts').doc(postId).collection('comments');
 
-  static Stream<List<Comment>> comments(String postId) => _commentsRef(postId)
-      .orderBy('createdAt')
-      .snapshots()
-      .map((s) => s.docs.map(Comment.fromDoc).toList());
+  static Stream<List<Comment>> comments(String postId) {
+    final q = _commentsRef(postId).orderBy('createdAt');
+    return (isGuest ? Stream.fromFuture(q.get()) : q.snapshots())
+        .map((s) => s.docs.map(Comment.fromDoc).toList());
+  }
 
   /// يضيف تعليقاً (نصاً أو ملصقاً أو صورة). بلا قراءات مسبقة، فيظهر فوراً.
   /// [kind]: text | sticker | image.
@@ -1329,6 +1352,7 @@ class PostService {
 
   /// يحذف قصصي المنتهية (أقدم من 24 ساعة) لتوفير الحصة المجانية.
   static Future<void> cleanupMyExpiredStories() async {
+    if (isGuest) return;
     final snap = await _db
         .collection('posts')
         .where('type', isEqualTo: 'story')
