@@ -192,7 +192,7 @@ class SettingsScreen extends StatelessWidget {
                   style: TextStyle(color: colors.textDim, fontSize: 12),
                 ),
                 value: isDark,
-                activeColor: AppColors.brandPurple,
+                activeColor: Colors.red,
                 onChanged: (value) => _setDark(context, value),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
@@ -240,11 +240,10 @@ class SettingsScreen extends StatelessWidget {
               child: Column(
                 children: [
                   ListTile(
-                    leading: const Icon(Icons.logout_rounded,
-                        color: AppColors.brandPurple),
+                    leading: Icon(Icons.logout_rounded, color: colors.text),
                     title: Text(
                       tr('تسجيل الخروج'),
-                      style: TextStyle(color: AppColors.brandPurple),
+                      style: TextStyle(color: colors.text),
                     ),
                     onTap: () => _confirmSignOut(context),
                     shape: RoundedRectangleBorder(
@@ -357,7 +356,7 @@ class _PrivacySectionState extends State<_PrivacySection> {
                   style: dim(),
                 ),
                 value: user?.isPrivate ?? false,
-                activeColor: AppColors.brandPurple,
+                activeColor: Colors.red,
                 onChanged:
                     enabled ? (value) => _update(isPrivate: value) : null,
                 shape: RoundedRectangleBorder(
@@ -373,7 +372,7 @@ class _PrivacySectionState extends State<_PrivacySection> {
                   style: dim(),
                 ),
                 value: user?.hideLikes ?? false,
-                activeColor: AppColors.brandPurple,
+                activeColor: Colors.red,
                 onChanged:
                     enabled ? (value) => _update(hideLikes: value) : null,
                 shape: RoundedRectangleBorder(
@@ -389,7 +388,7 @@ class _PrivacySectionState extends State<_PrivacySection> {
                   style: dim(),
                 ),
                 value: user?.profileVisits ?? true,
-                activeColor: AppColors.brandPurple,
+                activeColor: Colors.red,
                 onChanged:
                     enabled ? (value) => _update(profileVisits: value) : null,
                 shape: RoundedRectangleBorder(
