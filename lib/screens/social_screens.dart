@@ -1431,21 +1431,83 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
     }
 
+    // التفاعلات: صف ملصقات سريع أعلى الورقة بدل «إضافة تفاعل»، وزر + يفتح كل الملصقات
+    // داخل نفس الورقة.
+    const quick = ['❤️', '😂', '😮', '😢', '🔥', '👍'];
+    final myReaction = message.reactions[SocialService.currentUid];
+    var expanded = false;
     await showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: context.appColors.surface,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) => SafeArea(
+        child: expanded
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: IconButton(
+                      tooltip: tr('رجوع'),
+                      onPressed: () => setSheetState(() => expanded = false),
+                      icon: const Icon(Icons.arrow_back_rounded),
+                    ),
+                  ),
+                  StickerPanel(
+                    height: 320,
+                    onPick: (sticker) {
+                      Navigator.pop(sheetContext);
+                      _reactToMessage(message, sticker);
+                    },
+                  ),
+                ],
+              )
+            : Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: const Icon(Icons.add_reaction_outlined),
-              title: Text(tr('إضافة تفاعل')),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _showReactionPicker(message);
-              },
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 14, 12, 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  for (final emoji in quick)
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _reactToMessage(message, emoji);
+                      },
+                      child: Container(
+                        width: 46,
+                        height: 46,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: myReaction == emoji
+                              ? AppColors.brandPurple.withOpacity(0.18)
+                              : Colors.transparent,
+                        ),
+                        child: StickerGlyph(emoji, size: 32),
+                      ),
+                    ),
+                  GestureDetector(
+                    onTap: () => setSheetState(() => expanded = true),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: context.appColors.surfaceHigh,
+                      ),
+                      child: Icon(Icons.add_rounded,
+                          color: context.appColors.text),
+                    ),
+                  ),
+                ],
+              ),
             ),
+            Divider(height: 1, color: context.appColors.surfaceHigh),
             ListTile(
               leading: const Icon(Icons.reply_rounded),
               title: Text(tr('رد')),
@@ -1497,12 +1559,28 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             ),
           ],
         ),
+        ),
       ),
     );
   }
 
+  /// يضع تفاعلاً على الرسالة؛ والضغط على نفس تفاعلي الحالي يزيله.
+  Future<void> _reactToMessage(ChatMessage message, String reaction) async {
+    final same = message.reactions[SocialService.currentUid] == reaction;
+    HapticFeedback.lightImpact();
+    try {
+      await SocialService.setMessageReaction(
+        widget.conversationId,
+        message.id,
+        same ? null : reaction,
+      );
+    } catch (error) {
+      _showError(tr('تعذر تحديث التفاعل'), error);
+    }
+  }
+
   /// النقر مرتين على رسالة: تفاعل ❤️ سريع (وإن كان موجوداً يُزال)، كإنستغرام.
-  /// بقية التفاعلات (😂 👍 🔥 ...) من الضغط المطوّل ← إضافة تفاعل.
+  /// بقية التفاعلات من الضغط المطوّل ← صف الملصقات أعلى الورقة.
   Future<void> _quickHeart(ChatMessage message) async {
     final me = SocialService.currentUid;
     final hasHeart = message.reactions[me] == '❤️';
@@ -1512,46 +1590,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         widget.conversationId,
         message.id,
         hasHeart ? null : '❤️',
-      );
-    } catch (error) {
-      _showError(tr('تعذر تحديث التفاعل'), error);
-    }
-  }
-
-  Future<void> _showReactionPicker(ChatMessage message) async {
-    const reactions = ['❤️', '😂', '😮', '😢', '👏', '🔥', '👍', '🙏'];
-    final selected = await showModalBottomSheet<String?>(
-      context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
-          child: Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              for (final reaction in reactions)
-                IconButton(
-                  tooltip: reaction,
-                  onPressed: () => Navigator.pop(sheetContext, reaction),
-                  icon: Text(reaction, style: const TextStyle(fontSize: 28)),
-                ),
-              IconButton(
-                tooltip: tr('إزالة التفاعل'),
-                onPressed: () => Navigator.pop(sheetContext, ''),
-                icon: const Icon(Icons.close_rounded),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (selected == null || !mounted) return;
-    try {
-      await SocialService.setMessageReaction(
-        widget.conversationId,
-        message.id,
-        selected.isEmpty ? null : selected,
       );
     } catch (error) {
       _showError(tr('تعذر تحديث التفاعل'), error);
@@ -1953,9 +1991,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                         isDelivered
                                             ? Icons.done_all_rounded
                                             : Icons.done_rounded,
-                                        size: 14,
+                                        size: 16,
+                                        // قُرئت: علامتان زرقاوان (مثل واتساب).
                                         color: isRead
-                                            ? const Color(0xFFC4B5FD)
+                                            ? const Color(0xFF4FC3F7)
                                             : isDelivered
                                                 ? Colors.white70
                                                 : Colors.white54,

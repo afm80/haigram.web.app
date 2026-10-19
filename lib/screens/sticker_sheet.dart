@@ -173,9 +173,13 @@ void deleteBeforeCursor(TextEditingController controller) {
 /// لوحة الملصقات بنمط واتساب/انستغرام: تظهر مكان الكيبورد تحت خانة الكتابة،
 /// وتبقى مفتوحة، وكل نقرة تضيف ملصقاً في المحرر (يمكن اختيار عدة ملصقات).
 class StickerPanel extends StatefulWidget {
-  final TextEditingController controller;
+  /// خانة الكتابة التي تُدخَل فيها الملصقات. اتركها null مع [onPick] لاختيار ملصق واحد
+  /// (مثل التفاعل على رسالة): فيُرجَع الملصق عبر [onPick] ويُخفى زر الحذف.
+  final TextEditingController? controller;
+  final void Function(String sticker)? onPick;
   final double height;
-  const StickerPanel({super.key, required this.controller, this.height = 280});
+  const StickerPanel(
+      {super.key, this.controller, this.onPick, this.height = 280});
 
   @override
   State<StickerPanel> createState() => _StickerPanelState();
@@ -224,14 +228,22 @@ class _StickerPanelState extends State<StickerPanel> {
 
   void _pick(String sticker) {
     HapticFeedback.selectionClick();
-    insertAtCursor(widget.controller, sticker);
+    final pick = widget.onPick;
+    final controller = widget.controller;
+    if (pick != null) {
+      pick(sticker);
+    } else if (controller != null) {
+      insertAtCursor(controller, sticker);
+    }
     _recents = [sticker, ..._recents.where((e) => e != sticker)].take(32).toList();
     _saveRecents();
   }
 
   void _backspace() {
+    final controller = widget.controller;
+    if (controller == null) return;
     HapticFeedback.selectionClick();
-    deleteBeforeCursor(widget.controller);
+    deleteBeforeCursor(controller);
   }
 
   void _startRepeat() {
@@ -249,7 +261,11 @@ class _StickerPanelState extends State<StickerPanel> {
     final colors = context.appColors;
     // الفهرس 0 = الأحدث، وبعده فئات الملصقات.
     final tabCount = stickerCategories.length + 1;
-    final items = _index == 0 ? _recents : stickerCategories[_index - 1].items;
+    var items = _index == 0 ? _recents : stickerCategories[_index - 1].items;
+    // التفاعل على رسالة محدود بـ 8 أحرف في قواعد Firestore، فنخفي الأطول.
+    if (widget.onPick != null) {
+      items = items.where((e) => e.length <= 8).toList();
+    }
     final title = _index == 0 ? 'الأحدث' : stickerCategories[_index - 1].title;
     return Container(
       height: widget.height,
@@ -303,6 +319,7 @@ class _StickerPanelState extends State<StickerPanel> {
                     },
                   ),
                 ),
+                if (widget.controller != null)
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: _backspace,
