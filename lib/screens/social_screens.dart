@@ -1605,21 +1605,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final linkPattern = RegExp(r'https?://\S+|www\.\S+');
     final matches = linkPattern.allMatches(text);
     if (matches.isEmpty) {
-      return Text(
-        text,
+      return Text.rich(
+        TextSpan(children: inlineEmojiSpans(text, style)),
         textDirection: SocialService.inferTextDirection(text),
         style: style,
       );
     }
 
-    final spans = <TextSpan>[];
+    final spans = <InlineSpan>[];
     var cursor = 0;
     for (final match in matches) {
       if (match.start > cursor) {
-        spans.add(TextSpan(
-          text: text.substring(cursor, match.start),
-          style: style,
-        ));
+        spans.addAll(
+            inlineEmojiSpans(text.substring(cursor, match.start), style));
       }
       final url = text.substring(match.start, match.end);
       spans.add(TextSpan(
@@ -1634,10 +1632,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       cursor = match.end;
     }
     if (cursor < text.length) {
-      spans.add(TextSpan(
-        text: text.substring(cursor),
-        style: style,
-      ));
+      spans.addAll(inlineEmojiSpans(text.substring(cursor), style));
     }
 
     return RichText(

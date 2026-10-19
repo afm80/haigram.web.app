@@ -451,7 +451,10 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                                                 FontWeight
                                                                     .w700),
                                                       ),
-                                                    TextSpan(text: shown),
+                                                    ...inlineEmojiSpans(
+                                                        shown,
+                                                        const TextStyle(
+                                                            height: 1.4)),
                                                   ]),
                                                   style: const TextStyle(
                                                     height: 1.4,
