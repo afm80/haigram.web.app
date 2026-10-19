@@ -128,9 +128,10 @@ jobs:
           npm install --global firebase-tools
           firebase deploy --only functions --project "$FB_PROJECT_ID" --non-interactive
 
-      # الفهارس في خطوة منفصلة: إن فشلت (صلاحية الحساب مثلاً) لا يتأثر النشر أعلاه.
+      # الفهارس في خطوة منفصلة وتأتي آخراً، فلا يتأثر النشر أعلاه إن فشلت،
+      # لكن فشلها يظهر الآن بوضوح (علامة حمراء) بدل أن يُخفى.
+      # إن فشلت: امنح حساب الخدمة دور Cloud Datastore Index Admin.
       - name: Deploy Firestore indexes
-        continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           FB_PROJECT_ID: ${{ secrets.FB_PROJECT_ID }}
