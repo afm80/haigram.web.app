@@ -143,7 +143,7 @@ jobs:
 
       - name: Build APK
         run: |
-          flutter build apk --release \
+          flutter build apk --release --no-shrink \
             --dart-define=FB_API_KEY=${{ secrets.FB_API_KEY }} \
             --dart-define=FB_APP_ID=${{ secrets.FB_APP_ID }} \
             --dart-define=FB_SENDER_ID=${{ secrets.FB_SENDER_ID }} \
