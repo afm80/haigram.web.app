@@ -8,7 +8,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'l10n.dart';
 import 'net_error.dart';
-import 'screens/auth_screen.dart';
 import 'screens/home_shell.dart';
 import 'screens/onboarding_screen.dart';
 import 'theme.dart';
@@ -270,13 +269,12 @@ class _HaigramAppState extends State<HaigramApp> {
             duration: const Duration(milliseconds: 280),
             switchInCurve: Curves.easeOutCubic,
             switchOutCurve: Curves.easeInCubic,
-            child: snap.data == null
-                ? const AuthScreen(key: ValueKey('auth'))
-                : HomeShell(
-                    key: const ValueKey('home'),
-                    themeMode: _themeMode,
-                    onThemeModeChanged: _setThemeMode,
-                  ),
+            // الزائر يتصفح بدون تسجيل؛ ويُعاد بناء الغلاف عند الدخول/الخروج.
+            child: HomeShell(
+              key: ValueKey('home-${snap.data?.uid ?? 'guest'}'),
+              themeMode: _themeMode,
+              onThemeModeChanged: _setThemeMode,
+            ),
           );
         },
       );
