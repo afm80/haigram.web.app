@@ -9,18 +9,18 @@ import 'sticker_data.dart';
 
 import '../l10n.dart';
 
-/// رابط صورة Twemoji الملوّنة (مفتوحة الترخيص CC-BY 4.0) للإيموجي [emoji].
-/// تظهر بألوانها على كل الأجهزة والمتصفحات دون الاعتماد على خط النظام.
+/// مسار صورة Noto Emoji الملوّنة المحلية (web/stickers) للإيموجي [emoji].
+/// أسماء الملفات بصيغة Noto: emoji_u1f600.png، وللمركّب emoji_u1f468_200d_1f4bb.png
+/// (بدون U+FE0F). تظهر بألوانها على كل الأجهزة دون الاعتماد على خط النظام.
 String stickerImageUrl(String emoji) {
-  final hasZwj = emoji.runes.contains(0x200D);
   final cps = emoji.runes
-      .where((r) => hasZwj || r != 0xFE0F)
+      .where((r) => r != 0xFE0F)
       .map((r) => r.toRadixString(16))
-      .join('-');
-  return 'https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/$cps.png';
+      .join('_');
+  return 'stickers/emoji_u$cps.png';
 }
 
-/// إيموجي ملوّن: صورة Twemoji (CC-BY 4.0) فتظهر بألوانها على كل الأجهزة.
+/// إيموجي ملوّن: صورة Noto Emoji المحلية فتظهر بألوانها على كل الأجهزة.
 /// (خط الإيموجي في canvaskit كان يظهر أبيض وأسود). يرجع إلى النص إن تعذر التحميل.
 class StickerGlyph extends StatelessWidget {
   final String emoji;
