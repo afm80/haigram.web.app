@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemNavigator;
 import 'package:firebase_messaging/firebase_messaging.dart';
 
+import '../auth_gate.dart';
 import '../l10n.dart';
 import '../net_error.dart';
 import '../route_state.dart';
@@ -72,6 +73,13 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    // الزائر: لا ملف شخصي يُجهَّز، نعرض التبويبات مباشرة للتصفح فقط.
+    if (!isLoggedIn) {
+      return _Tabs(
+        themeMode: widget.themeMode,
+        onThemeModeChanged: widget.onThemeModeChanged,
+      );
+    }
     return FutureBuilder<AppUser>(
       future: _profile,
       builder: (context, snap) {
@@ -125,31 +133,36 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   // يلغي نافذة «اضغط مرة أخرى للخروج» عند فتح أي صفحة داخل تبويب.
   late final _pushObservers =
       List.generate(5, (_) => _PushObserver(_disarmExit));
-  late final Stream<AppUser?> _currentProfile =
-      UserService.profileStream(UserService.me?.uid ?? '');
+  bool get _guest => !isLoggedIn;
+  late final Stream<AppUser?> _currentProfile = _guest
+      ? Stream<AppUser?>.value(null)
+      : UserService.profileStream(UserService.me?.uid ?? '');
   late final Stream<int> _unreadNotificationCount =
-      SocialService.unreadNotificationCount();
+      _guest ? Stream<int>.value(0) : SocialService.unreadNotificationCount();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _pushOpenedSub = FirebaseMessaging.onMessageOpenedApp.listen(
-      _openChatFromPush,
-    );
-    FirebaseMessaging.instance.getInitialMessage().then((message) {
-      if (message == null) return;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _openChatFromPush(message);
-      });
-    }).catchError((Object _) {});
-    _updatePresence(true);
-    _presenceHeartbeat = Timer.periodic(
-      const Duration(minutes: 1),
-      (_) => _updatePresence(_appVisible),
-    );
-    // حذف قصصي المنتهية (أقدم من 24 ساعة) لتوفير الحصة المجانية.
-    PostService.cleanupMyExpiredStories().catchError((_) {});
+    // الزائر: لا إشعارات دفع ولا حالة اتصال ولا تنظيف قصص (لا قراءات ولا كتابات).
+    if (!_guest) {
+      _pushOpenedSub = FirebaseMessaging.onMessageOpenedApp.listen(
+        _openChatFromPush,
+      );
+      FirebaseMessaging.instance.getInitialMessage().then((message) {
+        if (message == null) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _openChatFromPush(message);
+        });
+      }).catchError((Object _) {});
+      _updatePresence(true);
+      _presenceHeartbeat = Timer.periodic(
+        const Duration(minutes: 1),
+        (_) => _updatePresence(_appVisible),
+      );
+      // حذف قصصي المنتهية (أقدم من 24 ساعة) لتوفير الحصة المجانية.
+      PostService.cleanupMyExpiredStories().catchError((_) {});
+    }
     WidgetsBinding.instance
         .addPostFrameCallback((_) => _restoreOrOpenDeepLink());
   }
@@ -335,6 +348,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   }
 
   void _pushChatRoute(String chatId, String otherUid) {
+    if (needsLogin(context)) return;
     _tabNavigators[0].currentState?.push<void>(
           appRoute<void>(
             'chat',
@@ -466,7 +480,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
                           inactive: navInactive,
                           showLabel: false,
                           // صورة الملف الشخصي بحجم التبويب كامل (مثل انستغرام)
-                          iconBuilder: (selected) => Container(
+                          iconBuilder: _guest ? null : (selected) => Container(
                             width: 40,
                             height: 40,
                             padding: const EdgeInsets.all(2),
@@ -555,7 +569,11 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     final selected = _index == i;
     return Expanded(
       child: GestureDetector(
-        onTap: () => _selectTab(i),
+        onTap: () {
+          // الرسائل والملف الشخصي تحتاج حساباً.
+          if ((i == 3 || i == 4) && needsLogin(context)) return;
+          _selectTab(i);
+        },
         behavior: HitTestBehavior.opaque,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 220),
@@ -635,8 +653,10 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
           ),
         );
     return GestureDetector(
-      onTap: () =>
-          showCreateSheet(_tabNavigators[_index].currentContext ?? context),
+      onTap: () {
+        if (needsLogin(context)) return;
+        showCreateSheet(_tabNavigators[_index].currentContext ?? context);
+      },
       child: SizedBox(
         width: 50,
         height: 34,

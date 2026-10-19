@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart' show DocumentSnapshot;
 import 'package:flutter/material.dart';
 
+import '../auth_gate.dart';
 import '../services/post_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
@@ -86,6 +87,8 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
 
   void _setMode(_FeedMode m) {
     if (m == _mode) return;
+    // «المتابَعون» يحتاج حساباً: الزائر يرى «للجميع» فقط.
+    if (m == _FeedMode.following && needsLogin(context)) return;
     stopInlineVideos();
     if (_scroll.hasClients) _scroll.jumpTo(0);
     setState(() {

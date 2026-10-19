@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../auth_gate.dart';
 import '../services/post_service.dart';
 import '../services/presence_service.dart';
 import '../services/social_service.dart';
@@ -2688,6 +2689,7 @@ class _FollowBackButton extends StatelessWidget {
   const _FollowBackButton({required this.uid});
 
   Future<void> _onPressed(BuildContext context, FollowState state) async {
+    if (needsLogin(context)) return;
     final messenger = ScaffoldMessenger.of(context);
     try {
       switch (state) {

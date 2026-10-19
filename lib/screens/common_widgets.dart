@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/post_service.dart';
+import '../auth_gate.dart';
 import '../services/presence_service.dart';
 import '../services/social_service.dart';
 import '../services/user_service.dart';
@@ -190,6 +191,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
       {String kind = 'text',
       Uint8List? imageBytes,
       String? failure}) {
+    if (needsLogin(context)) return;
     // الرد دائماً على التعليق الرئيسي (مستوى واحد)، مع ذكر من نردّ عليه.
     final target = _replyTo;
     final parentId = target == null ? null : (target.parentId ?? target.id);
@@ -207,6 +209,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
 
   /// يرسل ما في خانة الكتابة (نص/ملصق) والصورة المرفقة عند ضغط زر الإرسال فقط.
   void _send() {
+    if (needsLogin(context)) return;
     final t = _text.text.trim();
     final image = _pendingImage;
     if (t.isEmpty && image == null) return;
@@ -223,7 +226,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   }
 
   Future<void> _pickImage() async {
-    if (_sending) return;
+    if (_sending || needsLogin(context)) return;
     setState(() => _sending = true);
     try {
       final image = await _picker.pickImage(
@@ -290,6 +293,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
 
   /// نافذة أسباب الإبلاغ عن تعليق.
   Future<void> _reportComment(Comment comment) async {
+    if (needsLogin(context)) return;
     final messenger = ScaffoldMessenger.of(widget.outerContext);
     await showModalBottomSheet<void>(
       context: context,
@@ -348,6 +352,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   }
 
   Future<void> _toggleCommentLike(Comment comment) async {
+    if (needsLogin(context)) return;
     try {
       await PostService.toggleCommentLike(widget.post.id, comment.id);
     } catch (error) {
@@ -571,6 +576,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   }
 
   void _startReply(Comment c) {
+    if (needsLogin(context)) return;
     setState(() => _replyTo = c);
     _focus.requestFocus();
   }
@@ -694,7 +700,10 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                     IconButton(
                       tooltip: tr('الملصقات'),
                       visualDensity: VisualDensity.compact,
-                      onPressed: _toggleStickers,
+                      onPressed: () {
+                        if (needsLogin(context)) return;
+                        _toggleStickers();
+                      },
                       icon: Icon(
                           _showStickers
                               ? Icons.keyboard_alt_outlined
@@ -712,6 +721,10 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                       child: TextField(
                         controller: _text,
                         focusNode: _focus,
+                        readOnly: !isLoggedIn,
+                        onTap: () {
+                          if (!isLoggedIn) needsLogin(context);
+                        },
                         maxLength: 500,
                         textInputAction: TextInputAction.send,
                         onSubmitted: (_) => _send(),
@@ -777,7 +790,7 @@ class _LikeBuilderState extends State<LikeBuilder> {
   }
 
   Future<void> _toggle(bool currentLiked) async {
-    if (_busy) return;
+    if (_busy || needsLogin(context)) return;
     _busy = true;
     final change = currentLiked ? -1 : 1;
     setState(() {

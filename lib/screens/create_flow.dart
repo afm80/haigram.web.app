@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../auth_gate.dart';
 import '../services/post_service.dart';
 import '../theme.dart';
 
@@ -24,6 +25,7 @@ String _kindTitle(CreateKind k) => switch (k) {
 
 /// يفتح شاشة الإنشاء (كاميرا أو ملفات الجهاز) للنوع المطلوب.
 void startCreate(BuildContext context, CreateKind kind) {
+  if (needsLogin(context)) return;
   Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
       fullscreenDialog: true,
       builder: (_) => kind == CreateKind.video
@@ -33,6 +35,7 @@ void startCreate(BuildContext context, CreateKind kind) {
 
 /// الشريط السفلي الصغير: منشور / قصة (مثل إنستغرام).
 void showCreateSheet(BuildContext context) {
+  if (needsLogin(context)) return;
   showModalBottomSheet(
     context: context,
     useRootNavigator: true,

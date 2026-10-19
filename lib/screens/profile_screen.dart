@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../auth_gate.dart';
 import '../services/post_service.dart';
 import '../services/presence_service.dart';
 import '../services/social_service.dart';
@@ -62,7 +63,17 @@ class UserProfileScreen extends StatelessWidget {
               style:
                   const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
         ),
-        actions: [if (!isMe) _ProfileMoreMenu(uid: uid)],
+        actions: [
+          if (!isMe)
+            isLoggedIn
+                ? _ProfileMoreMenu(uid: uid)
+                : Builder(
+                    builder: (context) => IconButton(
+                      onPressed: () => needsLogin(context),
+                      icon: const Icon(Icons.more_vert_rounded),
+                    ),
+                  ),
+        ],
       ),
       body: SafeArea(child: ProfileView(uid: uid, isMe: isMe)),
     );
@@ -92,17 +103,23 @@ class ProfileView extends StatefulWidget {
 }
 
 class _ProfileViewState extends State<ProfileView> {
-  late final Stream<AppUser?> _userStream =
-      UserService.profileStream(widget.uid);
-  late final Stream<ChatBlockState>? _blockStream =
-      widget.isMe ? null : SocialService.blockState(widget.uid);
+  // الزائر: قراءة واحدة مخزّنة بدل المتابعة اللحظية، وبلا فحص حظر.
+  late final Stream<AppUser?> _userStream = PostService.isGuest
+      ? Stream.fromFuture(UserService.profileOf(widget.uid))
+      : UserService.profileStream(widget.uid);
+  late final Stream<ChatBlockState>? _blockStream = widget.isMe
+      ? null
+      : PostService.isGuest
+          ? Stream.value(
+              ChatBlockState(blockedByMe: false, blockedByThem: false))
+          : SocialService.blockState(widget.uid);
   late final Stream<bool>? _followingStream =
       widget.isMe ? null : PostService.isFollowing(widget.uid);
   bool _visitRecorded = false;
 
   /// يسجّل زيارتي لهذا الملف مرة واحدة (إن فعّل الطرفان الميزة ولا يوجد حظر).
   void _recordVisit(AppUser user, _Access access) {
-    if (_visitRecorded || widget.isMe) return;
+    if (_visitRecorded || widget.isMe || PostService.isGuest) return;
     if (access == _Access.loading ||
         access == _Access.blockedByMe ||
         access == _Access.blockedByThem) {
@@ -348,6 +365,7 @@ class _Header extends StatelessWidget {
   }
 
   void _showProfileShareSheet(BuildContext context, AppUser user) {
+    if (needsLogin(context)) return;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -694,6 +712,7 @@ class _Header extends StatelessWidget {
   }
 
   void _showFollowSheet(BuildContext context, String uid, int initialTab) {
+    if (needsLogin(context)) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -717,6 +736,7 @@ class FollowActionButton extends StatelessWidget {
   });
 
   Future<void> _onPressed(BuildContext context, FollowState state) async {
+    if (needsLogin(context)) return;
     final messenger = ScaffoldMessenger.of(context);
     try {
       switch (state) {
@@ -865,6 +885,7 @@ class _MessageActionButtonState extends State<_MessageActionButton> {
 
 /// يبدأ (أو يفتح) محادثة مع مستخدم ويعرضها فوق الشريط السفلي.
 Future<void> openChatWith(BuildContext context, String uid) async {
+  if (needsLogin(context)) return;
   final messenger = ScaffoldMessenger.of(context);
   final navigator = rootNavigatorOf(context);
   try {

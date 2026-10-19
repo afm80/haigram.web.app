@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../auth_gate.dart';
 import '../services/post_service.dart';
 import '../services/social_service.dart';
 import '../services/user_service.dart';
@@ -22,6 +23,7 @@ String postShareLink(Post post) => PostService.postLink(post);
 /// ثم صف تطبيقات المشاركة، ثم صف إجراءات (قصتي، حفظ، تنزيل...).
 /// تُستخدم للمنشورات.
 Future<void> showPostShareSheet(BuildContext context, Post post) {
+  if (needsLogin(context)) return Future<void>.value();
   final messenger = ScaffoldMessenger.of(context);
   final colors = context.appColors;
   return showModalBottomSheet<void>(
@@ -584,6 +586,7 @@ class _PostShareSheetState extends State<_PostShareSheet> {
 /// معاينة الصورة (أو صورة الفيديو المصغّرة) مع اسم صاحبها، ثم النشر في قصتي.
 Future<void> showAddToStoryDialog(BuildContext rootContext, Post post,
     ScaffoldMessengerState messenger) async {
+  if (needsLogin(rootContext)) return;
   final ok = await showDialog<bool>(
     context: rootContext,
     builder: (ctx) {

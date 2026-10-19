@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/post_service.dart';
+import '../auth_gate.dart';
 import '../services/social_service.dart';
 import '../theme.dart';
 import '../route_state.dart';
@@ -47,6 +48,7 @@ class _PostCardState extends State<PostCard> {
   bool _heart = false;
 
   void _doubleTapLike() {
+    if (needsLogin(context)) return;
     if (!_liked) PostService.toggleLike(widget.post.id, false);
     setState(() => _heart = true);
     Future.delayed(const Duration(milliseconds: 700), () {
@@ -55,6 +57,7 @@ class _PostCardState extends State<PostCard> {
   }
 
   Future<void> _hideNotInterested(Post p) async {
+    if (needsLogin(context)) return;
     final messenger = ScaffoldMessenger.of(context);
     try {
       await PostService.hidePost(p.id);
@@ -253,6 +256,7 @@ class _PostCardState extends State<PostCard> {
   }
 
   Future<void> _toggleRepost() async {
+    if (needsLogin(context)) return;
     final messenger = ScaffoldMessenger.of(context);
     try {
       final posted = await PostService.toggleRepost(widget.post);
@@ -303,6 +307,7 @@ class _PostCardState extends State<PostCard> {
                 case 'hide':
                   _hideNotInterested(p);
                 case 'report':
+                  if (needsLogin(context)) return;
                   reportPostSheet(context, p);
               }
             },
@@ -414,7 +419,10 @@ class _PostCardState extends State<PostCard> {
           ),
           IconButton(
             tooltip: tr('مشاركة'),
-            onPressed: () => showPostShareSheet(context, widget.post),
+            onPressed: () {
+              if (needsLogin(context)) return;
+              showPostShareSheet(context, widget.post);
+            },
             icon: const _SharePlaneIcon(),
           ),
           const Spacer(),
@@ -424,7 +432,10 @@ class _PostCardState extends State<PostCard> {
               final saved = s.data ?? false;
               return IconButton(
                 tooltip: saved ? tr('إزالة من المحفوظات') : tr('حفظ المنشور'),
-                onPressed: () => PostService.toggleSave(p.id, saved),
+                onPressed: () {
+                  if (needsLogin(context)) return;
+                  PostService.toggleSave(p.id, saved);
+                },
                 icon: Icon(
                   saved
                       ? Icons.bookmark_rounded

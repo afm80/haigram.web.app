@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'package:cached_network_image/cached_network_image.dart';
 
+import '../auth_gate.dart';
 import '../services/post_service.dart';
 import '../services/social_service.dart';
 import '../services/user_service.dart';
@@ -78,8 +79,10 @@ class _StoriesBarState extends State<StoriesBar> {
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                 children: [
-                  _myItem(mine.isEmpty ? null : mine.first,
-                      () => _open(ordered, 0)),
+                  // الزائر لا قصة له: نخفي خلية «قصتك».
+                  if (isLoggedIn)
+                    _myItem(mine.isEmpty ? null : mine.first,
+                        () => _open(ordered, 0)),
                   for (var i = 0; i < rest.length; i++)
                     _item(
                       uid: rest[i].uid,
@@ -416,6 +419,7 @@ class _StoryViewerState extends State<StoryViewer>
   }
 
   Future<void> _sendReply() async {
+    if (needsLogin(context)) return;
     final text = _reply.text.trim();
     if (text.isEmpty) return;
     final messenger = ScaffoldMessenger.of(context);
@@ -783,6 +787,10 @@ class _StoryViewerState extends State<StoryViewer>
               child: TextField(
                 controller: _reply,
                 focusNode: _replyFocus,
+                readOnly: !isLoggedIn,
+                onTap: () {
+                  if (!isLoggedIn) needsLogin(context);
+                },
                 style: const TextStyle(color: Colors.white, fontSize: 15),
                 cursorColor: Colors.white,
                 textInputAction: TextInputAction.send,
@@ -811,8 +819,10 @@ class _StoryViewerState extends State<StoryViewer>
             builder: (_, snap) {
               final liked = snap.data ?? false;
               return GestureDetector(
-                onTap: () =>
-                    PostService.toggleLike(story.id, liked).catchError((_) {}),
+                onTap: () {
+                  if (needsLogin(context)) return;
+                  PostService.toggleLike(story.id, liked).catchError((_) {});
+                },
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 200),
                   transitionBuilder: (c, a) =>

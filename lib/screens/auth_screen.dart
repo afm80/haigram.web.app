@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -11,7 +13,10 @@ import '../theme.dart';
 import 'language_button.dart';
 
 class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key});
+  /// عند فتحها فوق التصفح (زائر ضغط على تفاعل): يظهر زر إغلاق ✕،
+  /// وتُغلق تلقائياً بعد نجاح تسجيل الدخول.
+  final bool closable;
+  const AuthScreen({super.key, this.closable = false});
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -28,9 +33,21 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _rememberMe = true;
   String? _error;
   String? _info;
+  StreamSubscription<User?>? _authSub;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.closable) {
+      _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
+        if (user != null && mounted) Navigator.of(context).maybePop();
+      });
+    }
+  }
 
   @override
   void dispose() {
+    _authSub?.cancel();
     _email.dispose();
     _pass.dispose();
     _name.dispose();
@@ -421,6 +438,21 @@ class _AuthScreenState extends State<AuthScreen> {
                 ),
               ),
             ),
+            if (widget.closable)
+              PositionedDirectional(
+                top: 0,
+                start: 0,
+                child: SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: IconButton(
+                      tooltip: tr('إغلاق'),
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
