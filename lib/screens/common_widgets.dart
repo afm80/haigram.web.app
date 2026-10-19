@@ -161,11 +161,19 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   final _picker = ImagePicker();
   Uint8List? _pendingImage; // صورة مرفقة بانتظار الإرسال اليدوي
   final _focus = FocusNode();
+  bool _showStickers = false;
   Comment? _replyTo; // التعليق الذي نردّ عليه حالياً
   final Set<String> _expanded = {}; // التعليقات التي تُعرض ردودها
 
   @override
+  void initState() {
+    super.initState();
+    _focus.addListener(_hideStickersOnFocus);
+  }
+
+  @override
   void dispose() {
+    _focus.removeListener(_hideStickersOnFocus);
     _text.dispose();
     _focus.dispose();
     super.dispose();
@@ -209,7 +217,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
           kind: 'image', imageBytes: image, failure: tr('تعذر إرسال الصورة'));
     }
     if (t.isNotEmpty) {
-      _post(t, kind: isSingleSticker(t) ? 'sticker' : 'text');
+      _post(t, kind: isStickerOnly(t) ? 'sticker' : 'text');
     }
     if (_replyTo != null) setState(() => _replyTo = null);
   }
@@ -421,7 +429,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                             ),
                                           )
                                         : c.kind == 'sticker'
-                                            ? StickerGlyph(c.text, size: 32)
+                                            ? StickerMessage(c.text, base: 44)
                                             : TranslatableText(
                                                 text: c.text,
                                                 builder: (shown) => Text.rich(
@@ -567,11 +575,33 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     _focus.requestFocus();
   }
 
+  void _toggleStickers() {
+    if (_showStickers) {
+      setState(() => _showStickers = false);
+      _focus.requestFocus();
+    } else {
+      FocusScope.of(context).unfocus();
+      setState(() => _showStickers = true);
+    }
+  }
+
+  /// عند الضغط على خانة الكتابة تُغلق لوحة الملصقات ويظهر الكيبورد.
+  void _hideStickersOnFocus() {
+    if (_focus.hasFocus && _showStickers && mounted) {
+      setState(() => _showStickers = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final h = MediaQuery.of(context).size.height;
     final me = PostService.uidOrEmpty;
-    return Padding(
+    return PopScope(
+        canPop: !_showStickers,
+        onPopInvoked: (didPop) {
+          if (!didPop) setState(() => _showStickers = false);
+        },
+        child: Padding(
       padding:
           EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: SizedBox(
@@ -651,6 +681,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                 height: 1, color: context.appColors.text.withOpacity(0.12)),
             SafeArea(
               top: false,
+              bottom: !_showStickers,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
                 child: Row(
@@ -663,16 +694,11 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                     IconButton(
                       tooltip: tr('الملصقات'),
                       visualDensity: VisualDensity.compact,
-                      onPressed: () {
-                        FocusScope.of(context).unfocus();
-                        showStickerSheet(
-                          context,
-                          useRootNavigator: true,
-                          onPick: (sticker) =>
-                              insertAtCursor(_text, sticker),
-                        );
-                      },
-                      icon: Icon(Icons.emoji_emotions_outlined,
+                      onPressed: _toggleStickers,
+                      icon: Icon(
+                          _showStickers
+                              ? Icons.keyboard_alt_outlined
+                              : Icons.emoji_emotions_outlined,
                           color: context.appColors.text),
                     ),
                     IconButton(
@@ -710,10 +736,15 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                 ),
               ),
             ),
+            if (_showStickers)
+              SafeArea(
+                top: false,
+                child: StickerPanel(controller: _text, height: 240),
+              ),
           ],
         ),
       ),
-    );
+    ));
   }
 }
 

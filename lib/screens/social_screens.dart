@@ -762,6 +762,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final _text = TextEditingController();
   final _messageFocus = FocusNode();
+  bool _showStickers = false;
   final _picker = ImagePicker();
   final _scroll = ScrollController();
   Timer? _draftTimer;
@@ -872,6 +873,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       );
     });
     _messageFocus.addListener(_syncTypingState);
+    _messageFocus.addListener(_hideStickersOnFocus);
     _text.addListener(_syncTypingState);
     _text.addListener(_scheduleDraftSave);
     _restoreDraft();
@@ -894,6 +896,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _subscribeMessages();
   }
 
+  /// عند الضغط على خانة الكتابة تُغلق لوحة الملصقات ويظهر الكيبورد.
+  void _hideStickersOnFocus() {
+    if (_messageFocus.hasFocus && _showStickers && mounted) {
+      setState(() => _showStickers = false);
+    }
+  }
+
+  void _toggleStickers() {
+    if (_showStickers) {
+      setState(() => _showStickers = false);
+      _messageFocus.requestFocus();
+    } else {
+      FocusScope.of(context).unfocus();
+      setState(() => _showStickers = true);
+    }
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -903,6 +922,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _typingSub?.cancel();
     _chatPushSub?.cancel();
     _messageFocus.removeListener(_syncTypingState);
+    _messageFocus.removeListener(_hideStickersOnFocus);
     _text.removeListener(_syncTypingState);
     _text.removeListener(_scheduleDraftSave);
     _draftTimer?.cancel();
@@ -1239,7 +1259,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
 
     if (text.isNotEmpty) {
-      final sending = isSingleSticker(text) && !_firstMessageToStranger
+      final sending = isStickerOnly(text) && !_firstMessageToStranger
           ? SocialService.sendSticker(
               widget.conversationId,
               text,
@@ -1604,7 +1624,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         }
         final blockState = blockSnapshot.data ??
             const ChatBlockState(blockedByMe: false, blockedByThem: false);
-        return Scaffold(
+        return PopScope(
+          canPop: !_showStickers,
+          onPopInvoked: (didPop) {
+            if (!didPop) setState(() => _showStickers = false);
+          },
+          child: Scaffold(
           backgroundColor: colors.bg,
           appBar: AppBar(
             titleSpacing: 0,
@@ -1916,7 +1941,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                         : _openImage(message.imageBytes!),
                                   )
                                 else if (sticker)
-                                  StickerGlyph(message.text, size: 40)
+                                  StickerMessage(message.text)
                                 else
                                   _messageBody(message.text, mine: mine),
                                 if (!sticker) const SizedBox(height: 3),
@@ -2170,6 +2195,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   ),
                 SafeArea(
                   top: false,
+                  bottom: !_showStickers,
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(8, 7, 8, 8),
                     child: Row(
@@ -2195,15 +2221,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         IconButton(
                           tooltip: tr('الملصقات والرموز التعبيرية'),
                           visualDensity: VisualDensity.compact,
-                          onPressed: () {
-                            FocusScope.of(context).unfocus();
-                            showStickerSheet(
-                              context,
-                              onPick: (sticker) =>
-                                  insertAtCursor(_text, sticker),
-                            );
-                          },
-                          icon: const Icon(Icons.emoji_emotions_outlined),
+                          onPressed: _toggleStickers,
+                          icon: Icon(_showStickers
+                              ? Icons.keyboard_alt_outlined
+                              : Icons.emoji_emotions_outlined),
                         ),
                         Expanded(
                           child: TextField(
@@ -2239,10 +2260,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ),
                   ),
                 ),
+                if (_showStickers)
+                  SafeArea(
+                    top: false,
+                    child: StickerPanel(controller: _text),
+                  ),
               ],
             ],
           ),
-        );
+        ));
       },
     );
   }

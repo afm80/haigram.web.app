@@ -1,4 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../theme.dart';
 import 'sticker_data.dart';
@@ -48,171 +52,72 @@ class StickerGlyph extends StatelessWidget {
   }
 }
 
-/// نافذة الملصقات بنمط تيك توك: ورقة كبيرة تُسحب لأعلى، وتبويبات للفئات
-/// وشبكة كبيرة بدل القائمة الصغيرة.
-Future<void> showStickerSheet(
-  BuildContext context, {
-  required void Function(String sticker) onPick,
-  bool useRootNavigator = false,
-}) {
-  return showModalBottomSheet<void>(
-    context: context,
-    useRootNavigator: useRootNavigator,
-    isScrollControlled: true,
-    useSafeArea: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) => _StickerSheet(onPick: onPick),
-  );
+Set<String>? _stickerSet;
+int _maxStickerLen = 1;
+
+Set<String> get _allStickers {
+  final cached = _stickerSet;
+  if (cached != null) return cached;
+  final all = <String>{
+    for (final category in stickerCategories) ...category.items,
+  };
+  for (final s in all) {
+    if (s.length > _maxStickerLen) _maxStickerLen = s.length;
+  }
+  return _stickerSet = all;
 }
 
-class _StickerSheet extends StatefulWidget {
-  final void Function(String sticker) onPick;
-  const _StickerSheet({required this.onPick});
-
-  @override
-  State<_StickerSheet> createState() => _StickerSheetState();
+/// يقسّم [text] إلى ملصقات منفصلة، أو يرجع null إن كان فيه أي شيء غير الملصقات.
+List<String>? parseStickers(String text) {
+  final all = _allStickers;
+  final t = text.replaceAll(RegExp(r'\s+'), '');
+  if (t.isEmpty) return null;
+  final out = <String>[];
+  var i = 0;
+  while (i < t.length) {
+    String? found;
+    final maxLen = _maxStickerLen < t.length - i ? _maxStickerLen : t.length - i;
+    for (var len = maxLen; len >= 1; len--) {
+      final part = t.substring(i, i + len);
+      if (all.contains(part)) {
+        found = part;
+        break;
+      }
+    }
+    if (found == null) return null;
+    out.add(found);
+    i += found.length;
+  }
+  return out;
 }
 
-class _StickerSheetState extends State<_StickerSheet> {
-  int _index = 0;
+/// هل الرسالة كلها ملصقات فقط (حتى 3 ملصقات)؟ فتُعرض كبيرة مثل واتساب.
+/// الحد 24 حرفاً يطابق قواعد Firestore الحالية فلا تحتاج تعديلها.
+bool isStickerOnly(String text) {
+  final t = text.trim();
+  if (t.isEmpty || t.length > 24) return false;
+  final list = parseStickers(t);
+  return list != null && list.length <= 3;
+}
+
+/// يعرض رسالة الملصقات: واحد كبير، أو 2-3 بحجم أصغر قليلاً.
+class StickerMessage extends StatelessWidget {
+  final String text;
+  final double base;
+  const StickerMessage(this.text, {super.key, this.base = 56});
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.appColors;
-    final category = stickerCategories[_index];
-    return DraggableScrollableSheet(
-      initialChildSize: 0.45,
-      minChildSize: 0.3,
-      maxChildSize: 0.85,
-      expand: false,
-      builder: (context, scrollController) => Container(
-        decoration: BoxDecoration(
-          color: colors.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.12),
-              blurRadius: 18,
-              offset: const Offset(0, -8),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 42,
-              height: 4,
-              decoration: BoxDecoration(
-                color: colors.textDim.withOpacity(0.42),
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      tr('الملصقات'),
-                      style: TextStyle(
-                        color: colors.text,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: colors.surfaceHigh,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.auto_awesome_rounded,
-                      size: 18,
-                      color: colors.textDim,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 6),
-            SizedBox(
-              height: 44,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                itemCount: stickerCategories.length,
-                itemBuilder: (context, i) {
-                  final selected = i == _index;
-                  return GestureDetector(
-                    onTap: () => setState(() => _index = i),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      width: 40,
-                      margin: const EdgeInsets.symmetric(horizontal: 3),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? AppColors.brandPurple.withOpacity(0.12)
-                            : colors.surfaceHigh,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: selected
-                              ? AppColors.brandPurple.withOpacity(0.35)
-                              : Colors.transparent,
-                          width: 1.2,
-                        ),
-                      ),
-                      child: StickerGlyph(stickerCategories[i].icon, size: 22),
-                    ),
-                  );
-                },
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
-              child: Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: Text(
-                  tr(category.title),
-                  style: TextStyle(
-                    color: colors.textDim,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
-            Expanded(
-              child: GridView.builder(
-                key: ValueKey(_index),
-                controller: scrollController,
-                padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 44,
-                  mainAxisSpacing: 2,
-                  crossAxisSpacing: 2,
-                ),
-                itemCount: category.items.length,
-                itemBuilder: (context, i) {
-                  final sticker = category.items[i];
-                  return InkWell(
-                    borderRadius: BorderRadius.circular(10),
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      widget.onPick(sticker);
-                    },
-                    child: Center(child: StickerGlyph(sticker, size: 30)),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
+    final list = parseStickers(text) ?? [text];
+    final size = list.length == 1
+        ? base
+        : list.length == 2
+            ? base * 0.85
+            : base * 0.7;
+    return Wrap(
+      spacing: 2,
+      runSpacing: 2,
+      children: [for (final s in list) StickerGlyph(s, size: size)],
     );
   }
 }
@@ -233,12 +138,229 @@ void insertAtCursor(TextEditingController controller, String insert) {
   );
 }
 
-Set<String>? _allStickers;
+/// يحذف الملصق (أو المحرف) الذي قبل المؤشر، أو النص المحدد.
+void deleteBeforeCursor(TextEditingController controller) {
+  final text = controller.text;
+  final sel = controller.selection;
+  var start = sel.isValid ? sel.start.clamp(0, text.length).toInt() : text.length;
+  final end = sel.isValid ? sel.end.clamp(0, text.length).toInt() : text.length;
+  if (start == end) {
+    if (end == 0) return;
+    final before = text.substring(0, end);
+    var cut = 1;
+    final all = _allStickers;
+    final maxLen = _maxStickerLen < end ? _maxStickerLen : end;
+    var matched = false;
+    for (var len = maxLen; len >= 1; len--) {
+      if (all.contains(before.substring(end - len))) {
+        cut = len;
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      final last = before.codeUnitAt(end - 1);
+      if (last >= 0xDC00 && last <= 0xDFFF && end >= 2) cut = 2;
+    }
+    start = end - cut;
+  }
+  controller.value = TextEditingValue(
+    text: text.replaceRange(start, end, ''),
+    selection: TextSelection.collapsed(offset: start),
+  );
+}
 
-/// هل النص كله ملصق واحد؟ (فيُرسل بشكل ملصق كبير بدل نص عادي).
-bool isSingleSticker(String text) {
-  final all = _allStickers ??= {
-    for (final category in stickerCategories) ...category.items,
-  };
-  return text.length <= 24 && all.contains(text);
+/// لوحة الملصقات بنمط واتساب/انستغرام: تظهر مكان الكيبورد تحت خانة الكتابة،
+/// وتبقى مفتوحة، وكل نقرة تضيف ملصقاً في المحرر (يمكن اختيار عدة ملصقات).
+class StickerPanel extends StatefulWidget {
+  final TextEditingController controller;
+  final double height;
+  const StickerPanel({super.key, required this.controller, this.height = 280});
+
+  @override
+  State<StickerPanel> createState() => _StickerPanelState();
+}
+
+class _StickerPanelState extends State<StickerPanel> {
+  static const _prefsKey = 'recent_stickers';
+  static List<String> _recents = [];
+  static bool _recentsLoaded = false;
+
+  int _index = 1;
+  Timer? _repeat;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_recents.isNotEmpty) _index = 0;
+    _loadRecents();
+  }
+
+  @override
+  void dispose() {
+    _repeat?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadRecents() async {
+    if (_recentsLoaded) return;
+    _recentsLoaded = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getStringList(_prefsKey) ?? const <String>[];
+      if (saved.isNotEmpty && _recents.isEmpty) {
+        _recents = saved;
+        if (mounted) setState(() => _index = 0);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveRecents() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_prefsKey, _recents);
+    } catch (_) {}
+  }
+
+  void _pick(String sticker) {
+    HapticFeedback.selectionClick();
+    insertAtCursor(widget.controller, sticker);
+    _recents = [sticker, ..._recents.where((e) => e != sticker)].take(32).toList();
+    _saveRecents();
+  }
+
+  void _backspace() {
+    HapticFeedback.selectionClick();
+    deleteBeforeCursor(widget.controller);
+  }
+
+  void _startRepeat() {
+    _repeat?.cancel();
+    _repeat = Timer.periodic(const Duration(milliseconds: 90), (_) => _backspace());
+  }
+
+  void _stopRepeat() {
+    _repeat?.cancel();
+    _repeat = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    // الفهرس 0 = الأحدث، وبعده فئات الملصقات.
+    final tabCount = stickerCategories.length + 1;
+    final items = _index == 0 ? _recents : stickerCategories[_index - 1].items;
+    final title = _index == 0 ? 'الأحدث' : stickerCategories[_index - 1].title;
+    return Container(
+      height: widget.height,
+      decoration: BoxDecoration(
+        color: colors.surface,
+        border: Border(top: BorderSide(color: colors.surfaceHigh)),
+      ),
+      child: Column(
+        children: [
+          SizedBox(
+            height: 46,
+            child: Row(
+              children: [
+                Expanded(
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    itemCount: tabCount,
+                    itemBuilder: (context, i) {
+                      final selected = i == _index;
+                      return GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => setState(() => _index = i),
+                        child: Container(
+                          width: 44,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(
+                                color: selected
+                                    ? AppColors.brandPurple
+                                    : Colors.transparent,
+                                width: 2.5,
+                              ),
+                            ),
+                          ),
+                          child: i == 0
+                              ? Icon(Icons.access_time_rounded,
+                                  size: 22,
+                                  color: selected
+                                      ? AppColors.brandPurple
+                                      : colors.textDim)
+                              : Opacity(
+                                  opacity: selected ? 1 : 0.6,
+                                  child: StickerGlyph(
+                                      stickerCategories[i - 1].icon,
+                                      size: 22),
+                                ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _backspace,
+                  onLongPressStart: (_) => _startRepeat(),
+                  onLongPressEnd: (_) => _stopRepeat(),
+                  onLongPressCancel: _stopRepeat,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    child: Icon(Icons.backspace_outlined,
+                        size: 22, color: colors.textDim),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(
+                tr(title),
+                style: TextStyle(
+                  color: colors.textDim,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: items.isEmpty
+                ? Center(
+                    child: Text(
+                      tr('لا توجد ملصقات حديثة بعد'),
+                      style: TextStyle(color: colors.textDim, fontSize: 13),
+                    ),
+                  )
+                : GridView.builder(
+                    key: ValueKey(_index),
+                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 48,
+                      mainAxisSpacing: 2,
+                      crossAxisSpacing: 2,
+                    ),
+                    itemCount: items.length,
+                    itemBuilder: (context, i) {
+                      final sticker = items[i];
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () => _pick(sticker),
+                        child: Center(child: StickerGlyph(sticker, size: 32)),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
 }
