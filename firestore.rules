@@ -7,6 +7,11 @@ service cloud.firestore {
         && !exists(/databases/$(database)/documents/blockedUsers/$(request.auth.uid));
     }
 
+    // زائر يتصفح بدون تسجيل دخول (قراءة فقط، للمحتوى العام فقط).
+    function isGuest() {
+      return request.auth == null;
+    }
+
     // حساب الأدمن الوحيد (لوحة التحكم): يقرأ كل المنشورات والبلاغات ويحذفها.
     function isAdmin() {
       return request.auth != null
@@ -148,6 +153,9 @@ service cloud.firestore {
       // أو تقيّد uid بنفسي/بمن أتابعه، وإلا يرفضها Firestore كاملة.
       allow read: if isActiveUser()
         && (isAdmin() || canReadPost(resource.data));
+      // الزائر: منشورات الحسابات العامة فقط (الاستعلامات تحمل where authorPrivate == false).
+      allow read: if isGuest()
+        && resource.data.get('authorPrivate', false) == false;
       allow create: if isActiveUser()
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.caption.size() <= 500
@@ -238,6 +246,9 @@ service cloud.firestore {
       match /comments/{commentId} {
         allow read: if isActiveUser()
           && (isAdmin() || parentPostReadable(postId));
+        // الزائر يقرأ تعليقات المنشورات العامة فقط.
+        allow read: if isGuest()
+          && get(/databases/$(database)/documents/posts/$(postId)).data.get('authorPrivate', false) == false;
         allow create: if isActiveUser()
           && parentPostReadable(postId)
           && request.resource.data.uid == request.auth.uid
@@ -702,6 +713,8 @@ service cloud.firestore {
     // الملف الشخصي: الاسم + اسم المستخدم + النبذة
     match /users/{uid} {
       allow read: if isActiveUser();
+      // الزائر: الملف العام (الاسم، الصورة، النبذة) والبحث. لا يحتوي بريداً ولا بيانات خاصة.
+      allow read: if isGuest();
       // لوحة التحكم: حذف ملف الحساب ضمن حذف المستخدم.
       allow delete: if isAdmin();
       allow create, update: if isActiveUser()
@@ -731,6 +744,9 @@ service cloud.firestore {
       // لوحة التحكم عند حذف حساب: قراءة وحذف كل المجموعات الفرعية للمستخدم.
       allow read: if isAdmin();
       allow delete: if isAdmin();
+      // الزائر: يحتاج المتابعين/المتابَعين لعرض الأعداد فقط (count). القوائم نفسها
+      // تُقفل في الواجهة وتطلب تسجيل دخول؛ Firestore لا يفصل بين العدّ والقراءة.
+      allow read: if isGuest() && (sub == 'followers' || sub == 'following');
 
       // طلبات المتابعة: يقرؤها صاحب الحساب أو مرسل الطلب فقط. المحفوظات لصاحبها، والإعجابات حسب إعدادات صاحبها،
       // وباقي المجموعات (المتابَعون/المتابِعون) مفتوحة للقراءة لأن العدّادات تعتمد عليها.
