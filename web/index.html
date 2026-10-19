@@ -17,10 +17,11 @@
           // في آيفون، إذا لم يفتح تلقائياً سنعرض صفحة بسيطة تطلب منه الفتح في سفاري
           window.addEventListener('DOMContentLoaded', function() {
             var safeUrl = currentUrl.replace(/"/g, '&quot;');
-            document.body.innerHTML = '<div style="background:#030617;color:#fff;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Tajawal,system-ui,sans-serif;padding:24px;text-align:center;direction:rtl;">' +
-              '<h2 style="color:#f13bd0;margin:0 0 12px;font-size:24px;">يرجى فتح الصفحة في المتصفح الخارجي</h2>' +
-              '<p style="color:#aeb7d9;margin:0 0 24px;line-height:1.8;max-width:340px;">لتسجيل الدخول بسلاسة وعمل ميزات الحساب، اضغط على النقاط الثلاث <b>⋯</b> في أعلى الشاشة ثم اختر <b>«فتح في Safari»</b> أو المتصفح الافتراضي.</p>' +
-              '<a href="' + safeUrl + '" target="_blank" style="background:linear-gradient(90deg,#f13bd0,#7b43ff);color:#fff;padding:12px 28px;border-radius:14px;text-decoration:none;font-weight:800;">فتح الرابط يدوياً</a>' +
+            document.body.innerHTML = '<div style="background:#0B0B12;color:#F3F5F9;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Tajawal,system-ui,sans-serif;padding:24px;text-align:center;direction:rtl;">' +
+              '<img src="icons/Icon-192.png" width="84" height="84" alt="Haigram" style="border-radius:20px;margin:0 0 20px;">' +
+              '<h2 style="color:#F3F5F9;margin:0 0 12px;font-size:24px;">يرجى فتح الصفحة في المتصفح الخارجي</h2>' +
+              '<p style="color:#9AA2B5;margin:0 0 24px;line-height:1.8;max-width:340px;">لتسجيل الدخول بسلاسة وعمل ميزات الحساب، اضغط على النقاط الثلاث <b>⋯</b> في أعلى الشاشة ثم اختر <b>«فتح في Safari»</b> أو المتصفح الافتراضي.</p>' +
+              '<a href="' + safeUrl + '" target="_blank" style="background:linear-gradient(90deg,#9A1FA8,#C02C9E);color:#fff;padding:12px 28px;border-radius:14px;text-decoration:none;font-weight:800;">فتح الرابط يدوياً</a>' +
               '</div>';
           });
         }
