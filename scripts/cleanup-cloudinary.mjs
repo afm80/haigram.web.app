@@ -117,10 +117,14 @@ async function main() {
     if (!p) unparseable++;
     else referenced.add(`${p.type}:${p.publicId}`);
   };
-  const posts = await db.collection('posts').select('mediaUrl').get();
+  // الألبوم يحفظ كل صوره في albumUrls (mediaUrl هو الصورة الأولى فقط)،
+  // فيجب حسابها جميعاً وإلا عُدّت الصور من الثانية فصاعداً يتيمة وحُذفت.
+  const posts = await db.collection('posts').select('mediaUrl', 'albumUrls').get();
   for (const d of posts.docs) {
     if (expiredIds.has(d.id)) continue;
     addReference(d.get('mediaUrl'));
+    const album = d.get('albumUrls');
+    if (Array.isArray(album)) album.forEach(addReference);
   }
   // صور المحادثات (chats/*/messages/*.imageUrl) تُحسب أيضاً مشاراً إليها، وإلا
   // حُذفت بعد 24 ساعة كأنها يتيمة. يتطلب فهرس collection-group على messages.kind
