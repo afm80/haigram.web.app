@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../firebase_options.dart';
@@ -68,8 +69,13 @@ class _AuthScreenState extends State<AuthScreen> {
     } catch (e) {
       debugPrint('Auth error: $e');
       if (mounted) {
-        setState(() => _error =
-            friendlyError(e, fallback: tr('تعذر تسجيل الدخول')));
+        // نُلحق رمز الخطأ التقني لتسهيل معرفة السبب (مثل sign_in_failed أو ApiException: 10).
+        final detail = e is PlatformException
+            ? '${e.code}: ${e.message ?? ''}'
+            : e.runtimeType.toString();
+        setState(() => _error = isOfflineError(e)
+            ? tr('لا يوجد اتصال بالإنترنت')
+            : '${tr('تعذر تسجيل الدخول')} ($detail)');
       }
     } finally {
       if (mounted) setState(() => _busy = false);
