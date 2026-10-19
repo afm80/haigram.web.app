@@ -386,7 +386,10 @@ exports.notifyChatMessage = onDocumentCreated(
     const tokenSnapshot = await tokenCollection.get();
     if (tokenSnapshot.empty) return;
 
-    const title = 'Haigram';
+    const senderSnapshot = await db.doc(`users/${message.senderUid}`).get();
+    const title = String(
+      senderSnapshot.data()?.name || senderSnapshot.data()?.username || 'Haigram',
+    );
     const body = message.kind === 'image'
       ? '📷 صورة جديدة'
       : String(message.text || 'رسالة جديدة').slice(0, 160);
@@ -423,6 +426,112 @@ exports.notifyChatMessage = onDocumentCreated(
     if (staleTokens.length > 0) {
       const batch = db.batch();
       staleTokens.forEach((ref) => batch.delete(ref));
+      await batch.commit();
+    }
+  },
+);
+
+
+// إشعارات النشاط (إعجاب، تعليق، متابعة...) على الجهاز مثل إنستغرام.
+// كل إشعار جديد في users/{uid}/notifications يُرسَل كإشعار دفع لأجهزة صاحبه.
+exports.notifyActivity = onDocumentCreated(
+  {
+    document: 'users/{uid}/notifications/{notificationId}',
+    region: 'us-central1',
+  },
+  async (event) => {
+    const data = event.data?.data();
+    if (!data || typeof data.type !== 'string') return;
+
+    const actor = String(data.actorUsername || 'مستخدم');
+    let body;
+    let groupTag;
+    switch (data.type) {
+      case 'like': {
+        // تجميع الإعجابات مثل إنستغرام: إشعار واحد لكل منشور يتحدّث نصه
+        // («فلان و3 آخرون أعجبوا بمنشورك») بدل إشعار منفصل لكل إعجاب.
+        groupTag = `like_${data.postId || ''}`;
+        let others = 0;
+        try {
+          const likes = await getFirestore()
+            .collection('users')
+            .doc(event.params.uid)
+            .collection('notifications')
+            .where('type', '==', 'like')
+            .where('postId', '==', data.postId || '')
+            .count()
+            .get();
+          others = Math.max(0, likes.data().count - 1);
+        } catch (error) {
+          console.error('Like count failed:', error);
+        }
+        body = others > 0
+          ? `و${others} آخرون أعجبوا بمنشورك`
+          : 'أعجب بمنشورك';
+        break;
+      }
+      case 'comment':
+        body = `علّق: ${String(data.commentText || '').slice(0, 100)}`;
+        break;
+      case 'follow':
+        body = 'بدأ بمتابعتك';
+        break;
+      case 'followRequest':
+        body = 'طلب متابعتك';
+        break;
+      case 'followAccepted':
+        body = 'قبل طلب متابعتك';
+        break;
+      default:
+        return;
+    }
+
+    const db = getFirestore();
+    const uid = event.params.uid;
+    const tokenSnapshot = await db
+      .collection('users')
+      .doc(uid)
+      .collection('pushTokens')
+      .get();
+    if (tokenSnapshot.empty) return;
+
+    const response = await getMessaging().sendEachForMulticast({
+      tokens: tokenSnapshot.docs.map((doc) => doc.data().token),
+      notification: { title: actor, body },
+      data: {
+        type: String(data.type),
+        actorUid: String(data.actorUid || ''),
+        postId: String(data.postId || ''),
+      },
+      webpush: {
+        fcmOptions: { link: 'https://haigram.web.app/' },
+        notification: {
+          icon: 'https://haigram.web.app/icons/Icon-192.png',
+          ...(groupTag ? { tag: groupTag, renotify: true } : {}),
+        },
+      },
+      android: {
+        priority: 'high',
+        // نفس الوسم يستبدل الإشعار السابق بدل تكديس إشعارات جديدة.
+        ...(groupTag ? { notification: { tag: groupTag } } : {}),
+      },
+    });
+
+    const stale = [];
+    response.responses.forEach((result, index) => {
+      if (
+        !result.success &&
+        ['messaging/invalid-registration-token',
+          'messaging/registration-token-not-registered'].includes(
+            result.error?.code,
+          )
+      ) {
+        stale.push(tokenSnapshot.docs[index].ref);
+      }
+    });
+    if (stale.length > 0) {
+      const batch = db.batch();
+      stale.forEach((ref) => batch.delete(ref));
       await batch.commit();
     }
   },
