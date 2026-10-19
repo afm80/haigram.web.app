@@ -1,8 +1,10 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'firebase_options.dart';
@@ -35,10 +37,37 @@ class _HaigramBootstrapState extends State<HaigramBootstrap> {
           options: DefaultFirebaseOptions.currentPlatform,
         );
       }
+      await _restoreSession();
       return await SharedPreferences.getInstance();
     } catch (error, stackTrace) {
       debugPrint('Haigram startup failed: $error\n$stackTrace');
       rethrow;
+    }
+  }
+
+  /// أندرويد: ننتظر أول حالة مصادقة محفوظة قبل عرض الواجهة، وإن لم توجد جلسة
+  /// نحاول استعادتها بصمت من حساب Google الذي سبق الدخول به.
+  Future<void> _restoreSession() async {
+    final auth = FirebaseAuth.instance;
+    try {
+      await auth.authStateChanges().first.timeout(const Duration(seconds: 5));
+    } catch (_) {}
+    if (kIsWeb || auth.currentUser != null) return;
+    try {
+      final googleUser = await GoogleSignIn(
+        scopes: const ['email'],
+        serverClientId: DefaultFirebaseOptions.googleServerClientId.isEmpty
+            ? null
+            : DefaultFirebaseOptions.googleServerClientId,
+      ).signInSilently();
+      if (googleUser == null) return;
+      final googleAuth = await googleUser.authentication;
+      await auth.signInWithCredential(GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      ));
+    } catch (error) {
+      debugPrint('Silent session restore failed: $error');
     }
   }
 
