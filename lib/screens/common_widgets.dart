@@ -65,21 +65,18 @@ class UserAvatar extends StatelessWidget {
 
   Widget _buildAvatar(BuildContext context, AppUser? user) {
     final image = user?.avatarImage;
-    final label = user != null
-        ? user.initial
-        : (fallbackName.isNotEmpty ? fallbackName[0].toUpperCase() : '?');
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    // بدون صورة: صورة رمزية عامة (شخص رمادي).
     final circle = CircleAvatar(
       radius: radius,
-      backgroundColor: AppColors.accent,
+      backgroundColor:
+          isDark ? const Color(0xFF3A3D45) : const Color(0xFFD9DCE1),
       backgroundImage: image,
       child: image == null
-          ? Text(
-              label,
-              style: TextStyle(
-                fontSize: radius * 0.85,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
+          ? Icon(
+              Icons.person_rounded,
+              size: radius * 1.35,
+              color: isDark ? const Color(0xFF8E929C) : const Color(0xFF8A8F99),
             )
           : null,
     );

@@ -479,7 +479,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
                           tr('الملف الشخصي'),
                           foreground: navForeground,
                           inactive: navInactive,
-                          showLabel: false,
+                          showLabel: _guest,
                           // صورة الملف الشخصي بحجم التبويب كامل (مثل انستغرام)
                           iconBuilder: _guest ? null : (selected) => Container(
                             width: 40,
