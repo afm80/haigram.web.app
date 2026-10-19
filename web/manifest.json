@@ -16,5 +16,9 @@
     { "src": "icons/Icon-512.png", "sizes": "512x512", "type": "image/png" },
     { "src": "icons/Icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
     { "src": "icons/Icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "screenshots": [
+    { "src": "screenshots/home.jpg", "sizes": "1200x2000", "type": "image/jpeg", "form_factor": "narrow", "label": "الصفحة الرئيسية" },
+    { "src": "screenshots/profile.jpg", "sizes": "1200x2000", "type": "image/jpeg", "form_factor": "narrow", "label": "الملف الشخصي" }
   ]
 }
