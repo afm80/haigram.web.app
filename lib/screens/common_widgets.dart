@@ -828,7 +828,13 @@ class FullScreenImageViewer extends StatelessWidget {
           child: InteractiveViewer(
             minScale: 1,
             maxScale: 5,
-            child: Center(child: Image.memory(bytes, fit: BoxFit.contain)),
+            child: Image.memory(
+              bytes,
+              fit: BoxFit.contain,
+              width: double.infinity,
+              height: double.infinity,
+              filterQuality: FilterQuality.high,
+            ),
           ),
         ),
       ),
@@ -837,6 +843,7 @@ class FullScreenImageViewer extends StatelessWidget {
 }
 
 /// معاينة صورة مرفقة داخل شريط الكتابة مع زر إزالة، قبل الإرسال اليدوي.
+/// المعاينة كبيرة، والنقر عليها يفتحها بملء الشاشة.
 class PendingImagePreview extends StatelessWidget {
   final Uint8List bytes;
   final VoidCallback onRemove;
@@ -845,28 +852,41 @@ class PendingImagePreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screen = MediaQuery.sizeOf(context);
+    final maxH = (screen.height * 0.38).clamp(180.0, 360.0).toDouble();
+    final maxW = (screen.width - 28).clamp(160.0, 420.0).toDouble();
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
       alignment: AlignmentDirectional.centerStart,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Image.memory(bytes, height: 90, fit: BoxFit.cover),
+          GestureDetector(
+            onTap: () => openFullScreenImage(context, bytes),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: maxH, maxWidth: maxW),
+                child: Image.memory(
+                  bytes,
+                  fit: BoxFit.contain,
+                  filterQuality: FilterQuality.high,
+                ),
+              ),
+            ),
           ),
           PositionedDirectional(
-            top: -6,
-            end: -6,
+            top: 6,
+            end: 6,
             child: GestureDetector(
               onTap: onRemove,
               child: Container(
-                padding: const EdgeInsets.all(3),
+                padding: const EdgeInsets.all(5),
                 decoration: const BoxDecoration(
                     color: Colors.black87, shape: BoxShape.circle),
                 child: const Icon(Icons.close_rounded,
-                    size: 16, color: Colors.white),
+                    size: 18, color: Colors.white),
               ),
             ),
           ),
