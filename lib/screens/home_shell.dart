@@ -465,10 +465,11 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
                           foreground: navForeground,
                           inactive: navInactive,
                           showLabel: false,
+                          // صورة الملف الشخصي بحجم التبويب كامل (مثل انستغرام)
                           iconBuilder: (selected) => Container(
-                            width: 30,
-                            height: 30,
-                            padding: const EdgeInsets.all(1.5),
+                            width: 40,
+                            height: 40,
+                            padding: const EdgeInsets.all(2),
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               border: Border.all(
@@ -482,7 +483,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
                               uid: profile?.uid ?? '',
                               fallbackName: profile?.username ?? '',
                               profile: profile,
-                              radius: 12,
+                              radius: 16.5,
                             ),
                           ),
                         );
