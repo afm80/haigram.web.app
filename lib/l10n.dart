@@ -196,6 +196,8 @@ const Map<String, String> _en = {
   'إلغاء الإعجاب': "Unlike",
   'إعجاب بالتعليق': "Like comment",
   'الملصقات': "Stickers",
+  'الأحدث': "Recent",
+  'لا توجد ملصقات حديثة بعد': "No recent stickers yet",
   'إرسال صورة': "Send a photo",
   'أضف تعليقاً...': "Add a comment...",
   'تعذر تسجيل الإعجاب: {0}': "Couldn't register the like: {0}",
