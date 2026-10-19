@@ -156,6 +156,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
           if (mounted) _openChatFromPush(message);
         });
       }).catchError((Object _) {});
+      // تسجيل الجهاز لإشعارات الدفع فور الدخول (رسائل، إعجابات، تعليقات، متابعات).
+      SocialService.registerChatPushNotifications().catchError((_) {});
       _updatePresence(true);
       _presenceHeartbeat = Timer.periodic(
         const Duration(minutes: 1),
@@ -340,11 +342,40 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   void _openChatFromPush(RemoteMessage message) {
     final chatId = message.data['conversationId'];
     final senderUid = message.data['senderUid'];
+    final type = message.data['type'];
+    // إشعارات النشاط مثل إنستغرام: إعجاب/تعليق يفتح المنشور، ومتابعة تفتح ملف الشخص.
+    if (type is String && type != 'chat' && chatId == null) {
+      _openActivityFromPush(type, message.data);
+      return;
+    }
     if (chatId is String &&
         chatId.isNotEmpty &&
         senderUid is String &&
         senderUid.isNotEmpty) {
       _pushChatRoute(chatId, senderUid);
+    }
+  }
+
+  Future<void> _openActivityFromPush(
+      String type, Map<String, dynamic> data) async {
+    if (needsLogin(context)) return;
+    final navigator = _tabNavigators[0].currentState;
+    try {
+      if (type == 'like' || type == 'comment') {
+        final postId = data['postId'];
+        if (postId is! String || postId.isEmpty) return;
+        final post = await PostService.postById(postId);
+        if (!mounted || post == null) return;
+        navigator?.push<void>(appRoute<void>(
+            'post', {'id': post.id}, (_) => PostDetailScreen(post: post)));
+      } else {
+        final uid = data['actorUid'];
+        if (uid is! String || uid.isEmpty) return;
+        navigator?.push<void>(appRoute<void>(
+            'user', {'uid': uid}, (_) => UserProfileScreen(uid: uid)));
+      }
+    } catch (error) {
+      debugPrint('Unable to open push target: $error');
     }
   }
 
