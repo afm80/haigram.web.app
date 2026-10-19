@@ -215,23 +215,7 @@ exports.adminDeletePost = onCall(
   },
 );
 
-exports.adminDeleteUser = onCall(
-  {
-    region: 'us-central1',
-    timeoutSeconds: 540,
-    memory: '1GiB',
-    secrets: [CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET],
-  },
-  async (request) => {
-    requireAdmin(request);
-    const uid = request.data?.uid;
-    if (typeof uid !== 'string' || !uid || uid.length > 128) {
-      throw new HttpsError('invalid-argument', 'معرّف المستخدم غير صالح.');
-    }
-    if (uid === ADMIN_UID) {
-      throw new HttpsError('failed-precondition', 'لا يمكن حذف حساب الأدمن.');
-    }
-
+async function deleteUserAccount(uid) {
     const db = getFirestore();
     const bucket = getStorage().bucket();
     const userRef = db.collection('users').doc(uid);
@@ -282,9 +266,48 @@ exports.adminDeleteUser = onCall(
       await db.recursiveDelete(userRef);
       return { deleted: true };
     } catch (error) {
-      console.error('Admin user deletion failed:', uid, error);
+      console.error('User deletion failed:', uid, error);
       throw new HttpsError('internal', 'تعذر حذف الحساب وكل بياناته.');
     }
+}
+
+exports.adminDeleteUser = onCall(
+  {
+    region: 'us-central1',
+    timeoutSeconds: 540,
+    memory: '1GiB',
+    secrets: [CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET],
+  },
+  async (request) => {
+    requireAdmin(request);
+    const uid = request.data?.uid;
+    if (typeof uid !== 'string' || !uid || uid.length > 128) {
+      throw new HttpsError('invalid-argument', 'معرّف المستخدم غير صالح.');
+    }
+    if (uid === ADMIN_UID) {
+      throw new HttpsError('failed-precondition', 'لا يمكن حذف حساب الأدمن.');
+    }
+
+    return await deleteUserAccount(uid);
+  },
+);
+
+exports.deleteMyAccount = onCall(
+  {
+    region: 'us-central1',
+    timeoutSeconds: 540,
+    memory: '1GiB',
+    secrets: [CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET],
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
+    }
+    if (uid === ADMIN_UID) {
+      throw new HttpsError('failed-precondition', 'لا يمكن حذف حساب الأدمن.');
+    }
+    return await deleteUserAccount(uid);
   },
 );
 
