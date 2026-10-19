@@ -1909,7 +1909,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                           maxWidth: (MediaQuery.sizeOf(context)
                                                       .width *
                                                   0.62)
-                                              .clamp(220.0, 300.0),
+                                              .clamp(220.0, 300.0)
+                                              .toDouble(),
                                         ),
                                         child: message.imageUrl != null
                                           ? Image.network(

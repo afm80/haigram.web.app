@@ -853,8 +853,8 @@ class PendingImagePreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final screen = MediaQuery.sizeOf(context);
-    final maxH = (screen.height * 0.38).clamp(180.0, 360.0);
-    final maxW = (screen.width - 28).clamp(160.0, 420.0);
+    final maxH = (screen.height * 0.38).clamp(180.0, 360.0).toDouble();
+    final maxW = (screen.width - 28).clamp(160.0, 420.0).toDouble();
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),

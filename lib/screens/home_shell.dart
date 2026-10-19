@@ -466,9 +466,9 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
                           inactive: navInactive,
                           showLabel: false,
                           iconBuilder: (selected) => Container(
-                            width: 30,
-                            height: 30,
-                            padding: const EdgeInsets.all(1.5),
+                            width: 42,
+                            height: 42,
+                            padding: const EdgeInsets.all(2),
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               border: Border.all(
@@ -482,7 +482,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
                               uid: profile?.uid ?? '',
                               fallbackName: profile?.username ?? '',
                               profile: profile,
-                              radius: 12,
+                              radius: 17.5,
                             ),
                           ),
                         );
