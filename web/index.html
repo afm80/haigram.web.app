@@ -6,25 +6,45 @@
     (function() {
       var ua = navigator.userAgent || navigator.vendor || window.opera || '';
       var isInApp = /FBAN|FBAV|FB_IAB|Instagram|Messenger|Telegram|WhatsApp|TikTok|musical_ly|Snapchat|Line\/|Twitter|LinkedInApp/i.test(ua);
-      if (isInApp) {
-        var currentUrl = window.location.href;
-        var isAndroid = /android/i.test(ua);
-        var isIOS = /iphone|ipad|ipod/i.test(ua);
-        if (isAndroid) {
-          // توجيه تلقائي لكروم في أندرويد
-          window.location.replace("intent://" + currentUrl.replace(/^https?:\/\//, '') + "#Intent;scheme=https;package=com.android.chrome;end;");
-        } else if (isIOS) {
-          // في آيفون، إذا لم يفتح تلقائياً سنعرض صفحة بسيطة تطلب منه الفتح في سفاري
-          window.addEventListener('DOMContentLoaded', function() {
-            var safeUrl = currentUrl.replace(/"/g, '&quot;');
-            document.body.innerHTML = '<div style="background:#0B0B12;color:#F3F5F9;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Tajawal,system-ui,sans-serif;padding:24px;text-align:center;direction:rtl;">' +
-              '<img src="icons/Icon-192.png" width="84" height="84" alt="Haigram" style="border-radius:20px;margin:0 0 20px;">' +
-              '<h2 style="color:#F3F5F9;margin:0 0 12px;font-size:24px;">يرجى فتح الصفحة في المتصفح الخارجي</h2>' +
-              '<p style="color:#9AA2B5;margin:0 0 24px;line-height:1.8;max-width:340px;">لتسجيل الدخول بسلاسة وعمل ميزات الحساب، اضغط على النقاط الثلاث <b>⋯</b> في أعلى الشاشة ثم اختر <b>«فتح في Safari»</b> أو المتصفح الافتراضي.</p>' +
-              '<a href="' + safeUrl + '" target="_blank" style="background:linear-gradient(90deg,#9A1FA8,#C02C9E);color:#fff;padding:12px 28px;border-radius:14px;text-decoration:none;font-weight:800;">فتح الرابط يدوياً</a>' +
-              '</div>';
-          });
-        }
+      if (!isInApp) return;
+      var currentUrl = window.location.href;
+      var isAndroid = /android/i.test(ua);
+      var isIOS = /iphone|ipad|ipod/i.test(ua);
+      var safeUrl = currentUrl.replace(/"/g, '&quot;');
+      var intentUrl = 'intent://' + currentUrl.replace(/^https?:\/\//, '') + '#Intent;scheme=https;package=com.android.chrome;end;';
+      var intentHref = intentUrl.replace(/"/g, '&quot;');
+
+      // شاشة بسيطة فوق الصفحة (بنفس هوية التطبيق) تشرح للمستخدم ما يحدث.
+      function showScreen(title, note, buttonText, href, newTab) {
+        var box = document.createElement('div');
+        box.id = 'inapp-screen';
+        box.setAttribute('style', 'position:fixed;top:0;right:0;bottom:0;left:0;z-index:2147483647;background:#0B0B12;color:#F3F5F9;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Tajawal,system-ui,sans-serif;padding:24px;text-align:center;direction:rtl;');
+        box.innerHTML =
+          '<img src="icons/Icon-192.png" width="84" height="84" alt="Haigram" style="border-radius:20px;margin:0 0 20px;">' +
+          '<h2 style="color:#F3F5F9;margin:0 0 12px;font-size:24px;">' + title + '</h2>' +
+          '<p id="inapp-note" style="color:#9AA2B5;margin:0 0 24px;line-height:1.8;max-width:340px;">' + note + '</p>' +
+          '<a href="' + href + '"' + (newTab ? ' target="_blank"' : '') + ' style="background:linear-gradient(90deg,#9A1FA8,#C02C9E);color:#fff;padding:12px 28px;border-radius:14px;text-decoration:none;font-weight:800;">' + buttonText + '</a>';
+        document.body.appendChild(box);
+      }
+
+      if (isAndroid) {
+        // أندرويد: رسالة قصيرة ثم فتح كروم تلقائياً (مع زر «فتح الآن»).
+        window.addEventListener('DOMContentLoaded', function() {
+          showScreen('سيتم تحويلك إلى المتصفح لمشاهدة الموقع', '', 'فتح الآن', intentHref, false);
+          setTimeout(function() { window.location.replace(intentUrl); }, 800);
+          // إن بقي المستخدم هنا (لم يُفتح كروم) نعرض له الطريقة اليدوية.
+          setTimeout(function() {
+            var note = document.getElementById('inapp-note');
+            if (note) note.innerHTML = 'إن لم يفتح، اضغط <b>⋮</b> ثم اختر <b>«فتح في المتصفح»</b>';
+          }, 3000);
+        });
+      } else if (isIOS) {
+        // آيفون: لا يمكن الفتح تلقائياً، نطلب منه الفتح في سفاري.
+        window.addEventListener('DOMContentLoaded', function() {
+          showScreen('لمشاهدة الموقع افتحه في المتصفح',
+            'اضغط على النقاط الثلاث <b>⋯</b> في أعلى الشاشة ثم اختر <b>«فتح في Safari»</b> أو المتصفح الافتراضي.',
+            'فتح الرابط يدوياً', safeUrl, true);
+        });
       }
     })();
   </script>
