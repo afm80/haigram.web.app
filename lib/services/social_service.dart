@@ -730,8 +730,13 @@ class SocialService {
     String? replyToText,
     String? replyToSenderUid,
   }) async {
-    if (imageBytes.isEmpty || imageBytes.length > 700 * 1024) {
-      throw ArgumentError(tr('حجم الصورة يجب ألا يتجاوز 700 كيلوبايت'));
+    // مع Cloudinary/Storage تُرفع الصورة وتُحفظ بالرابط فقط، فيمكن أن تكون
+    // أكبر وأوضح؛ وضع التجربة (داخل المستند) يبقى بحد 700 كيلوبايت.
+    final maxBytes = PostService.useRemoteMedia ? 4 * 1024 * 1024 : 700 * 1024;
+    if (imageBytes.isEmpty || imageBytes.length > maxBytes) {
+      throw ArgumentError(PostService.useRemoteMedia
+          ? tr('حجم الصورة كبير جداً')
+          : tr('حجم الصورة يجب ألا يتجاوز 700 كيلوبايت'));
     }
     final url = await PostService.uploadChatImage(imageBytes);
     await _sendChatMessage(
