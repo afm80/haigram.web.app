@@ -10,22 +10,53 @@ firebase.initializeApp({
   storageBucket: '__FB_STORAGE_BUCKET__',
 });
 
+// الرسائل بيانات فقط، فهذا هو العارض الوحيد للإشعار (لا تكرار).
 firebase.messaging().onBackgroundMessage((payload) => {
-  const notification = payload.notification || {};
-  self.registration.showNotification(notification.title || 'Haigram', {
-    body: notification.body || 'رسالة جديدة',
-    icon: notification.icon || '/icons/Icon-192.png',
-    data: payload.data || {},
-  });
+  const data = payload.data || {};
+  const options = {
+    body: data.body || 'رسالة جديدة',
+    icon: '/icons/Icon-192.png',
+    data,
+  };
+  // نفس الوسم يستبدل الإشعار السابق (محادثة واحدة = إشعار واحد يتحدّث).
+  if (data.tag) {
+    options.tag = data.tag;
+    options.renotify = true;
+  }
+  return self.registration.showNotification(data.title || 'Haigram', options);
 });
 
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  const data = event.notification.data || {};
+function targetFor(data) {
   const target = new URL('/', self.location.origin);
   if (data.conversationId && data.senderUid) {
     target.searchParams.set('chat', data.conversationId);
     target.searchParams.set('from', data.senderUid);
+  } else if (data.postId) {
+    target.searchParams.set('p', data.postId);
   }
-  event.waitUntil(clients.openWindow(target.toString()));
+  return target.toString();
+}
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = targetFor(event.notification.data || {});
+  event.waitUntil((async () => {
+    const windows = await clients.matchAll({
+      type: 'window',
+      includeUncontrolled: true,
+    });
+    const existing = windows.find(
+      (client) => new URL(client.url).origin === self.location.origin,
+    );
+    if (existing) {
+      try {
+        await existing.focus();
+        await existing.navigate(url);
+        return;
+      } catch (_) {
+        // لا يمكن توجيه النافذة: نفتح واحدة جديدة.
+      }
+    }
+    await clients.openWindow(url);
+  })());
 });
