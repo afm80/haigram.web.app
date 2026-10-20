@@ -29,7 +29,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.22.0'
+          flutter-version: '3.27.4'
           cache: true
 
       # يولّد ملفات منصة أندرويد، ثم يضبط اسم الحزمة واسم التطبيق والصلاحيات
@@ -62,7 +62,11 @@ jobs:
           grep -rn "kotlin" android/build.gradle android/build.gradle.kts android/settings.gradle android/settings.gradle.kts 2>/dev/null || true
 
           # اسم التطبيق الظاهر
-          sed -i -E "s/android:label=\"[^\"]*\"/android:label=\"$APP_NAME\"/" "$MANIFEST"
+          APP_XML=$(printf '%s' "$APP_NAME" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g')
+          APP_ESC=$(printf '%s' "$APP_XML" | sed -e 's/[\\&|]/\\&/g')
+          sed -i -E "s|android:label=\"[^\"]*\"|android:label=\"$APP_ESC\"|" "$MANIFEST"
+          # flutter create يولّد اختباراً افتراضياً يشير إلى تطبيق غير موجود؛ نحذفه
+          rm -rf test
           # صلاحيات الشبكة والميكروفون والإشعارات
           sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n    <application#' "$MANIFEST"
 
@@ -126,13 +130,16 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # فحص الأخطاء البرمجية قبل البناء (التنبيهات البسيطة لا توقفه)
+      - name: Analyze code (errors only)
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
       # أيقونة تطبيق أندرويد: صورة android-icon/app-icon.png كما هي تملأ الأيقونة كاملة
       # (بدون تصغير ولا هوامش). لا نستخدم الأيقونة المتكيّفة لأنها تصغّر الشعار
       # وتقصّ أطرافه. لا تمسّ أيقونات الويب.
       - name: Generate launcher icon
         run: |
           set -e
-          dart pub add --dev flutter_launcher_icons:^0.14.1
           cat > flutter_launcher_icons.yaml <<'YAML'
           flutter_launcher_icons:
             android: true
