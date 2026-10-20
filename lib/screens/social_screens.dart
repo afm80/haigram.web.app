@@ -10,12 +10,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../auth_gate.dart';
+import '../services/note_service.dart';
 import '../services/post_service.dart';
 import '../services/presence_service.dart';
 import '../services/social_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
+import 'note_widgets.dart';
 import 'photo_tools.dart' show fitImageUnderLimit;
 import 'post_widgets.dart' show PostDetailScreen, PostImage, timeAgo;
 import 'profile_screen.dart' show FollowActionButton, openChatWith;
@@ -472,7 +474,35 @@ class _FollowingRail extends StatefulWidget {
 
 class _FollowingRailState extends State<_FollowingRail> {
   late final Stream<List<String>> _following = PostService.followingIds();
+  late final Stream<UserNote?> _myNote = NoteService.myNote();
+  late final Stream<Map<String, UserNote>> _friendNotes =
+      NoteService.friendsNotes();
   final Map<String, Future<AppUser?>> _profiles = {};
+  Timer? _expiryTick;
+
+  @override
+  void initState() {
+    super.initState();
+    // الملاحظة تنتهي بعد 24 ساعة: نعيد الرسم كل دقيقة لتختفي وهي مفتوحة.
+    _expiryTick = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _expiryTick?.cancel();
+    super.dispose();
+  }
+
+  /// ملاحظتي: فارغة → كتابة ملاحظة، موجودة → خيارات (جديدة / حذف).
+  void _openMyNote(UserNote? note) {
+    if (note == null) {
+      showNoteComposeSheet(context);
+    } else {
+      showMyNoteOptions(context, note);
+    }
+  }
 
   Future<AppUser?> _profile(String uid) =>
       _profiles.putIfAbsent(uid, () => UserService.profileOf(uid));
@@ -527,7 +557,7 @@ class _FollowingRailState extends State<_FollowingRail> {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 112,
+      height: 148,
       child: StreamBuilder<List<String>>(
         stream: _following,
         builder: (context, snapshot) {
@@ -553,89 +583,126 @@ class _FollowingRailState extends State<_FollowingRail> {
           final following = snapshot.data!
               .where((uid) => uid != SocialService.currentUid)
               .toList();
-          if (following.isEmpty) {
-            return Center(
-              child: Text(
-                widget.error == null
-                    ? tr('تابع أصدقاءك لتظهر حساباتهم هنا')
-                    : friendlyError(widget.error,
-                        fallback: tr('تعذر تحميل القصص')),
-                style: TextStyle(color: context.appColors.textDim),
-              ),
-            );
-          }
 
-          return ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 12, 4),
-            itemCount: following.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
-            itemBuilder: (context, index) {
-              final uid = following[index];
-              final storyIndex =
-                  widget.stories.indexWhere((group) => group.uid == uid);
-              return FutureBuilder<AppUser?>(
-                future: _profile(uid),
-                builder: (context, userSnapshot) {
-                  final user = userSnapshot.data;
-                  if (userSnapshot.hasError) {
-                    return SizedBox(
-                      width: 68,
-                      child: Center(
-                        child: Icon(
-                          Icons.person_off_outlined,
-                          color: context.appColors.textDim,
-                        ),
-                      ),
-                    );
-                  }
-                  if (user == null) {
-                    return const SizedBox(
-                      width: 68,
-                      child: Center(
-                        child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      ),
-                    );
-                  }
-                  return SizedBox(
-                    width: 68,
-                    child: InkWell(
-                      onTap: () => _openUser(user),
-                      borderRadius: BorderRadius.circular(16),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          UserAvatar(
-                            uid: uid,
-                            profile: user,
-                            fallbackName: user.username,
-                            radius: 25,
-                            showOnline: true,
-                            hasStory: storyIndex >= 0,
-                            storySeen: storyIndex >= 0 &&
-                                StoryViewed.allSeen(widget.stories[storyIndex]),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            user.username,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: context.appColors.text,
+          return StreamBuilder<UserNote?>(
+            stream: _myNote,
+            builder: (context, mySnapshot) =>
+                StreamBuilder<Map<String, UserNote>>(
+              stream: _friendNotes,
+              builder: (context, notesSnapshot) {
+                final myNote = mySnapshot.data;
+                // أخطاء الملاحظات لا تكسر الصف: نعرضه بلا ملاحظات.
+                final notes = <String, UserNote>{
+                  for (final entry
+                      in (notesSnapshot.data ?? const <String, UserNote>{})
+                          .entries)
+                    if (entry.value.isActive) entry.key: entry.value,
+                };
+                // أصحاب الملاحظات أولاً (الأحدث أولاً) ثم بقية من أتابعهم.
+                final withNotes = following.where(notes.containsKey).toList()
+                  ..sort((a, b) =>
+                      notes[b]!.createdAt.compareTo(notes[a]!.createdAt));
+                final ordered = [
+                  ...withNotes,
+                  ...following.where((uid) => !notes.containsKey(uid)),
+                ];
+                final myUid = SocialService.currentUid;
+
+                return ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 12, 4),
+                  itemCount: 1 + (ordered.isEmpty ? 1 : ordered.length),
+                  separatorBuilder: (_, __) => const SizedBox(width: 4),
+                  itemBuilder: (context, index) {
+                    // أول عنصر: ملاحظتي (مثل إنستغرام).
+                    if (index == 0) {
+                      return NoteRailItem(
+                        uid: myUid,
+                        profile: UserService.me,
+                        note: myNote,
+                        isMine: true,
+                        hasStory: false,
+                        storySeen: false,
+                        onAvatarTap: () => _openMyNote(myNote),
+                        onNoteTap: () => _openMyNote(myNote),
+                      );
+                    }
+                    if (ordered.isEmpty) {
+                      return SizedBox(
+                        width: 200,
+                        child: Padding(
+                          padding: const EdgeInsets.only(
+                              top: NoteRailItem.bubbleZone),
+                          child: Center(
+                            child: Text(
+                              widget.error == null
+                                  ? tr('تابع أصدقاءك لتظهر حساباتهم هنا')
+                                  : friendlyError(widget.error,
+                                      fallback: tr('تعذر تحميل القصص')),
+                              textAlign: TextAlign.center,
+                              style:
+                                  TextStyle(color: context.appColors.textDim),
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
+                        ),
+                      );
+                    }
+                    final uid = ordered[index - 1];
+                    final storyIndex =
+                        widget.stories.indexWhere((group) => group.uid == uid);
+                    return FutureBuilder<AppUser?>(
+                      future: _profile(uid),
+                      builder: (context, userSnapshot) {
+                        final user = userSnapshot.data;
+                        if (userSnapshot.hasError) {
+                          return SizedBox(
+                            width: 76,
+                            child: Center(
+                              child: Icon(
+                                Icons.person_off_outlined,
+                                color: context.appColors.textDim,
+                              ),
+                            ),
+                          );
+                        }
+                        if (user == null) {
+                          return const SizedBox(
+                            width: 76,
+                            child: Center(
+                              child: SizedBox(
+                                width: 20,
+                                height: 20,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            ),
+                          );
+                        }
+                        final note = notes[uid];
+                        return NoteRailItem(
+                          uid: uid,
+                          profile: user,
+                          note: note,
+                          isMine: false,
+                          hasStory: storyIndex >= 0,
+                          storySeen: storyIndex >= 0 &&
+                              StoryViewed.allSeen(widget.stories[storyIndex]),
+                          onAvatarTap: () => _openUser(user),
+                          // الضغط على الفقاعة: ردّ على الملاحظة (مثل إنستغرام).
+                          onNoteTap: note == null
+                              ? () => _openUser(user)
+                              : () => showNoteReplySheet(
+                                    context,
+                                    note: note,
+                                    owner: user,
+                                  ),
+                        );
+                      },
+                    );
+                  },
+                );
+              },
+            ),
           );
         },
       ),
@@ -1935,7 +2002,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                           CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          tr('ردّ على رسالة'),
+                                          NoteService.isNoteReplyId(
+                                                  message.replyToMessageId)
+                                              ? tr('ردّ على ملاحظة')
+                                              : tr('ردّ على رسالة'),
                                           style: TextStyle(
                                             color: mine
                                                 ? Colors.white70
