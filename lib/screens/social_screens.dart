@@ -832,6 +832,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _showStickers = false;
   final _picker = ImagePicker();
   final _scroll = ScrollController();
+  // مفتاح لكل رسالة: للانتقال إلى الرسالة الأصلية عند الضغط على «ردّ على رسالة».
+  final Map<String, GlobalKey> _messageKeys = {};
+  String? _highlightId;
+  Timer? _highlightTimer;
   Timer? _draftTimer;
   late final Stream<ChatBlockState> _blockState;
   StreamSubscription<Map<String, DateTime>>? _typingSub;
@@ -1005,6 +1009,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _draftTimer?.cancel();
     _saveDraft();
     _messageFocus.dispose();
+    _highlightTimer?.cancel();
     _scroll.dispose();
     _text.dispose();
     super.dispose();
@@ -1118,6 +1123,52 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (mine != null && !latest.isAfter(mine)) return;
     SocialService.markChatRead(widget.conversationId, latest)
         .catchError((Object _) {});
+  }
+
+  GlobalKey _keyFor(String messageId) =>
+      _messageKeys.putIfAbsent(messageId, () => GlobalKey());
+
+  /// ينتقل إلى الرسالة الأصلية ويضيئها لحظة. إن لم تكن محمّلة أو حُذفت يعرض تنبيهاً.
+  Future<void> _jumpToMessage(String messageId) async {
+    final loaded = _messages;
+    if (loaded == null ||
+        !loaded.any((m) => m.id == messageId && !_hidden.contains(m.id))) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('الرسالة الأصلية غير متاحة'))),
+      );
+      return;
+    }
+    final key = _keyFor(messageId);
+    // القائمة معكوسة: الأقدم في الأعلى، فنمرّر للأعلى خطوة خطوة حتى تظهر.
+    for (var i = 0; i < 80 && key.currentContext == null; i++) {
+      if (!mounted || !_scroll.hasClients) return;
+      final position = _scroll.position;
+      if (position.pixels >= position.maxScrollExtent) break;
+      _scroll.jumpTo((position.pixels + position.viewportDimension * 0.8)
+          .clamp(0.0, position.maxScrollExtent)
+          .toDouble());
+      await WidgetsBinding.instance.endOfFrame;
+    }
+    final targetContext = key.currentContext;
+    if (!mounted) return;
+    if (targetContext == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('الرسالة الأصلية غير متاحة'))),
+      );
+      return;
+    }
+    await Scrollable.ensureVisible(
+      targetContext,
+      alignment: 0.5,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+    if (!mounted) return;
+    setState(() => _highlightId = messageId);
+    _highlightTimer?.cancel();
+    _highlightTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (mounted) setState(() => _highlightId = null);
+    });
   }
 
   /// عند الوصول لأعلى القائمة (أقدم الرسائل) نحمّل صفحة أقدم فقط، دون إعادة
@@ -2032,7 +2083,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                     (message.replyToText ?? '')
                                         .trim()
                                         .isNotEmpty)
-                                  Container(
+                                  GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: NoteService.isNoteReplyId(
+                                            message.replyToMessageId)
+                                        ? null
+                                        : () => _jumpToMessage(
+                                            message.replyToMessageId!),
+                                    child: Container(
                                     width: double.infinity,
                                     margin: const EdgeInsets.only(bottom: 6),
                                     padding: const EdgeInsets.symmetric(
@@ -2083,6 +2141,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                         ),
                                       ],
                                     ),
+                                  ),
                                   ),
                                 if (message.kind == 'image' &&
                                     (message.imageUrl != null ||
@@ -2169,7 +2228,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               : CrossAxisAlignment.start,
                           children: [bubble, meta],
                         );
-                        final row = Align(
+                        final alignedRow = Align(
                           alignment: mine
                               ? AlignmentDirectional.centerEnd
                               : AlignmentDirectional.centerStart,
@@ -2193,6 +2252,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                     Flexible(child: bubbleWithMeta),
                                   ],
                                 ),
+                        );
+                        final row = KeyedSubtree(
+                          key: _keyFor(message.id),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 300),
+                            decoration: BoxDecoration(
+                              color: _highlightId == message.id
+                                  ? AppColors.brandOrange.withOpacity(0.18)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: alignedRow,
+                          ),
                         );
                         // فاصل التاريخ فوق أول رسالة في كل يوم.
                         final previous = messageIndex + 1 < messages.length
