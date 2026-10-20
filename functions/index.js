@@ -81,7 +81,13 @@ async function deletePostRecord(db, bucket, postId) {
   for (const url of mediaUrls) {
     if (typeof url !== 'string') continue;
     if (url.startsWith('https://res.cloudinary.com/')) {
-      await deleteCloudinaryAsset(url);
+      // أفضل جهد: فشل Cloudinary لا يوقف حذف المنشور أو الحساب؛
+      // السكربت الأسبوعي cleanup-cloudinary يحذف ما يتبقى.
+      try {
+        await deleteCloudinaryAsset(url);
+      } catch (error) {
+        console.error('Cloudinary asset deletion skipped:', url, error);
+      }
       continue;
     }
     try {
