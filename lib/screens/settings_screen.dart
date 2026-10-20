@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import '../l10n.dart';
 import '../net_error.dart';
 import '../services/post_service.dart';
+import '../services/social_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
 import '../route_state.dart';
@@ -61,6 +62,7 @@ class SettingsScreen extends StatelessWidget {
           await GoogleSignIn().signOut();
         } catch (_) {}
       }
+      await SocialService.unregisterPushNotifications();
       await FirebaseAuth.instance.signOut();
       UserService.me = null;
       RouteStore.clear();

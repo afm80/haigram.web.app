@@ -928,13 +928,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       },
       onError: (_) {},
     );
-    SocialService.registerChatPushNotifications().catchError((_) {});
+    // التسجيل لإشعارات الدفع يتم مرة عند الدخول (HomeShell) لا عند كل محادثة.
     _chatPushSub = SocialService.foregroundChatMessages.listen((message) {
-      final notification = message.notification;
-      if (!mounted || notification == null) return;
+      // الرسائل بيانات فقط على الويب: العنوان والنص في data.
+      final body = message.notification?.body ??
+          (message.data['body'] as String?) ??
+          '';
+      // لا نُظهر تنبيهاً عن المحادثة المفتوحة أمامي الآن.
+      if (message.data['conversationId'] == widget.conversationId) return;
+      if (!mounted || body.isEmpty) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(notification.body ?? tr('رسالة جديدة')),
+          content: Text(body),
           duration: const Duration(seconds: 3),
         ),
       );
@@ -991,6 +996,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _messageFocus.removeListener(_syncTypingState);
     _messageFocus.removeListener(_hideStickersOnFocus);
     _text.removeListener(_syncTypingState);
+    if (_typingSent) {
+      _typingSent = false;
+      SocialService.setTyping(widget.conversationId, isTyping: false)
+          .catchError((_) {});
+    }
     _text.removeListener(_scheduleDraftSave);
     _draftTimer?.cancel();
     _saveDraft();
@@ -1008,9 +1018,28 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (foreground) _markRead();
   }
 
+  bool _typingSent = false;
+  DateTime? _typingSentAt;
+
+  /// يرسل «يكتب…» عند بدء الكتابة ويجدّده كل 4 ثوانٍ فقط (القراءة تعتبره
+  /// منتهياً بعد 8)، ويمسحه مرة واحدة عند التوقف. لا قراءات ولا كتابة لكل حرف.
   void _syncTypingState() {
     if (!mounted) return;
     final shouldType = _messageFocus.hasFocus && _text.text.trim().isNotEmpty;
+    if (shouldType) {
+      final last = _typingSentAt;
+      if (_typingSent &&
+          last != null &&
+          DateTime.now().difference(last).inSeconds < 4) {
+        return;
+      }
+      _typingSent = true;
+      _typingSentAt = DateTime.now();
+    } else {
+      if (!_typingSent) return;
+      _typingSent = false;
+      _typingSentAt = null;
+    }
     SocialService.setTyping(widget.conversationId, isTyping: shouldType)
         .catchError((_) {});
   }

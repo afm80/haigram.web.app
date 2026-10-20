@@ -59,8 +59,12 @@ class _HomeShellState extends State<HomeShell> {
       _blockedSignOutStarted = true;
       RouteStore.clear();
       UserService.me = null;
-      FirebaseAuth.instance.signOut().catchError((Object error) {
-        debugPrint('Unable to sign out blocked account: $error');
+      SocialService.unregisterPushNotifications()
+          .catchError((Object _) {})
+          .whenComplete(() {
+        FirebaseAuth.instance.signOut().catchError((Object error) {
+          debugPrint('Unable to sign out blocked account: $error');
+        });
       });
     });
   }
