@@ -60,20 +60,40 @@ async function deleteCloudinaryAsset(url) {
   }
 }
 
+async function isCloudinaryUrlUsedElsewhere(db, url, excludePostId) {
+  const posts = db.collection('posts');
+  const [asCover, asAlbum] = await Promise.all([
+    posts.where('mediaUrl', '==', url).limit(2).get(),
+    posts.where('albumUrls', 'array-contains', url).limit(2).get(),
+  ]);
+  return [...asCover.docs, ...asAlbum.docs].some((doc) => doc.id !== excludePostId);
+}
+
 async function deletePostRecord(db, bucket, postId) {
   const postRef = db.collection('posts').doc(postId);
   const snapshot = await postRef.get();
   if (!snapshot.exists) return false;
 
   const post = snapshot.data();
-  if (post.mediaId && post.repostedFromPostId == null) {
+  if (typeof post.mediaId === 'string' && post.mediaId && post.repostedFromPostId == null) {
+    // حقول المنشور يكتبها العميل، فلا نثق بها: نحذف القطعة فقط إذا كان
+    // uid المسجَّل عليها هو صاحب المنشور، حتى لا يُستعمل منشور مزيَّف لحذف ملفات غيره.
     const chunks = Math.max(0, Math.min(Number(post.chunks) || 0, 10000));
     for (let start = 0; start < chunks; start += 400) {
-      const batch = db.batch();
+      const refs = [];
       for (let index = start; index < Math.min(start + 400, chunks); index++) {
-        batch.delete(db.collection('media').doc(`${post.mediaId}_${index}`));
+        refs.push(db.collection('media').doc(`${post.mediaId}_${index}`));
       }
-      await batch.commit();
+      const docs = await db.getAll(...refs);
+      const batch = db.batch();
+      let owned = 0;
+      docs.forEach((doc) => {
+        if (doc.exists && doc.get('uid') === post.uid) {
+          batch.delete(doc.ref);
+          owned++;
+        }
+      });
+      if (owned > 0) await batch.commit();
     }
   }
 
@@ -84,6 +104,9 @@ async function deletePostRecord(db, bucket, postId) {
       // أفضل جهد: فشل Cloudinary لا يوقف حذف المنشور أو الحساب؛
       // السكربت الأسبوعي cleanup-cloudinary يحذف ما يتبقى.
       try {
+        // رابط Cloudinary لا يحمل مالكه (الرفع غير موقّع)، فلا نحذف الأصل إن كان
+        // منشور آخر يشير إليه (إعادة نشر، أو منشور مزيَّف نسخ رابط غيره).
+        if (await isCloudinaryUrlUsedElsewhere(db, url, postId)) continue;
         await deleteCloudinaryAsset(url);
       } catch (error) {
         console.error('Cloudinary asset deletion skipped:', url, error);
