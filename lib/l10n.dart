@@ -494,6 +494,29 @@ const Map<String, String> _en = {
   'تمت الإضافة إلى قصتك': "Added to your story",
   'تعذرت الإضافة: {0}': "Couldn't add: {0}",
   'رسالة جديدة': "New message",
+  // الملاحظات (Notes)
+  'ملاحظتك': 'Your note',
+  'ملاحظة...': 'Note...',
+  'ملاحظة جديدة': 'New note',
+  'شارك ما يدور في بالك...': "Share what's on your mind...",
+  'المتابعون الذين تتابعهم': 'Followers you follow back',
+  'تظهر ملاحظتك لمن تتابعه ويتابعك، وتختفي بعد 24 ساعة.':
+      'Your note is shown to people you follow who follow you back, and disappears after 24 hours.',
+  'ستحل هذه الملاحظة محل ملاحظتك الحالية.':
+      'This note will replace your current note.',
+  'حذف الملاحظة': 'Delete note',
+  'تم حذف الملاحظة': 'Note deleted',
+  'شاركتها {0}': 'Shared {0}',
+  '{0} • تنتهي بعد {1}': '{0} • expires in {1}',
+  '{0} س': '{0}h',
+  '{0} د': '{0}m',
+  'ردّ على الملاحظة...': 'Reply to note...',
+  'ردّ على ملاحظة {0}...': "Reply to {0}'s note...",
+  'ردّ على ملاحظة': 'Replied to a note',
+  'تعذر إرسال الردّ': "Couldn't send the reply",
+  'تعذرت مشاركة الملاحظة': "Couldn't share the note",
+  'يجب أن تكون الملاحظة بين حرف واحد و60 حرفاً':
+      'A note must be between 1 and 60 characters',
   'المحادثات': "Chats",
   'تعذر تحميل الرسائل\n{0}': "Couldn't load messages\n{0}",
   'لا توجد محادثات بعد\nابدأ محادثة مع أحد أصدقائك':
