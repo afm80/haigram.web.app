@@ -394,6 +394,12 @@ class SocialService {
             .collection('followRequests')
             .doc(otherUid));
       await batch.commit();
+      // ملاحظتي الحالية (إن وُجدت) لا يجب أن يراها من حظرته. محاولة لا تُفشل الحظر.
+      try {
+        await _db.collection('notes').doc(_uid).update({
+          'viewers': FieldValue.arrayRemove([otherUid]),
+        });
+      } catch (_) {}
     } else {
       await reference.delete();
     }
