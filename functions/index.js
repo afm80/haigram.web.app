@@ -395,20 +395,23 @@ exports.notifyChatMessage = onDocumentCreated(
       : String(message.text || 'رسالة جديدة').slice(0, 160);
     const response = await getMessaging().sendEachForMulticast({
       tokens: tokenSnapshot.docs.map((doc) => doc.data().token),
-      notification: { title, body },
+      // بلا حقل notification على مستوى الرسالة: على الويب يعرض الـ service worker
+      // الإشعار بنفسه (وإلا ظهر إشعاران: تلقائي + يدوي). أندرويد يعرضه من
+      // android.notification.
       data: {
         type: 'chat',
+        title,
+        body,
+        tag: `chat_${event.params.chatId}`,
         conversationId: event.params.chatId,
         messageId: event.params.messageId,
         senderUid: message.senderUid,
       },
-      webpush: {
-        fcmOptions: {
-          link: `https://haigram.web.app/?chat=${encodeURIComponent(event.params.chatId)}&from=${encodeURIComponent(message.senderUid)}`,
-        },
-        notification: { icon: 'https://haigram.web.app/icons/Icon-192.png' },
+      webpush: { headers: { Urgency: 'high' } },
+      android: {
+        priority: 'high',
+        notification: { title, body, tag: `chat_${event.params.chatId}` },
       },
-      android: { priority: 'high' },
     });
 
     const staleTokens = [];
@@ -497,23 +500,20 @@ exports.notifyActivity = onDocumentCreated(
 
     const response = await getMessaging().sendEachForMulticast({
       tokens: tokenSnapshot.docs.map((doc) => doc.data().token),
-      notification: { title: actor, body },
+      // بيانات فقط (انظر notifyChatMessage): الـ service worker يعرض إشعار الويب.
       data: {
         type: String(data.type),
+        title: actor,
+        body,
+        tag: groupTag || '',
         actorUid: String(data.actorUid || ''),
         postId: String(data.postId || ''),
       },
-      webpush: {
-        fcmOptions: { link: 'https://haigram.web.app/' },
-        notification: {
-          icon: 'https://haigram.web.app/icons/Icon-192.png',
-          ...(groupTag ? { tag: groupTag, renotify: true } : {}),
-        },
-      },
+      webpush: { headers: { Urgency: 'high' } },
       android: {
         priority: 'high',
         // نفس الوسم يستبدل الإشعار السابق بدل تكديس إشعارات جديدة.
-        ...(groupTag ? { notification: { tag: groupTag } } : {}),
+        notification: { title: actor, body, ...(groupTag ? { tag: groupTag } : {}) },
       },
     });
 
