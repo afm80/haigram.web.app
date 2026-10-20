@@ -523,6 +523,7 @@ const Map<String, String> _en = {
       "No conversations yet\nStart a chat with one of your friends",
   'مستخدم': "User",
   'نشط الآن': "Active now",
+  'يكتب…': "Typing…",
   'ابدأ المحادثة': "Start the conversation",
   'أنت: {0}': "You: {0}",
   '@{0} بدأ بمتابعتك': "@{0} started following you",
