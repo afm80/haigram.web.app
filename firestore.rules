@@ -147,6 +147,39 @@ service cloud.firestore {
         allow update: if false;
       }
 
+    // الملاحظات القصيرة (مثل Notes في إنستغرام): مستند واحد لكل مستخدم يختفي بعد 24 ساعة.
+    // viewers = أصدقاء صاحب الملاحظة (متابعة متبادلة) وقت النشر؛ الاستعلام يحمل
+    // where('viewers', arrayContains: uid) فتستطيع القواعد إثبات أن كل نتيجة مسموحة.
+    // انتهاء الصلاحية = createdAt + 24 ساعة يُحسب في العميل من وقت الخادم.
+    match /notes/{uid} {
+      allow get: if isActiveUser() && request.auth.uid == uid;
+      allow read: if isActiveUser()
+        && resource.data.viewers is list
+        && request.auth.uid in resource.data.viewers;
+      allow read, delete: if isAdmin();
+      allow create, update: if isActiveUser()
+        && request.auth.uid == uid
+        && (
+          // نشر ملاحظة جديدة (تستبدل القديمة).
+          (request.resource.data.keys().hasOnly(['uid', 'text', 'createdAt', 'viewers'])
+            && request.resource.data.uid == uid
+            && request.resource.data.text is string
+            && request.resource.data.text.size() > 0
+            && request.resource.data.text.size() <= 240
+            && request.resource.data.createdAt == request.time
+            && request.resource.data.viewers is list
+            && request.resource.data.viewers.size() <= 1000
+            && !request.resource.data.viewers.hasAny([uid]))
+          ||
+          // إخفاء الملاحظة الحالية عن مستخدم (عند حظره): قائمة المشاهدين تنقص فقط.
+          (resource != null
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewers'])
+            && request.resource.data.viewers is list
+            && request.resource.data.viewers.size() < resource.data.viewers.size())
+        );
+      allow delete: if isActiveUser() && request.auth.uid == uid;
+    }
+
     match /posts/{postId} {
       // الحساب الخاص: منشوراته لصاحبه ولمتابعيه فقط (تُفرض هنا في الخادم لا في الواجهة).
       // قواعد القراءة ليست فلتراً: استعلامات القوائم يجب أن تحمل where('authorPrivate', '==', false)
