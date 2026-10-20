@@ -524,6 +524,7 @@ const Map<String, String> _en = {
   'مستخدم': "User",
   'نشط الآن': "Active now",
   'يكتب…': "Typing…",
+  'الرسالة الأصلية غير متاحة': "Original message unavailable",
   'ابدأ المحادثة': "Start the conversation",
   'أنت: {0}': "You: {0}",
   '@{0} بدأ بمتابعتك': "@{0} started following you",
