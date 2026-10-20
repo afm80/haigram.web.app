@@ -497,7 +497,7 @@ service cloud.firestore {
                   .hasAny(['clearedAt'])
               || (touchesOnlyMine('clearedAt')
                 && request.resource.data.clearedAt[request.auth.uid]
-                  == request.time))
+                  == request.time)))
           ||
           // «يكتب الآن»: خريطة typing، كل مستخدم يكتب مدخله فقط، إمّا بوقت الخادم
           // الحالي أو بحذف مدخله. لا تغيّر أي حقل آخر ولا تعمل مع الحظر.
