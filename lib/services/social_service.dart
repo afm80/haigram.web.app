@@ -266,6 +266,38 @@ class SocialService {
     });
   }
 
+  /// عند تسجيل الخروج: يحذف توكن هذا الجهاز من حسابي ويُبطله، فلا تصل رسائل
+  /// الحساب السابق لجهاز مشترك. تُستدعى قبل signOut (القواعد تتطلب الدخول).
+  /// كل خطوة مستقلة، وأي فشل لا يمنع تسجيل الخروج.
+  static Future<void> unregisterPushNotifications() async {
+    final messaging = FirebaseMessaging.instance;
+    await _pushTokenRefreshSub?.cancel();
+    _pushTokenRefreshSub = null;
+    String? token;
+    try {
+      token = await messaging
+          .getToken(
+            vapidKey:
+                kIsWeb && _webPushVapidKey.isNotEmpty ? _webPushVapidKey : null,
+          )
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {}
+    if (token != null && token.isNotEmpty) {
+      try {
+        await _db
+            .collection('users')
+            .doc(_uid)
+            .collection('pushTokens')
+            .doc(token)
+            .delete()
+            .timeout(const Duration(seconds: 5));
+      } catch (_) {}
+    }
+    try {
+      await messaging.deleteToken().timeout(const Duration(seconds: 5));
+    } catch (_) {}
+  }
+
   static Future<void> _savePushToken(String token) async {
     final platform = kIsWeb ? 'web' : defaultTargetPlatform.name;
     await _db
@@ -820,11 +852,20 @@ class SocialService {
       final previousMessages =
           recentMessages.docs.where((document) => document.id != messageId);
       final previous = previousMessages.isEmpty ? null : previousMessages.first;
+      // يعود updatedAt إلى وقت الرسالة السابقة نفسه (Timestamp الخام بلا تحويل
+      // إلى DateTime حتى لا تضيع الميكروثواني)، وإلا ظهرت المحادثة «غير مقروءة»
+      // وقفزت لأعلى القائمة بعد الحذف. إن لم تبقَ رسائل يُستعمل وقت الخادم.
+      final previousCreatedAt = previous?.data()['createdAt'];
+      if (previous != null && previousCreatedAt is! Timestamp) {
+        throw StateError(tr('تعذر حذف الرسالة الآن، حاول بعد لحظات'));
+      }
       batch.update(chat, {
         'lastMessage': previous?.data()['text'] ?? '',
         'lastSenderUid': previous?.data()['senderUid'] ?? '',
         'lastMessageId': previous?.id ?? '',
-        'updatedAt': FieldValue.serverTimestamp(),
+        'updatedAt': previous == null
+            ? FieldValue.serverTimestamp()
+            : previousCreatedAt,
       });
     }
     batch.delete(message);
@@ -966,19 +1007,15 @@ class SocialService {
         return typing;
       });
 
+  /// يكتب/يمسح مدخلي فقط في خريطة typing بكتابة واحدة بلا قراءة مسبقة.
+  /// الاستدعاء المتكرر مسؤولية الشاشة (تحديد المعدّل)، وتتجاهل القراءة
+  /// المدخلات الأقدم من 8 ثوانٍ فلا يبقى «يكتب…» عالقاً إن لم يصل المسح.
   static Future<void> setTyping(String conversationId,
-      {required bool isTyping}) async {
-    final chat = _chats.doc(conversationId);
-    final snapshot = await chat.get();
-    final typing = Map<String, dynamic>.from(
-      snapshot.data()?['typing'] as Map? ?? const <String, dynamic>{},
-    );
-    if (isTyping) {
-      typing[_uid] = Timestamp.now();
-    } else {
-      typing.remove(_uid);
-    }
-    await chat.set({'typing': typing}, SetOptions(merge: true));
+      {required bool isTyping}) {
+    return _chats.doc(conversationId).update({
+      'typing.$_uid':
+          isTyping ? FieldValue.serverTimestamp() : FieldValue.delete(),
+    });
   }
 
   static Stream<List<SocialNotification>> notifications() =>
