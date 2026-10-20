@@ -1787,13 +1787,35 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             overflow: TextOverflow.ellipsis,
                           ),
                           if (user != null)
-                            Text(
-                              '@${user.username}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  color: context.appColors.textDim,
-                                  fontSize: 12),
+                            StreamBuilder<bool>(
+                              stream: PresenceService.isOnline(widget.otherUid),
+                              builder: (context, onlineSnapshot) {
+                                final typing = _typingUsers.keys.any(
+                                    (uid) => uid != SocialService.currentUid);
+                                final online = onlineSnapshot.data == true;
+                                final String label;
+                                if (typing) {
+                                  label = tr('يكتب…');
+                                } else if (online) {
+                                  label = tr('نشط الآن');
+                                } else {
+                                  label = '@${user.username}';
+                                }
+                                return Text(
+                                  label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: (typing || online)
+                                        ? AppColors.success
+                                        : context.appColors.textDim,
+                                    fontSize: 12,
+                                    fontWeight: (typing || online)
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
+                                  ),
+                                );
+                              },
                             ),
                         ],
                       ),
