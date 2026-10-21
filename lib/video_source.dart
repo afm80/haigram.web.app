@@ -1,5 +1,5 @@
-// مصدر الفيديو: يتعرّف على رابط الفيديو (يوتيوب، فيميو، دايلي موشن، تويتش،
-// فيسبوك (غير الريلز)، ملف فيديو مباشر، بث HLS) ويحدد طريقة عرضه.
+// مصدر الفيديو: يتعرّف على رابط الفيديو (يوتيوب، فيسبوك (غير الريلز)،
+// ملف فيديو مباشر، بث HLS) ويحدد طريقة عرضه.
 // لا يعتمد على Firebase، فيمكن اختباره وحده.
 import 'dart:convert';
 import 'dart:ui' show Color;
@@ -8,9 +8,6 @@ import 'l10n.dart';
 
 enum VideoProvider {
   youtube,
-  vimeo,
-  dailymotion,
-  twitch,
   facebook, // الفيديوهات العادية فقط (ريلز فيسبوك غير مدعومة)
   file, // mp4 / webm ... رابط مباشر
   hls, // بث m3u8
@@ -28,14 +25,11 @@ class VideoSource {
   /// فيديو عمودي (9:16): يظهر مع الشورتز.
   final bool isShort;
 
-  /// بث مباشر (قناة تويتش أو رابط HLS).
+  /// بث مباشر (رابط HLS).
   final bool isLive;
 
-  /// معلومات إضافية: hash فيميو الخاص، أو نوع تويتش (video/clip/channel)،
-  final String? extra;
-
   const VideoSource._(this.provider, this.id, this.url,
-      {this.isShort = false, this.isLive = false, this.extra});
+      {this.isShort = false, this.isLive = false});
 
   /// يعيد بناء المصدر من الحقول المحفوظة في المنشور.
   /// منشورات يوتيوب القديمة ليس فيها provider ولا url: يكفيها المعرّف.
@@ -78,18 +72,6 @@ class VideoSource {
       if (id == null) return null;
       return VideoSource._(VideoProvider.youtube, id, youtubeWatch(id),
           isShort: seg.isNotEmpty && seg.first == 'shorts');
-    }
-    // فيميو
-    if (bare == 'vimeo.com') return _vimeo(uri, seg);
-    // دايلي موشن
-    if (bare == 'dailymotion.com' || bare == 'dai.ly') {
-      return _dailymotion(bare, seg);
-    }
-    // تويتش
-    if (bare == 'twitch.tv' ||
-        (host == 'clips.twitch.tv') ||
-        (host == 'player.twitch.tv')) {
-      return _twitch(host, seg);
     }
     // فيسبوك
     if (bare == 'facebook.com' || bare == 'fb.com') return _facebook(uri, seg);
@@ -153,78 +135,6 @@ class VideoSource {
     return (id != null && _ytId.hasMatch(id)) ? id : null;
   }
 
-  static VideoSource? _vimeo(Uri uri, List<String> seg) {
-    final digits = RegExp(r'^\d{5,12}$');
-    final i = seg.indexWhere(digits.hasMatch);
-    if (i < 0) return null;
-    final id = seg[i];
-    String? hash = uri.queryParameters['h'];
-    if (hash == null && i + 1 < seg.length) {
-      if (RegExp(r'^[0-9a-f]{8,12}$').hasMatch(seg[i + 1])) hash = seg[i + 1];
-    }
-    if (hash != null && !RegExp(r'^[0-9a-f]{6,16}$').hasMatch(hash)) hash = null;
-    // الرابط المحفوظ يحمل الـ hash، فلا يضيع عند إعادة بناء المصدر للفيديوهات غير المدرجة.
-    return VideoSource._(VideoProvider.vimeo, id,
-        hash == null ? 'https://vimeo.com/$id' : 'https://vimeo.com/$id/$hash',
-        extra: hash);
-  }
-
-  static VideoSource? _dailymotion(String bare, List<String> seg) {
-    String? raw;
-    if (bare == 'dai.ly') {
-      if (seg.isNotEmpty) raw = seg.first;
-    } else {
-      final i = seg.indexOf('video');
-      if (i >= 0 && i + 1 < seg.length) raw = seg[i + 1];
-    }
-    if (raw == null) return null;
-    final id = raw.split('_').first;
-    if (!RegExp(r'^[A-Za-z0-9]{4,12}$').hasMatch(id)) return null;
-    return VideoSource._(
-        VideoProvider.dailymotion, id, 'https://www.dailymotion.com/video/$id');
-  }
-
-  static const _twitchReserved = {
-    'directory', 'videos', 'settings', 'downloads', 'login', 'signup',
-    'search', 'p', 'jobs', 'turbo', 'store', 'friends', 'subscriptions',
-    'inventory', 'wallet', 'drops', 'prime', 'popout', 'embed', 'moderator',
-  };
-
-  static VideoSource? _twitch(String host, List<String> seg) {
-    if (seg.isEmpty) return null;
-    final chan = RegExp(r'^[A-Za-z0-9_]{3,25}$');
-    if (host == 'clips.twitch.tv') {
-      final slug = seg.first == 'embed' ? null : seg.first;
-      if (slug == null || !RegExp(r'^[A-Za-z0-9_-]{6,80}$').hasMatch(slug)) {
-        return null;
-      }
-      return VideoSource._(
-          VideoProvider.twitch, slug, 'https://clips.twitch.tv/$slug',
-          extra: 'clip');
-    }
-    if (seg.first == 'videos' && seg.length >= 2) {
-      final id = seg[1];
-      if (!RegExp(r'^\d{5,15}$').hasMatch(id)) return null;
-      return VideoSource._(
-          VideoProvider.twitch, id, 'https://www.twitch.tv/videos/$id',
-          extra: 'video');
-    }
-    if (seg.length >= 3 && seg[1] == 'clip') {
-      final slug = seg[2];
-      if (!RegExp(r'^[A-Za-z0-9_-]{6,80}$').hasMatch(slug)) return null;
-      return VideoSource._(
-          VideoProvider.twitch, slug, 'https://clips.twitch.tv/$slug',
-          extra: 'clip');
-    }
-    final name = seg.first.toLowerCase();
-    if (seg.length == 1 && chan.hasMatch(name) && !_twitchReserved.contains(name)) {
-      return VideoSource._(
-          VideoProvider.twitch, name, 'https://www.twitch.tv/$name',
-          extra: 'channel', isLive: true);
-    }
-    return null;
-  }
-
   static VideoSource? _facebook(Uri uri, List<String> seg) {
     final idRe = RegExp(r'^\d{6,20}$');
     String? id;
@@ -279,9 +189,6 @@ class VideoSource {
 
   String get platformName => switch (provider) {
         VideoProvider.youtube => 'YouTube',
-        VideoProvider.vimeo => 'Vimeo',
-        VideoProvider.dailymotion => 'Dailymotion',
-        VideoProvider.twitch => 'Twitch',
         VideoProvider.facebook => 'Facebook',
         VideoProvider.file => tr('فيديو'),
         VideoProvider.hls => tr('بث مباشر'),
@@ -294,42 +201,23 @@ class VideoSource {
   /// صورة مصغّرة جاهزة إن وفّرتها المنصة برابط ثابت، وإلا null (يُرسم غلاف).
   String? get thumbUrl => switch (provider) {
         VideoProvider.youtube => 'https://img.youtube.com/vi/$id/hqdefault.jpg',
-        VideoProvider.dailymotion =>
-          'https://www.dailymotion.com/thumbnail/video/$id',
         _ => null,
       };
 
   /// ألوان غلاف المنصة (تدرّج).
   List<Color> get brandColors => switch (provider) {
         VideoProvider.youtube => const [Color(0xFFFF0000), Color(0xFF8A0000)],
-        VideoProvider.vimeo => const [Color(0xFF1AB7EA), Color(0xFF0B5F7A)],
-        VideoProvider.dailymotion => const [Color(0xFF0066DC), Color(0xFF00316B)],
-        VideoProvider.twitch => const [Color(0xFF9146FF), Color(0xFF3B1A80)],
         VideoProvider.facebook => const [Color(0xFF1877F2), Color(0xFF0A3A7A)],
         VideoProvider.file || VideoProvider.hls =>
           const [Color(0xFF1B1F2A), Color(0xFF0B0D12)],
       };
 
   /// رابط التضمين (iframe). null للملف والبث: يستعملان [playerHtml].
-  /// [parentHost]: نطاق الصفحة، يطلبه تويتش.
+  /// [parentHost]: نطاق الصفحة (غير مستعمل حالياً، محفوظ للتوافق).
   String? embedUrl({String parentHost = 'haigram.web.app'}) {
-    final p = Uri.encodeQueryComponent(parentHost);
     switch (provider) {
       case VideoProvider.youtube:
         return 'https://www.youtube.com/embed/$id?autoplay=1&playsinline=1&rel=0';
-      case VideoProvider.vimeo:
-        final h = extra == null ? '' : '&h=$extra';
-        return 'https://player.vimeo.com/video/$id?autoplay=1&playsinline=1$h';
-      case VideoProvider.dailymotion:
-        return 'https://www.dailymotion.com/embed/video/$id?autoplay=1';
-      case VideoProvider.twitch:
-        return switch (extra) {
-          'clip' =>
-            'https://clips.twitch.tv/embed?clip=$id&parent=$p&autoplay=true',
-          'channel' =>
-            'https://player.twitch.tv/?channel=$id&parent=$p&autoplay=true',
-          _ => 'https://player.twitch.tv/?video=v$id&parent=$p&autoplay=true',
-        };
       case VideoProvider.facebook:
         return 'https://www.facebook.com/plugins/video.php'
             '?href=${Uri.encodeQueryComponent(url)}&show_text=false&autoplay=true';
@@ -339,7 +227,7 @@ class VideoSource {
     }
   }
 
-  /// نطاقات مسموح للـ WebView التنقل إليها (الإطار الرئيسي). غيرها يُفتح خارجياً.
+  /// نطاقات مسموح للـ WebView التنقل إليها (الإطار الرئيسي). غيرها يُمنع (التشغيل داخل التطبيق فقط).
   bool allowsNavigation(Uri uri) {
     final h = uri.host.toLowerCase();
     bool inDomain(List<String> ds) =>
@@ -347,9 +235,6 @@ class VideoSource {
     return switch (provider) {
       VideoProvider.youtube =>
         inDomain(['youtube.com']) && uri.path.startsWith('/embed/'),
-      VideoProvider.vimeo => inDomain(['vimeo.com']),
-      VideoProvider.dailymotion => inDomain(['dailymotion.com']),
-      VideoProvider.twitch => inDomain(['twitch.tv']),
       VideoProvider.facebook => inDomain(['facebook.com']),
       VideoProvider.file || VideoProvider.hls => inDomain(['haigram.web.app']),
     };
