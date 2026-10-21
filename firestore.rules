@@ -377,6 +377,15 @@ service cloud.firestore {
             || after[request.auth.uid] > before[request.auth.uid]);
       }
 
+      // علَم true/false يخص المستخدم الحالي فقط (pinned / muted).
+      function touchesOnlyMyFlag(field) {
+        let before = resource.data.get(field, {});
+        let after = request.resource.data[field];
+        return after is map
+          && after.diff(before).affectedKeys().hasOnly([request.auth.uid])
+          && after[request.auth.uid] is bool;
+      }
+
       // لا نسمح بقراءة مستند غير موجود (كان يكشف هل تراسل مستخدمان أم لا):
       // البدء يتم بالإنشاء ثم القراءة من الطرفين فقط.
       // الأدمن يقرأ ملخصات المحادثات للوحة التحكم؛ الرسائل الفرعية تبقى للمشاركين فقط.
@@ -526,6 +535,17 @@ service cloud.firestore {
               || (touchesOnlyMine('clearedAt')
                 && request.resource.data.clearedAt[request.auth.uid]
                   == request.time)))
+          ||
+          // تثبيت المحادثة وكتمها لديّ: خريطتا pinned / muted، كل مستخدم يكتب
+          // مدخله فقط وبقيمة true أو false.
+          (request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['pinned', 'muted'])
+            && (!request.resource.data.diff(resource.data).affectedKeys()
+                  .hasAny(['pinned'])
+              || touchesOnlyMyFlag('pinned'))
+            && (!request.resource.data.diff(resource.data).affectedKeys()
+                  .hasAny(['muted'])
+              || touchesOnlyMyFlag('muted')))
           ||
           // «يكتب الآن»: خريطة typing، كل مستخدم يكتب مدخله فقط، إمّا بوقت الخادم
           // الحالي أو بحذف مدخله. لا تغيّر أي حقل آخر ولا تعمل مع الحظر.
