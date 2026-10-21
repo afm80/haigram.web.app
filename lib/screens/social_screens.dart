@@ -842,6 +842,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   StreamSubscription<RemoteMessage>? _chatPushSub;
   Map<String, DateTime> _typingUsers = const {};
   ChatMessage? _replyTarget;
+  // رسالة قيد التعديل (وضع التعديل يستعمل نفس حقل الإدخال) ومسودة ما قبله.
+  ChatMessage? _editTarget;
+  String _draftBeforeEdit = '';
   DateTime? _readAtWhenOpened;
   bool _capturedReadAtWhenOpened = false;
   bool _sending = false;
@@ -1069,6 +1072,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _saveDraft() async {
+    // أثناء تعديل رسالة لا يُحفظ نصها كمسودة.
+    if (_editTarget != null) return;
     try {
       final preferences = await SharedPreferences.getInstance();
       final draft = _text.text;
@@ -1362,6 +1367,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// رفع الصورة هو الجزء البطيء، لذلك يُعطَّل الزر أثناءه فقط.
   Future<void> _send() async {
     if (_sending) return;
+    final editing = _editTarget;
+    if (editing != null) {
+      await _submitEdit(editing);
+      return;
+    }
     final text = _text.text.trim();
     final images = List<Uint8List>.of(_pendingImages);
     final replyTarget = _replyTarget;
@@ -1442,6 +1452,48 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
     } else if (mounted) {
       setState(() => _replyTarget = null);
+    }
+  }
+
+  /// يبدأ تعديل رسالتي: يضع نصها في حقل الإدخال ويحتفظ بمسودتي الحالية.
+  void _startEdit(ChatMessage message) {
+    setState(() {
+      _draftBeforeEdit = _editTarget == null ? _text.text : _draftBeforeEdit;
+      _editTarget = message;
+      _replyTarget = null;
+      _showStickers = false;
+    });
+    _text.text = message.text;
+    _text.selection = TextSelection.collapsed(offset: _text.text.length);
+    _messageFocus.requestFocus();
+  }
+
+  /// يخرج من وضع التعديل ويعيد مسودتي السابقة إلى الحقل.
+  void _cancelEdit() {
+    if (_editTarget == null) return;
+    final draft = _draftBeforeEdit;
+    setState(() {
+      _editTarget = null;
+      _draftBeforeEdit = '';
+    });
+    _text.text = draft;
+  }
+
+  Future<void> _submitEdit(ChatMessage target) async {
+    final text = _text.text.trim();
+    if (text.isEmpty) return;
+    if (text == target.text.trim()) {
+      _cancelEdit();
+      return;
+    }
+    setState(() => _sending = true);
+    try {
+      await SocialService.editMessage(widget.conversationId, target.id, text);
+      if (mounted) _cancelEdit();
+    } catch (e) {
+      _showError(tr('تعذر تعديل الرسالة'), e);
+    } finally {
+      if (mounted) setState(() => _sending = false);
     }
   }
 
@@ -1676,6 +1728,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 }
               },
             ),
+            if (mine &&
+                message.kind == 'text' &&
+                DateTime.now().difference(message.createdAt) <=
+                    SocialService.messageEditWindow)
+              ListTile(
+                leading: const Icon(Icons.edit_rounded),
+                title: Text(tr('تعديل الرسالة')),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  if (mounted) _startEdit(message);
+                },
+              ),
             if (mine)
               ListTile(
                 leading: const Icon(Icons.delete_forever_rounded,
@@ -2211,6 +2275,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                 ),
                                 const SizedBox(width: 4),
                               ],
+                              if (message.edited) ...[
+                                Text(
+                                  tr('معدّلة'),
+                                  style: TextStyle(
+                                    color: colors.textDim,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                              ],
                               Text(
                                 _clock(message.createdAt),
                                 style: TextStyle(
@@ -2411,6 +2485,40 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       ],
                     ),
                   ),
+                if (_editTarget != null)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                    padding: const EdgeInsetsDirectional.only(
+                        start: 12, top: 4, bottom: 4),
+                    decoration: BoxDecoration(
+                      color: colors.surfaceHigh,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.edit_rounded,
+                            size: 16, color: colors.textDim),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '${tr('تعديل الرسالة')}: ${_editTarget!.text}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style:
+                                TextStyle(color: colors.textDim, fontSize: 12),
+                            textDirection: SocialService.inferTextDirection(
+                                _editTarget!.text),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: _sending ? null : _cancelEdit,
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                          tooltip: tr('إلغاء التعديل'),
+                        ),
+                      ],
+                    ),
+                  ),
                 SafeArea(
                   top: false,
                   bottom: !_showStickers,
@@ -2423,7 +2531,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         IconButton(
                           tooltip: tr('التقاط صورة'),
                           visualDensity: VisualDensity.compact,
-                          onPressed: (_sending || _firstMessageToStranger)
+                          onPressed: (_sending ||
+                                  _firstMessageToStranger ||
+                                  _editTarget != null)
                               ? null
                               : () => _pickImage(ImageSource.camera),
                           icon: const Icon(Icons.photo_camera_outlined),
@@ -2431,7 +2541,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         IconButton(
                           tooltip: tr('إرسال صورة'),
                           visualDensity: VisualDensity.compact,
-                          onPressed: (_sending || _firstMessageToStranger)
+                          onPressed: (_sending ||
+                                  _firstMessageToStranger ||
+                                  _editTarget != null)
                               ? null
                               : () => _pickImage(ImageSource.gallery),
                           icon: const Icon(Icons.image_outlined),
