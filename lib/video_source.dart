@@ -279,5 +279,8 @@ setTimeout(function(){ if(!done && v.readyState===0) fail(); },25000);
   }
 
   static String _jsString(String s) =>
-      jsonEncode(s).replaceAll('<', r'<').replaceAll(' ', r' ');
+      jsonEncode(s)
+          .replaceAll('<', r'\u003c')
+          .replaceAll('\u2028', r'\u2028')
+          .replaceAll('\u2029', r'\u2029');
 }
