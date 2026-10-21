@@ -57,6 +57,9 @@ class _InboxScreenState extends State<InboxScreen> {
   @override
   void initState() {
     super.initState();
+    StoryViewed.load().then((_) {
+      if (mounted) setState(() {});
+    });
     _loadDrafts();
     chatDraftsRevision.addListener(_loadDrafts);
   }

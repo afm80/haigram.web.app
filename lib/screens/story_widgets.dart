@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -20,14 +21,50 @@ import 'install_stub.dart' if (dart.library.html) 'install_web.dart';
 /// يتذكر القصص التي شوهدت خلال الجلسة (لتحويل الحلقة إلى رمادية).
 class StoryViewed {
   static final Set<String> _seen = {};
-  static void mark(String id) => _seen.add(id);
+  static String? _loadedFor;
+  static const _maxStored = 400;
 
-  /// يعلّم القصة كمشاهدة ويسجّل المشاهدة في الخادم (مرة واحدة في الجلسة).
+  static String get _key => 'seen_stories_${PostService.uidOrEmpty}';
+
+  /// يحمّل القصص المشاهَدة المحفوظة على الجهاز (تبقى رمادية بعد إعادة فتح التطبيق).
+  static Future<void> load() async {
+    final uid = PostService.uidOrEmpty;
+    if (_loadedFor == uid) return;
+    _loadedFor = uid;
+    _seen.clear();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _seen.addAll(prefs.getStringList(_key) ?? const <String>[]);
+    } catch (_) {}
+  }
+
+  static Future<void> _persist() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      var list = _seen.toList();
+      // القصص تنتهي بعد 24 ساعة: نحتفظ بأحدث العناصر فقط.
+      if (list.length > _maxStored) {
+        list = list.sublist(list.length - _maxStored);
+        _seen
+          ..clear()
+          ..addAll(list);
+      }
+      await prefs.setStringList(_key, list);
+    } catch (_) {}
+  }
+
+  static void mark(String id) {
+    if (_seen.add(id)) _persist();
+  }
+
+  /// يعلّم القصة كمشاهدة ويسجّل المشاهدة في الخادم (مرة واحدة فقط).
   static void markAndRecord(Post story) {
     if (_seen.add(story.id)) {
+      _persist();
       PostService.recordStoryView(story).catchError((_) {});
     }
   }
+
   static bool isSeen(String id) => _seen.contains(id);
   static bool allSeen(StoryGroup g) =>
       g.stories.every((s) => _seen.contains(s.id));
@@ -42,6 +79,14 @@ class StoriesBar extends StatefulWidget {
 }
 
 class _StoriesBarState extends State<StoriesBar> {
+  @override
+  void initState() {
+    super.initState();
+    StoryViewed.load().then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
   Future<void> _open(List<StoryGroup> ordered, int index) async {
     await rootNavigatorOf(context).push(
       PageRouteBuilder(
@@ -315,6 +360,7 @@ class _StoryViewerState extends State<StoryViewer>
   void initState() {
     super.initState();
     _s = _firstUnseen(widget.groups[_g]);
+    StoryViewed.load();
     _t = AnimationController(vsync: this, duration: const Duration(seconds: 5))
       ..addStatusListener((st) {
         if (st == AnimationStatus.completed) _next();
@@ -523,6 +569,44 @@ class _StoryViewerState extends State<StoryViewer>
           content: Text(tr('تعذّر إرسال الردّ')), duration: Duration(seconds: 2)));
     }
   }
+
+  /// تفاعل سريع بإيموجي (كإنستغرام): يُرسل كرسالة لصاحب القصة.
+  static const _quickReactions = ['😂', '😮', '😍', '😢', '👏', '🔥'];
+
+  Future<void> _sendReaction(String emoji) async {
+    if (needsLogin(context)) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final id = await SocialService.startConversation(_group.uid);
+      await SocialService.sendMessage(
+          id, trf('تفاعل على القصة: {0}', [emoji]));
+      messenger.showSnackBar(SnackBar(
+          content: Text(emoji, style: const TextStyle(fontSize: 22)),
+          duration: const Duration(seconds: 1)));
+    } catch (_) {
+      messenger.showSnackBar(SnackBar(
+          content: Text(tr('تعذّر إرسال الردّ')),
+          duration: const Duration(seconds: 2)));
+    }
+  }
+
+  Widget _reactionsRow() => Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            for (final e in _quickReactions)
+              GestureDetector(
+                onTap: () => _sendReaction(e),
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Text(e, style: const TextStyle(fontSize: 28)),
+                ),
+              ),
+          ],
+        ),
+      );
 
   // ---- تأثير المكعّب بين الصفحات ----
   Widget _cube(int i, Widget child) {
@@ -861,8 +945,18 @@ class _StoryViewerState extends State<StoryViewer>
         ),
       );
     }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _reactionsRow(),
+        _replyRow(story),
+      ],
+    );
+  }
+
+  Widget _replyRow(Post story) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
       child: Row(
         children: [
           Expanded(
