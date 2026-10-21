@@ -23,6 +23,33 @@ String trf(String ar, List<Object?> args) {
 }
 
 const Map<String, String> _en = {
+  // روابط الفيديو والبث من عدة منصات
+  'شارك رابط فيديو عمودي (Shorts أو TikTok أو Reels) وسيظهر هنا في ملفك.':
+      "Share a vertical video link (Shorts, TikTok or Reels) and it will appear here on your profile.",
+  'شارك رابط فيديو أو بث وسيظهر هنا في ملفك.':
+      "Share a video or stream link and it will appear here on your profile.",
+  'الصق رابط الفيديو أو البث': "Paste a video or stream link",
+  'رابط فيديو (اختياري)': "Video link (optional)",
+  'أضف رابط فيديو أولاً': "Add a video link first",
+  'رابط الفيديو غير مدعوم أو غير صالح': "Unsupported or invalid video link",
+  'هذا رابط مختصر. افتح الفيديو وانسخ رابطه الكامل':
+      "This is a short link. Open the video and copy its full link",
+  'تعذر تشغيل هذا الفيديو': "Couldn't play this video",
+  'تعذر تشغيل هذا الفيديو. تأكد أن الرابط صحيح وعام ويسمح بالتشغيل من المواقع الأخرى':
+      "Couldn't play this video. Make sure the link is correct, public, and allows playback on other sites",
+  'لم يعمل الفيديو. لا يمكن نشره': "The video didn't play, so it can't be posted",
+  'لم يعمل الفيديو في المعاينة. لا يمكن نشره':
+      "The video didn't play in the preview, so it can't be posted",
+  'الفيديو يعمل ({0})': "Video works ({0})",
+  'معاينة من {0}: إن لم يظهر الفيديو أو ظهر خطأ فلن يعمل بعد النشر':
+      "Preview from {0}: if the video doesn't appear or shows an error, it won't work after posting",
+  'فتح في {0}': "Open in {0}",
+  'فتح الرابط': "Open link",
+  'بث مباشر': "Live stream",
+  'مباشر': "LIVE",
+  'شاهد الفيديو': "Watch the video",
+  'شاهد البث المباشر': "Watch the live stream",
+  'لا يمكن إضافة هذا الفيديو إلى القصة': "This video can't be added to a story",
   // رسائل الأخطاء وانقطاع الإنترنت
   'تعذر إرسال البلاغ': "Couldn't send the report",
   'تعذر إلغاء الحظر': "Couldn't unblock",
