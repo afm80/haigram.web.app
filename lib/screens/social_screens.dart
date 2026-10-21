@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'image_save_stub.dart' if (dart.library.html) 'image_save_web.dart';
 import 'dart:ui' show ImageFilter;
 
 import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
@@ -18,7 +19,6 @@ import '../services/social_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
-import 'location_stub.dart' if (dart.library.html) 'location_web.dart';
 import 'note_widgets.dart';
 import 'photo_tools.dart' show fitImageUnderLimit;
 import 'post_widgets.dart' show PostDetailScreen, PostImage, timeAgo;
@@ -3077,11 +3077,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _openNetworkImage(String url) {
+  void _openNetworkImage(String url, {String? senderUid, DateTime? sentAt}) {
     Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute<void>(
         fullscreenDialog: true,
-        builder: (_) => _NetworkImageViewer(url: url),
+        builder: (_) => _NetworkImageViewer(
+            url: url, senderUid: senderUid, sentAt: sentAt),
       ),
     );
   }
@@ -3793,28 +3794,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   /// يطلب موقع الجهاز الحالي ويرسله كبطاقة في المحادثة.
-  Future<void> _sendLocation() async {
-    final messenger = ScaffoldMessenger.of(context);
-    final location = await currentChatLocation();
-    if (!mounted) return;
-    if (location == null) {
-      messenger.showSnackBar(
-          SnackBar(content: Text(tr('تعذر تحديد موقعك، تحقق من إذن الموقع'))));
-      return;
-    }
-    try {
-      await SocialService.sendLocation(
-        widget.conversationId,
-        lat: location.lat,
-        lng: location.lng,
-      );
-    } catch (error) {
-      messenger.showSnackBar(SnackBar(
-          content:
-              Text(friendlyError(error, fallback: tr('تعذر إرسال الموقع')))));
-    }
-  }
-
   /// يضع تفاعلاً على الرسالة؛ والضغط على نفس تفاعلي الحالي يزيله.
   Future<void> _reactToMessage(ChatMessage message, String reaction) async {
     final same = message.reactions[SocialService.currentUid] == reaction;
@@ -4518,8 +4497,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                               ),
                                               onTap: () =>
                                                   message.imageUrl != null
-                                                      ? _openNetworkImage(
-                                                          message.imageUrl!)
+                                                      ? _openNetworkImage(message.imageUrl!,
+                                                          senderUid:
+                                                              message.senderUid,
+                                                          sentAt: message
+                                                              .createdAt)
                                                       : _openImage(
                                                           message.imageBytes!),
                                             )
@@ -5069,16 +5051,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               icon: Icon(_showStickers
                                   ? Icons.keyboard_alt_outlined
                                   : Icons.emoji_emotions_outlined),
-                            ),
-                            IconButton(
-                              tooltip: tr('إرسال موقعي'),
-                              visualDensity: VisualDensity.compact,
-                              onPressed: (_sending ||
-                                      _firstMessageToStranger ||
-                                      _editTarget != null)
-                                  ? null
-                                  : _sendLocation,
-                              icon: const Icon(Icons.location_on_outlined),
                             ),
                             Expanded(
                               child: TextField(
@@ -5958,7 +5930,10 @@ class _ChatMediaGridState extends State<_ChatMediaGrid> {
       Navigator.of(context, rootNavigator: true).push(
         MaterialPageRoute<void>(
           fullscreenDialog: true,
-          builder: (_) => _NetworkImageViewer(url: url),
+          builder: (_) => _NetworkImageViewer(
+              url: url,
+              senderUid: message.senderUid,
+              sentAt: message.createdAt),
         ),
       );
       return;
@@ -7465,7 +7440,6 @@ class _ViewOnceImage extends StatefulWidget {
 }
 
 class _ViewOnceImageState extends State<_ViewOnceImage> {
-  static const _revealSeconds = 7;
   bool _revealed = false;
   bool _consumed = false;
   Timer? _timer;
@@ -7476,16 +7450,44 @@ class _ViewOnceImageState extends State<_ViewOnceImage> {
     super.dispose();
   }
 
-  void _reveal() {
+  Future<void> _reveal() async {
     if (widget.mine || widget.opened || _revealed || _consumed) return;
     setState(() => _revealed = true);
     widget.onReveal();
-    _timer = Timer(const Duration(seconds: _revealSeconds), () {
-      if (!mounted) return;
-      setState(() {
-        _revealed = false;
-        _consumed = true;
-      });
+    // تُفتح بملء الشاشة وتبقى حتى يغلقها المستلم، ثم تُقفل نهائياً.
+    await Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            leading: IconButton(
+              tooltip: tr('إغلاق'),
+              icon: const Icon(Icons.close_rounded),
+              onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
+            ),
+          ),
+          body: SizedBox.expand(
+            child: InteractiveViewer(
+              minScale: 1,
+              maxScale: 5,
+              child: Center(
+                child: widget.url != null
+                    ? Image.network(widget.url!, fit: BoxFit.contain)
+                    : Image.memory(widget.bytes!, fit: BoxFit.contain),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    setState(() {
+      _revealed = false;
+      _consumed = true;
     });
   }
 
@@ -7616,13 +7618,90 @@ class _ViewOnceImageState extends State<_ViewOnceImage> {
   }
 }
 
-/// عرض الصورة بملء الشاشة (رابط): تكبير بالقرص، ومؤشر تحميل، وعودة للأصل عند الفشل.
-class _NetworkImageViewer extends StatelessWidget {
+/// عرض الصورة بملء الشاشة (رابط) بأسلوب إنستغرام: اسم المرسل ووقت الإرسال،
+/// تكبير بالقرص، إغلاق بالسحب للأسفل، وقائمة ⋮ لحفظ الصورة.
+class _NetworkImageViewer extends StatefulWidget {
   final String url;
-  const _NetworkImageViewer({required this.url});
+  final String? senderUid;
+  final DateTime? sentAt;
+  const _NetworkImageViewer({required this.url, this.senderUid, this.sentAt});
+
+  @override
+  State<_NetworkImageViewer> createState() => _NetworkImageViewerState();
+}
+
+class _NetworkImageViewerState extends State<_NetworkImageViewer> {
+  final TransformationController _transform = TransformationController();
+  Offset? _downPosition;
+  int _pointers = 0;
+  bool _multiTouch = false;
+  double _dragDy = 0;
+
+  @override
+  void dispose() {
+    _transform.dispose();
+    super.dispose();
+  }
+
+  bool get _zoomed => _transform.value.getMaxScaleOnAxis() > 1.02;
+
+  void _showMore() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.download_rounded),
+              title: Text(tr('حفظ في الجهاز')),
+              onTap: () async {
+                Navigator.of(sheetContext).pop();
+                final messenger = ScaffoldMessenger.of(context);
+                final ok = await saveImageFromUrl(widget.url);
+                messenger.showSnackBar(SnackBar(
+                    content: Text(
+                        ok ? tr('تم حفظ الصورة') : tr('تعذر حفظ الصورة'))));
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _title() {
+    final uid = widget.senderUid;
+    final time = widget.sentAt;
+    if (uid == null && time == null) return const SizedBox.shrink();
+    return FutureBuilder<AppUser?>(
+      future: uid == null ? null : UserService.profileOf(uid),
+      builder: (context, snapshot) {
+        final name = snapshot.data?.name ?? '';
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (name.isNotEmpty)
+              Text(name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700)),
+            if (time != null)
+              Text(timeAgo(time),
+                  style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          ],
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final url = widget.url;
     Widget loading(BuildContext context, Widget child, ImageChunkEvent? p) =>
         p == null
             ? child
@@ -7641,29 +7720,66 @@ class _NetworkImageViewer extends StatelessWidget {
         backgroundColor: Colors.transparent,
         foregroundColor: Colors.white,
         elevation: 0,
+        titleSpacing: 0,
+        title: _title(),
         leading: IconButton(
           tooltip: tr('إغلاق'),
           icon: const Icon(Icons.close_rounded),
           onPressed: () => Navigator.of(context).pop(),
         ),
+        actions: [
+          IconButton(
+            tooltip: tr('المزيد'),
+            icon: const Icon(Icons.more_vert_rounded),
+            onPressed: _showMore,
+          ),
+        ],
       ),
-      body: SizedBox.expand(
-        child: InteractiveViewer(
-          minScale: 1,
-          maxScale: 5,
-          child: Center(
-            child: Image.network(
-              optimized,
-              fit: BoxFit.contain,
-              loadingBuilder: loading,
-              errorBuilder: (context, _, __) => optimized == url
-                  ? failed()
-                  : Image.network(
-                      url,
-                      fit: BoxFit.contain,
-                      loadingBuilder: loading,
-                      errorBuilder: (context, _, __) => failed(),
-                    ),
+      body: Listener(
+        onPointerDown: (e) {
+          _pointers++;
+          if (_pointers > 1) _multiTouch = true;
+          if (_pointers == 1) {
+            _downPosition = e.position;
+            _multiTouch = false;
+            _dragDy = 0;
+          }
+        },
+        onPointerMove: (e) {
+          if (_downPosition != null) _dragDy = e.position.dy - _downPosition!.dy;
+        },
+        onPointerUp: (e) {
+          _pointers = (_pointers - 1).clamp(0, 10);
+          if (_pointers == 0) {
+            if (!_multiTouch && !_zoomed && _dragDy > 120 && mounted) {
+              Navigator.of(context).pop();
+            }
+            _downPosition = null;
+          }
+        },
+        onPointerCancel: (_) {
+          _pointers = (_pointers - 1).clamp(0, 10);
+          if (_pointers == 0) _downPosition = null;
+        },
+        child: SizedBox.expand(
+          child: InteractiveViewer(
+            transformationController: _transform,
+            minScale: 1,
+            maxScale: 5,
+            child: Center(
+              child: Image.network(
+                optimized,
+                fit: BoxFit.contain,
+                loadingBuilder: loading,
+                errorBuilder: (context, _, __) => optimized == url
+                    ? failed()
+                    : Image.network(
+                        url,
+                        fit: BoxFit.contain,
+                        loadingBuilder: loading,
+                        errorBuilder: (context, _, __) => failed(),
+                      ),
+              ),
             ),
           ),
         ),
@@ -7680,36 +7796,46 @@ class _PendingImagesStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final height = (size.height * 0.42).clamp(260.0, 420.0).toDouble();
+    final single = images.length == 1;
+    final itemWidth = single ? size.width - 28 : size.width * 0.72;
     return SizedBox(
-      height: 102,
+      height: height + 14,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
         itemCount: images.length,
         separatorBuilder: (_, __) => const SizedBox(width: 10),
-        itemBuilder: (context, index) => Stack(
-          clipBehavior: Clip.none,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.memory(images[index],
-                  width: 84, height: 88, fit: BoxFit.cover),
-            ),
-            PositionedDirectional(
-              top: -6,
-              end: -6,
-              child: GestureDetector(
-                onTap: () => onRemove(index),
-                child: Container(
-                  padding: const EdgeInsets.all(3),
-                  decoration: const BoxDecoration(
-                      color: Colors.black87, shape: BoxShape.circle),
-                  child: const Icon(Icons.close_rounded,
-                      size: 16, color: Colors.white),
+        itemBuilder: (context, index) => SizedBox(
+          width: itemWidth,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: Container(
+                    color: Colors.black,
+                    child: Image.memory(images[index], fit: BoxFit.contain),
+                  ),
                 ),
               ),
-            ),
-          ],
+              PositionedDirectional(
+                top: 8,
+                end: 8,
+                child: GestureDetector(
+                  onTap: () => onRemove(index),
+                  child: Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: const BoxDecoration(
+                        color: Colors.black87, shape: BoxShape.circle),
+                    child: const Icon(Icons.close_rounded,
+                        size: 20, color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
