@@ -140,6 +140,7 @@ class InboxScreen extends StatelessWidget {
     final otherUid = conversation.otherParticipant(SocialService.currentUid);
     final unread = conversation.unreadFor(SocialService.currentUid);
     final pinned = conversation.pinnedFor(SocialService.currentUid);
+    final muted = conversation.mutedFor(SocialService.currentUid);
     return FutureBuilder<AppUser?>(
       future: UserService.profileOf(otherUid),
       builder: (context, userSnapshot) {
@@ -193,11 +194,20 @@ class InboxScreen extends StatelessWidget {
                       color: unread ? colors.text : colors.textDim,
                       fontSize: 11),
                 ),
-              if (pinned)
+              if (pinned || muted)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
-                  child: Icon(Icons.push_pin_rounded,
-                      size: 14, color: colors.textDim),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (muted)
+                        Icon(Icons.notifications_off_outlined,
+                            size: 14, color: colors.textDim),
+                      if (pinned)
+                        Icon(Icons.push_pin_rounded,
+                            size: 14, color: colors.textDim),
+                    ],
+                  ),
                 ),
               if (unread)
                 Padding(
@@ -205,8 +215,8 @@ class InboxScreen extends StatelessWidget {
                   child: Container(
                     width: 10,
                     height: 10,
-                    decoration: const BoxDecoration(
-                      color: AppColors.accent,
+                    decoration: BoxDecoration(
+                      color: muted ? colors.textDim : AppColors.accent,
                       shape: BoxShape.circle,
                     ),
                   ),
@@ -311,6 +321,7 @@ class _LastMessagePreviewState extends State<_LastMessagePreview> {
 Future<void> _showChatMenu(
     BuildContext context, Conversation conversation) async {
   final pinned = conversation.pinnedFor(SocialService.currentUid);
+  final muted = conversation.mutedFor(SocialService.currentUid);
   final action = await showModalBottomSheet<String>(
     context: context,
     builder: (sheetContext) => SafeArea(
@@ -322,6 +333,13 @@ Future<void> _showChatMenu(
                 pinned ? Icons.push_pin_outlined : Icons.push_pin_rounded),
             title: Text(pinned ? tr('إلغاء التثبيت') : tr('تثبيت المحادثة')),
             onTap: () => Navigator.pop(sheetContext, 'pin'),
+          ),
+          ListTile(
+            leading: Icon(muted
+                ? Icons.notifications_active_outlined
+                : Icons.notifications_off_outlined),
+            title: Text(muted ? tr('إلغاء الكتم') : tr('كتم المحادثة')),
+            onTap: () => Navigator.pop(sheetContext, 'mute'),
           ),
           ListTile(
             leading: const Icon(Icons.delete_outline_rounded),
@@ -338,13 +356,17 @@ Future<void> _showChatMenu(
     return;
   }
   try {
-    await SocialService.setChatPinned(conversation.id, !pinned);
+    if (action == 'mute') {
+      await SocialService.setChatMuted(conversation.id, !muted);
+    } else {
+      await SocialService.setChatPinned(conversation.id, !pinned);
+    }
   } catch (error) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             content:
-                Text(friendlyError(error, fallback: tr('تعذر تثبيت المحادثة')))),
+                Text(friendlyError(error, fallback: tr('تعذر تحديث المحادثة')))),
       );
     }
   }
