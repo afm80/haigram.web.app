@@ -115,6 +115,9 @@ class ChatMessage {
   final String? replyToSenderUid;
   final Map<String, String> reactions;
 
+  /// عُدّلت الرسالة بعد إرسالها (يظهر وسم «معدّلة»).
+  final bool edited;
+
   /// رابط الصورة عند استعمال Cloudinary/Storage (وضع التجربة يستعمل [imageBytes]).
   final String? imageUrl;
 
@@ -131,6 +134,7 @@ class ChatMessage {
     this.replyToText,
     this.replyToSenderUid,
     this.reactions = const {},
+    this.edited = false,
     this.imageUrl,
   });
 
@@ -154,6 +158,7 @@ class ChatMessage {
         replyToMessageId: data['replyToMessageId'] as String?,
         replyToText: data['replyToText'] as String?,
         replyToSenderUid: data['replyToSenderUid'] as String?,
+        edited: data.containsKey('editedAt'),
         reactions: Map<String, String>.from(
           (data['reactions'] as Map?)?.map(
                 (key, value) => MapEntry(key as String, value as String),
@@ -825,6 +830,49 @@ class SocialService {
         .collection('messages')
         .doc(messageId)
         .update({field: reaction ?? FieldValue.delete()});
+  }
+
+  /// مدة السماح بتعديل الرسالة النصية بعد إرسالها. تطابق شرط
+  /// `15, 'm'` في قواعد Firestore؛ غيّرهما معاً.
+  static const messageEditWindow = Duration(minutes: 15);
+
+  /// يعدّل نص رسالتي النصية (خلال [messageEditWindow] من إرسالها). إن كانت
+  /// آخر رسالة في المحادثة يتغير معها نص المعاينة في قائمة المحادثات، دون
+  /// تغيير updatedAt فلا تقفز المحادثة ولا تظهر «غير مقروءة».
+  static Future<void> editMessage(
+      String conversationId, String messageId, String newText) async {
+    final trimmed = newText.trim();
+    if (trimmed.isEmpty || trimmed.length > 2000) {
+      throw ArgumentError(tr('يجب أن تكون الرسالة بين حرف واحد و2000 حرف'));
+    }
+    final chat = _chats.doc(conversationId);
+    final message = chat.collection('messages').doc(messageId);
+    final snapshots = await Future.wait([chat.get(), message.get()]);
+    final chatSnapshot = snapshots[0];
+    final messageSnapshot = snapshots[1];
+    final data = messageSnapshot.data();
+    if (!chatSnapshot.exists || !messageSnapshot.exists || data == null) {
+      throw StateError(tr('الرسالة غير موجودة'));
+    }
+    if (data['senderUid'] != _uid || (data['kind'] ?? 'text') != 'text') {
+      throw StateError(tr('يمكنك تعديل رسائلك النصية فقط'));
+    }
+    final createdAt = data['createdAt'];
+    if (createdAt is! Timestamp ||
+        DateTime.now().difference(createdAt.toDate()) > messageEditWindow) {
+      throw StateError(tr('انتهت مدة تعديل الرسالة'));
+    }
+    if ((data['text'] as String? ?? '') == trimmed) return;
+
+    final batch = _db.batch();
+    batch.update(message, {
+      'text': trimmed,
+      'editedAt': FieldValue.serverTimestamp(),
+    });
+    if (chatSnapshot.data()?['lastMessageId'] == messageId) {
+      batch.update(chat, {'lastMessage': trimmed});
+    }
+    await batch.commit();
   }
 
   /// «حذف لدى الجميع»: يحذف رسالتي (نصاً أو صورة أو ملصقاً) من المحادثة نهائياً.
