@@ -696,6 +696,11 @@ class SocialService {
     return _chats.doc(conversationId).update({'pinned.$_uid': pinned});
   }
 
+  /// كتم المحادثة (أو إلغاء كتمها) لديّ فقط: لا إشعار دفع لرسائلها.
+  static Future<void> setChatMuted(String conversationId, bool muted) {
+    return _chats.doc(conversationId).update({'muted.$_uid': muted});
+  }
+
   static Future<bool> areMutualFriends(String otherUid) async {
     if (otherUid.isEmpty || otherUid == _uid) return false;
     final snapshots = await Future.wait([
