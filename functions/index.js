@@ -408,6 +408,9 @@ exports.notifyChatMessage = onDocumentCreated(
     const recipientUid = participants.find((uid) => uid !== message.senderUid);
     if (!recipientUid) return;
 
+    // المحادثة مكتومة عند المستلم: لا نرسل له إشعاراً.
+    if (chatSnapshot.data()?.muted?.[recipientUid] === true) return;
+
     const tokenCollection = db
       .collection('users')
       .doc(recipientUid)
