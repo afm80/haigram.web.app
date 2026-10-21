@@ -3,7 +3,6 @@
 // (خطأ 153 «Video player configuration error») داخل WebView الأندرويد،
 // بينما المتصفح على الموقع يرسلها تلقائياً فيعمل هناك.
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
@@ -41,10 +40,7 @@ class _NativeYoutubeState extends State<_NativeYoutube> {
           if (isEmbed || req.url == 'about:blank') {
             return NavigationDecision.navigate;
           }
-          // أي رابط آخر (شعار يوتيوب مثلاً) يُفتح خارج التطبيق.
-          if (uri != null) {
-            launchUrl(uri, mode: LaunchMode.externalApplication);
-          }
+          // التشغيل داخل التطبيق فقط: أي رابط آخر يُمنع ولا يُفتح خارجياً.
           return NavigationDecision.prevent;
         },
       ));

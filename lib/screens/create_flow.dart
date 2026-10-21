@@ -539,9 +539,11 @@ class _ComposeScreenState extends State<ComposeScreen> {
       final video = text.isEmpty ? null : VideoSource.parse(text);
       final error = text.isEmpty || video != null
           ? null
-          : (VideoSource.isUnresolvableShortLink(text)
-              ? tr('هذا رابط مختصر. افتح الفيديو وانسخ رابطه الكامل')
-              : tr('رابط الفيديو غير مدعوم أو غير صالح'));
+          : (VideoSource.isFacebookReel(text)
+              ? tr('ريلز فيسبوك غير مدعومة. استخدم فيديو فيسبوك عادياً')
+              : VideoSource.isUnresolvableShortLink(text)
+                  ? tr('هذا رابط مختصر. افتح الفيديو وانسخ رابطه الكامل')
+                  : tr('رابط الفيديو غير مدعوم أو غير صالح'));
       // نفس الفيديو: لا نعيد بناء المعاينة.
       if (video?.key == _preview?.key && error == _linkError) return;
       setState(() {
@@ -639,9 +641,11 @@ class _ComposeScreenState extends State<ComposeScreen> {
     if (link.isNotEmpty) {
       video = VideoSource.parse(link);
       if (video == null) {
-        setState(() => _error = VideoSource.isUnresolvableShortLink(link)
-            ? tr('هذا رابط مختصر. افتح الفيديو وانسخ رابطه الكامل')
-            : tr('رابط الفيديو غير مدعوم أو غير صالح'));
+        setState(() => _error = VideoSource.isFacebookReel(link)
+            ? tr('ريلز فيسبوك غير مدعومة. استخدم فيديو فيسبوك عادياً')
+            : VideoSource.isUnresolvableShortLink(link)
+                ? tr('هذا رابط مختصر. افتح الفيديو وانسخ رابطه الكامل')
+                : tr('رابط الفيديو غير مدعوم أو غير صالح'));
         return;
       }
       if (_playFailed) {

@@ -1914,7 +1914,7 @@ class _PostsTabState extends State<_PostsTab> {
           icon: Icons.smart_display_outlined,
           title: me ? tr('ابدأ بأول Short') : tr('لا توجد Shorts بعد'),
           message: me
-              ? tr('شارك رابط فيديو عمودي (Shorts أو TikTok أو Reels) وسيظهر هنا في ملفك.')
+              ? tr('شارك رابط YouTube Short وسيظهر هنا في ملفك.')
               : tr('ستظهر Shorts هذا الحساب هنا.'),
           action: me
               ? _CreateButton(

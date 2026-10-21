@@ -813,32 +813,12 @@ class _VideoInlineState extends State<VideoInline> {
 
   @override
   Widget build(BuildContext context) {
-    final player = _limit(
+    // التشغيل داخل التطبيق فقط: لا يوجد رابط «فتح في المنصة».
+    return _limit(
         context,
         _playing
             ? buildVideoEmbed(widget.source, aspect: _aspect)
             : _thumb(context));
-    // المنصات الأخرى قد ترفض التضمين: رابط «فتح في ...» يبقى متاحاً دائماً.
-    if (widget.source.provider == VideoProvider.youtube) return player;
-    return Column(mainAxisSize: MainAxisSize.min, children: [
-      player,
-      Align(
-        alignment: AlignmentDirectional.centerStart,
-        child: TextButton.icon(
-          style: TextButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              foregroundColor: context.appColors.textDim),
-          onPressed: () => launchUrl(Uri.parse(widget.source.url),
-              mode: LaunchMode.externalApplication),
-          icon: const Icon(Icons.open_in_new_rounded, size: 15),
-          label: Text(
-              widget.source.usesPlayerHtml
-                  ? tr('فتح الرابط')
-                  : trf('فتح في {0}', [widget.source.platformName]),
-              style: const TextStyle(fontSize: 12)),
-        ),
-      ),
-    ]);
   }
 
   Widget _thumb(BuildContext context) {

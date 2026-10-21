@@ -2,8 +2,8 @@
 // يستخدم WebView مباشرة ويرسل ترويسة Referer، لأن يوتيوب يرفض التضمين بدونها
 // (خطأ 153 «Video player configuration error») داخل WebView الأندرويد،
 // وتويتش يطلب النطاق نفسه (parent)، بينما المتصفح على الموقع يرسلها تلقائياً.
+// التشغيل داخل التطبيق حصراً: لا يُفتح أي رابط خارجي.
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
@@ -55,10 +55,8 @@ class _NativeVideoState extends State<_NativeVideo> {
               (uri != null && source.allowsNavigation(uri))) {
             return NavigationDecision.navigate;
           }
-          // أي رابط آخر (شعار المنصة مثلاً) يُفتح خارج التطبيق.
-          if (uri != null && (uri.scheme == 'https' || uri.scheme == 'http')) {
-            launchUrl(uri, mode: LaunchMode.externalApplication);
-          }
+          // التشغيل داخل التطبيق فقط: أي رابط آخر (شعار المنصة مثلاً) يُمنع
+          // ولا يُفتح في متصفح أو تطبيق المنصة.
           return NavigationDecision.prevent;
         },
       ));
