@@ -139,6 +139,7 @@ class InboxScreen extends StatelessWidget {
     final colors = context.appColors;
     final otherUid = conversation.otherParticipant(SocialService.currentUid);
     final unread = conversation.unreadFor(SocialService.currentUid);
+    final pinned = conversation.pinnedFor(SocialService.currentUid);
     return FutureBuilder<AppUser?>(
       future: UserService.profileOf(otherUid),
       builder: (context, userSnapshot) {
@@ -192,6 +193,12 @@ class InboxScreen extends StatelessWidget {
                       color: unread ? colors.text : colors.textDim,
                       fontSize: 11),
                 ),
+              if (pinned)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Icon(Icons.push_pin_rounded,
+                      size: 14, color: colors.textDim),
+                ),
               if (unread)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
@@ -206,8 +213,8 @@ class InboxScreen extends StatelessWidget {
                 ),
             ],
           ),
-          // ضغطة مطولة: حذف المحادثة لديّ فقط.
-          onLongPress: () => _confirmAndClearChat(context, conversation.id),
+          // ضغطة مطولة: قائمة (تثبيت / حذف المحادثة لديّ).
+          onLongPress: () => _showChatMenu(context, conversation),
           onTap: () => rootNavigatorOf(context).push(
             appRoute(
               'chat',
@@ -297,6 +304,49 @@ class _LastMessagePreviewState extends State<_LastMessagePreview> {
         fontStyle: hidden ? FontStyle.italic : FontStyle.normal,
       ),
     );
+  }
+}
+
+/// قائمة الضغطة المطولة على محادثة: تثبيت أو إلغاء التثبيت، أو حذفها لديّ.
+Future<void> _showChatMenu(
+    BuildContext context, Conversation conversation) async {
+  final pinned = conversation.pinnedFor(SocialService.currentUid);
+  final action = await showModalBottomSheet<String>(
+    context: context,
+    builder: (sheetContext) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: Icon(
+                pinned ? Icons.push_pin_outlined : Icons.push_pin_rounded),
+            title: Text(pinned ? tr('إلغاء التثبيت') : tr('تثبيت المحادثة')),
+            onTap: () => Navigator.pop(sheetContext, 'pin'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.delete_outline_rounded),
+            title: Text(tr('حذف المحادثة')),
+            onTap: () => Navigator.pop(sheetContext, 'delete'),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (!context.mounted || action == null) return;
+  if (action == 'delete') {
+    await _confirmAndClearChat(context, conversation.id);
+    return;
+  }
+  try {
+    await SocialService.setChatPinned(conversation.id, !pinned);
+  } catch (error) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content:
+                Text(friendlyError(error, fallback: tr('تعذر تثبيت المحادثة')))),
+      );
+    }
   }
 }
 
