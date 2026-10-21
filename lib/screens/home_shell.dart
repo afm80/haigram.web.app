@@ -142,8 +142,9 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   late final Stream<AppUser?> _currentProfile = _guest
       ? Stream<AppUser?>.value(null)
       : UserService.profileStream(UserService.me?.uid ?? '');
-  late final Stream<int> _unreadNotificationCount =
-      _guest ? Stream<int>.value(0) : SocialService.unreadNotificationCount();
+  // شارة تبويب الرسائل: عدد المحادثات غير المقروءة (كإنستغرام)، لا الإشعارات.
+  late final Stream<int> _unreadChatCount =
+      _guest ? Stream<int>.value(0) : SocialService.unreadChatCount();
 
   @override
   void initState() {
@@ -491,7 +492,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
                         foreground: navForeground, inactive: navInactive),
                     Expanded(child: Center(child: _createButton())),
                     StreamBuilder<int>(
-                      stream: _unreadNotificationCount,
+                      stream: _unreadChatCount,
                       builder: (context, snapshot) => _navItem(
                         3,
                         Icons.chat_bubble_outline_rounded,
@@ -516,26 +517,28 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
                           inactive: navInactive,
                           showLabel: _guest,
                           // صورة الملف الشخصي بحجم التبويب كامل (مثل انستغرام)
-                          iconBuilder: _guest ? null : (selected) => Container(
-                            width: 40,
-                            height: 40,
-                            padding: const EdgeInsets.all(2),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: selected
-                                    ? navForeground
-                                    : Colors.transparent,
-                                width: 1.5,
-                              ),
-                            ),
-                            child: UserAvatar(
-                              uid: profile?.uid ?? '',
-                              fallbackName: profile?.username ?? '',
-                              profile: profile,
-                              radius: 16.5,
-                            ),
-                          ),
+                          iconBuilder: _guest
+                              ? null
+                              : (selected) => Container(
+                                    width: 40,
+                                    height: 40,
+                                    padding: const EdgeInsets.all(2),
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: selected
+                                            ? navForeground
+                                            : Colors.transparent,
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                    child: UserAvatar(
+                                      uid: profile?.uid ?? '',
+                                      fallbackName: profile?.username ?? '',
+                                      profile: profile,
+                                      radius: 16.5,
+                                    ),
+                                  ),
                         );
                       },
                     ),
@@ -631,8 +634,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
                       right: -8,
                       child: Tooltip(
                         message: badgeCount < 0
-                            ? tr('تعذر تحميل عدد الإشعارات')
-                            : '$badgeCount ${tr('إشعار غير مقروء')}',
+                            ? tr('تعذر تحميل عدد الرسائل')
+                            : '$badgeCount ${tr('رسالة غير مقروءة')}',
                         child: Container(
                           constraints:
                               const BoxConstraints(minWidth: 15, minHeight: 15),
@@ -657,7 +660,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
                 ],
               ),
               if (showLabel) ...[
-              const SizedBox(height: 1),
+                const SizedBox(height: 1),
                 Text(
                   label,
                   style: TextStyle(

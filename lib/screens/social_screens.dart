@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
 import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -17,6 +18,7 @@ import '../services/social_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
+import 'location_stub.dart' if (dart.library.html) 'location_web.dart';
 import 'note_widgets.dart';
 import 'photo_tools.dart' show fitImageUnderLimit;
 import 'post_widgets.dart' show PostDetailScreen, PostImage, timeAgo;
@@ -28,10 +30,90 @@ import '../route_state.dart';
 import '../l10n.dart';
 import '../net_error.dart';
 
+/// يُبَث عند تغيّر مسودات المحادثات (حفظ/مسح) لتحديث معاينتها في الصندوق.
+final ValueNotifier<int> chatDraftsRevision = ValueNotifier<int>(0);
+
 /// صندوق البريد (على طريقة تيكتوك): صف الأصدقاء، ثم المتابعون والإعجابات
 /// والتعليقات، ثم المحادثات.
-class InboxScreen extends StatelessWidget {
+class InboxScreen extends StatefulWidget {
   const InboxScreen({super.key});
+
+  @override
+  State<InboxScreen> createState() => _InboxScreenState();
+}
+
+class _InboxScreenState extends State<InboxScreen> {
+  final _search = TextEditingController();
+  bool _searching = false;
+  String _term = '';
+
+  /// مسودات المحادثات: {معرّف المحادثة: نصّ المسودة} لمعاينتها في الصف.
+  Map<String, String> _drafts = const {};
+
+  /// أسماء أصحاب المحادثات (لتشغيل البحث الفوري بلا قراءات إضافية).
+  final Map<String, AppUser> _names = {};
+  final Set<String> _nameLoading = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDrafts();
+    chatDraftsRevision.addListener(_loadDrafts);
+  }
+
+  @override
+  void dispose() {
+    chatDraftsRevision.removeListener(_loadDrafts);
+    _search.dispose();
+    super.dispose();
+  }
+
+  /// يقرأ كل المسودات المحفوظة محلياً مرة واحدة (بلا أي قراءة من السيرفر).
+  Future<void> _loadDrafts() async {
+    if (!isLoggedIn) return;
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final prefix = 'chat_draft_${SocialService.currentUid}_';
+      final drafts = <String, String>{};
+      for (final key in preferences.getKeys()) {
+        if (!key.startsWith(prefix)) continue;
+        final text = preferences.getString(key) ?? '';
+        if (text.trim().isEmpty) continue;
+        drafts[key.substring(prefix.length)] = text;
+      }
+      if (mounted) setState(() => _drafts = drafts);
+    } catch (_) {}
+  }
+
+  /// يجلب أسماء أصحاب المحادثات مرة واحدة لتشغيل البحث الفوري.
+  void _ensureNames(List<Conversation>? conversations) {
+    if (conversations == null) return;
+    final me = SocialService.currentUid;
+    final missing = <String>[];
+    for (final conversation in conversations) {
+      if (conversation.isGroup) continue;
+      final uid = conversation.otherParticipant(me);
+      if (_names.containsKey(uid) || !_nameLoading.add(uid)) continue;
+      missing.add(uid);
+    }
+    if (missing.isEmpty) return;
+    Future.wait(missing.map(UserService.profileOf)).then((users) {
+      if (!mounted) return;
+      setState(() {
+        for (final user in users) {
+          if (user != null) _names[user.uid] = user;
+        }
+      });
+    }).catchError((Object _) {});
+  }
+
+  void _closeSearch() {
+    _search.clear();
+    setState(() {
+      _term = '';
+      _searching = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -39,16 +121,47 @@ class InboxScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: colors.bg,
       appBar: AppBar(
-        title: Text(tr('صندوق البريد')),
-        actions: [
-          IconButton(
-            tooltip: tr('رسالة جديدة'),
-            onPressed: () => rootNavigatorOf(context).push(
-              MaterialPageRoute(builder: (_) => const _FriendsScreen()),
-            ),
-            icon: const Icon(Icons.edit_outlined),
-          ),
-        ],
+        title: _searching
+            ? TextField(
+                controller: _search,
+                autofocus: true,
+                textInputAction: TextInputAction.search,
+                onChanged: (value) => setState(() => _term = value.trim()),
+                decoration: InputDecoration(
+                  hintText: tr('ابحث في المحادثات'),
+                  border: InputBorder.none,
+                ),
+              )
+            : Text(tr('صندوق البريد')),
+        actions: _searching
+            ? [
+                IconButton(
+                  tooltip: tr('إغلاق'),
+                  onPressed: _closeSearch,
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ]
+            : [
+                IconButton(
+                  tooltip: tr('بحث'),
+                  onPressed: () => setState(() => _searching = true),
+                  icon: const Icon(Icons.search_rounded),
+                ),
+                IconButton(
+                  tooltip: tr('مجموعة جديدة'),
+                  onPressed: () => rootNavigatorOf(context).push(
+                    MaterialPageRoute(builder: (_) => const _NewGroupScreen()),
+                  ),
+                  icon: const Icon(Icons.group_add_outlined),
+                ),
+                IconButton(
+                  tooltip: tr('رسالة جديدة'),
+                  onPressed: () => rootNavigatorOf(context).push(
+                    MaterialPageRoute(builder: (_) => const _FriendsScreen()),
+                  ),
+                  icon: const Icon(Icons.edit_outlined),
+                ),
+              ],
       ),
       body: StreamBuilder<List<StoryGroup>>(
         stream: PostService.storyGroups(),
@@ -56,27 +169,180 @@ class InboxScreen extends StatelessWidget {
           final stories = storySnapshot.data ?? const <StoryGroup>[];
           return StreamBuilder<List<Conversation>>(
             stream: SocialService.conversations(),
-            builder: (context, snapshot) => ListView(
-              padding: const EdgeInsets.only(bottom: 80),
-              children: [
-                _FollowingRail(
-                  stories: stories,
-                  error: storySnapshot.error,
-                ),
-                const _NotificationsSummaryTile(),
-                Padding(
-                  padding: EdgeInsetsDirectional.fromSTEB(16, 14, 16, 6),
-                  child: Text(tr('المحادثات'),
-                      style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                ),
-                ..._conversationItems(context, snapshot, stories),
-              ],
-            ),
+            builder: (context, snapshot) {
+              _ensureNames(snapshot.data);
+              final searching = _term.isNotEmpty;
+              return ListView(
+                padding: const EdgeInsets.only(bottom: 80),
+                children: searching
+                    ? _searchResults(context, snapshot, stories)
+                    : [
+                        _FollowingRail(
+                          stories: stories,
+                          error: storySnapshot.error,
+                        ),
+                        const _NotificationsSummaryTile(),
+                        ...(_requestRows(context, snapshot) ??
+                            const <Widget>[]),
+                        ...(_archivedRows(context, snapshot, stories) ??
+                            const <Widget>[]),
+                        const _SavedMessagesRow(),
+                        Padding(
+                          padding:
+                              EdgeInsetsDirectional.fromSTEB(16, 14, 16, 6),
+                          child: Text(tr('المحادثات'),
+                              style: TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.w700)),
+                        ),
+                        ..._conversationItems(context, snapshot, stories),
+                      ],
+              );
+            },
           );
         },
       ),
     );
+  }
+
+  /// نتائج البحث الفوري: يفلتر المحادثات محلياً + مدخل بحث معمّق.
+  List<Widget> _searchResults(
+    BuildContext context,
+    AsyncSnapshot<List<Conversation>> snapshot,
+    List<StoryGroup> stories,
+  ) {
+    final colors = context.appColors;
+    final data = snapshot.data;
+    if (data == null) {
+      return const [
+        Padding(padding: EdgeInsets.all(40), child: AppLoading()),
+      ];
+    }
+    final me = SocialService.currentUid;
+    final needle = _term.toLowerCase().replaceAll('@', '');
+    final matches = data.where((conversation) {
+      if (!conversation.visibleFor(me)) return false;
+      if (conversation.isGroup) {
+        return '${conversation.groupTitle} ${conversation.lastMessage}'
+            .toLowerCase()
+            .contains(needle);
+      }
+      final user = _names[conversation.otherParticipant(me)];
+      final haystack = '${user?.name ?? ''} ${user?.username ?? ''} '
+              '${conversation.lastMessage}'
+          .toLowerCase();
+      return haystack.contains(needle);
+    }).toList();
+    return [
+      ListTile(
+        leading: Icon(Icons.search_rounded, color: colors.text),
+        title: Text(trf('البحث في الرسائل والأشخاص عن «{0}»', [_term])),
+        onTap: () => rootNavigatorOf(context).push(
+          MaterialPageRoute(
+            builder: (_) => _ChatSearchScreen(initialQuery: _term),
+          ),
+        ),
+      ),
+      Divider(height: 1, color: colors.surfaceHigh),
+      if (matches.isEmpty)
+        SizedBox(
+          height: 240,
+          child: _MessageState(
+            message: trf('لا نتائج لـ «{0}»', [_term]),
+            icon: Icons.search_off_rounded,
+          ),
+        )
+      else
+        for (final conversation in matches) ...[
+          _conversationTile(context, conversation, stories),
+          Divider(height: 1, indent: 76, color: colors.surfaceHigh),
+        ],
+    ];
+  }
+
+  /// صف «طلبات الرسائل» أعلى المحادثات (كإنستغرام)، يظهر عند وجود طلب.
+  List<Widget>? _requestRows(
+    BuildContext context,
+    AsyncSnapshot<List<Conversation>> snapshot,
+  ) {
+    final data = snapshot.data;
+    if (data == null) return null;
+    final me = SocialService.currentUid;
+    final requests = data
+        .where((conversation) =>
+            conversation.visibleFor(me) && conversation.isRequestFor(me))
+        .toList();
+    if (requests.isEmpty) return null;
+    final colors = context.appColors;
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    return [
+      ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        leading: Icon(Icons.mark_email_unread_outlined, color: colors.text),
+        title: Text(tr('طلبات الرسائل'),
+            style: const TextStyle(fontWeight: FontWeight.w700)),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('${requests.length}', style: TextStyle(color: colors.textDim)),
+            const SizedBox(width: 6),
+            Icon(
+              rtl ? Icons.chevron_left_rounded : Icons.chevron_right_rounded,
+              color: colors.textDim,
+            ),
+          ],
+        ),
+        onTap: () => rootNavigatorOf(context).push(
+          MaterialPageRoute(builder: (_) => const _MessageRequestsScreen()),
+        ),
+      ),
+      Divider(height: 1, indent: 76, color: colors.surfaceHigh),
+    ];
+  }
+
+  /// صف «المؤرشفة» أعلى المحادثات (كإنستغرام)، يظهر فقط عند وجود مؤرشفة.
+  List<Widget>? _archivedRows(
+    BuildContext context,
+    AsyncSnapshot<List<Conversation>> snapshot,
+    List<StoryGroup> stories,
+  ) {
+    final data = snapshot.data;
+    if (data == null) return null;
+    final archived = data
+        .where((conversation) =>
+            conversation.visibleFor(SocialService.currentUid) &&
+            conversation.archivedFor(SocialService.currentUid))
+        .toList();
+    if (archived.isEmpty) return null;
+    final colors = context.appColors;
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    return [
+      ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        leading: Icon(Icons.archive_outlined, color: colors.text),
+        title: Text(tr('المؤرشفة'),
+            style: const TextStyle(fontWeight: FontWeight.w700)),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('${archived.length}', style: TextStyle(color: colors.textDim)),
+            const SizedBox(width: 6),
+            Icon(
+              rtl ? Icons.chevron_left_rounded : Icons.chevron_right_rounded,
+              color: colors.textDim,
+            ),
+          ],
+        ),
+        onTap: () => rootNavigatorOf(context).push(
+          MaterialPageRoute(
+            builder: (_) => _ArchivedChatsScreen(
+              tileBuilder: (tileContext, conversation) =>
+                  _conversationTile(tileContext, conversation, stories),
+            ),
+          ),
+        ),
+      ),
+      Divider(height: 1, indent: 76, color: colors.surfaceHigh),
+    ];
   }
 
   List<Widget> _conversationItems(
@@ -104,8 +370,12 @@ class InboxScreen extends StatelessWidget {
     }
     // المحادثات التي لم تُرسل فيها أي رسالة بعد لا تظهر في الصندوق.
     // ولا تظهر ما مسحتُها «لديّ» ما لم يصلها نشاط بعد المسح.
+    // والمؤرشفة تُخفى من الصندوق (لها صف مستقل أعلى القائمة).
     final conversations = snapshot.data!
-        .where((c) => c.visibleFor(SocialService.currentUid))
+        .where((c) =>
+            c.visibleFor(SocialService.currentUid) &&
+            !c.archivedFor(SocialService.currentUid) &&
+            !c.isRequestFor(SocialService.currentUid))
         .toList();
     if (conversations.isEmpty) {
       return [
@@ -136,11 +406,44 @@ class InboxScreen extends StatelessWidget {
     Conversation conversation,
     List<StoryGroup> stories,
   ) {
-    final colors = context.appColors;
-    final otherUid = conversation.otherParticipant(SocialService.currentUid);
-    final unread = conversation.unreadFor(SocialService.currentUid);
-    final pinned = conversation.pinnedFor(SocialService.currentUid);
-    final muted = conversation.mutedFor(SocialService.currentUid);
+    final me = SocialService.currentUid;
+    final isGroup = conversation.isGroup;
+    final otherUid = isGroup ? '' : conversation.otherParticipant(me);
+    final unread = conversation.unreadFor(me);
+    final pinned = conversation.pinnedFor(me);
+    final muted = conversation.mutedFor(me);
+    if (isGroup) {
+      return ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        leading: _PinBadge(
+          pinned: pinned,
+          child: _GroupAvatar(conversation: conversation, radius: 26),
+        ),
+        title: Text(
+          conversation.groupTitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        subtitle: _drafts[conversation.id] != null
+            ? _DraftLine(text: _drafts[conversation.id]!)
+            : _LastMessagePreview(conversation: conversation, unread: unread),
+        trailing:
+            _conversationTrailing(context, conversation, unread, pinned, muted),
+        onLongPress: () => _showChatMenu(context, conversation),
+        onTap: () => rootNavigatorOf(context).push(
+          appRoute(
+            'chat',
+            {'cid': conversation.id, 'uid': ''},
+            (_) => ChatScreen(
+              conversationId: conversation.id,
+              otherUid: '',
+              isGroup: true,
+            ),
+          ),
+        ),
+      );
+    }
     return FutureBuilder<AppUser?>(
       future: UserService.profileOf(otherUid),
       builder: (context, userSnapshot) {
@@ -149,15 +452,18 @@ class InboxScreen extends StatelessWidget {
         return ListTile(
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          leading: UserAvatar(
-            uid: otherUid,
-            fallbackName: user?.username ?? '',
-            profile: user,
-            radius: 26,
-            showOnline: true,
-            hasStory: storyIndex >= 0,
-            storySeen:
-                storyIndex >= 0 && StoryViewed.allSeen(stories[storyIndex]),
+          leading: _PinBadge(
+            pinned: pinned,
+            child: UserAvatar(
+              uid: otherUid,
+              fallbackName: user?.username ?? '',
+              profile: user,
+              radius: 26,
+              showOnline: true,
+              hasStory: storyIndex >= 0,
+              storySeen:
+                  storyIndex >= 0 && StoryViewed.allSeen(stories[storyIndex]),
+            ),
           ),
           title: Text(
             user?.displayName ?? tr('مستخدم'),
@@ -168,7 +474,9 @@ class InboxScreen extends StatelessWidget {
           subtitle: StreamBuilder<bool>(
             stream: PresenceService.isOnline(otherUid),
             builder: (context, onlineSnapshot) {
-              // المتصل الآن: «نشط الآن» بدل آخر رسالة (كما في تيكتوك).
+              // المسودة أولاً (كإنستغرام)، ثم «نشط الآن»، ثم آخر رسالة.
+              final draft = _drafts[conversation.id];
+              if (draft != null) return _DraftLine(text: draft);
               if (onlineSnapshot.data == true) {
                 return Text(
                   tr('نشط الآن'),
@@ -183,46 +491,8 @@ class InboxScreen extends StatelessWidget {
               );
             },
           ),
-          trailing: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (conversation.updatedAt.millisecondsSinceEpoch != 0)
-                Text(
-                  timeAgo(conversation.updatedAt),
-                  style: TextStyle(
-                      color: unread ? colors.text : colors.textDim,
-                      fontSize: 11),
-                ),
-              if (pinned || muted)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (muted)
-                        Icon(Icons.notifications_off_outlined,
-                            size: 14, color: colors.textDim),
-                      if (pinned)
-                        Icon(Icons.push_pin_rounded,
-                            size: 14, color: colors.textDim),
-                    ],
-                  ),
-                ),
-              if (unread)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                      color: muted ? colors.textDim : AppColors.accent,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-            ],
-          ),
+          trailing: _conversationTrailing(
+              context, conversation, unread, pinned, muted),
           // ضغطة مطولة: قائمة (تثبيت / حذف المحادثة لديّ).
           onLongPress: () => _showChatMenu(context, conversation),
           onTap: () => rootNavigatorOf(context).push(
@@ -235,6 +505,673 @@ class InboxScreen extends StatelessWidget {
               ),
             ),
           ),
+        );
+      },
+    );
+  }
+
+  /// عمود حالة الصف: الوقت، ثم أيقونة الكتم، ثم شارة «غير مقروء» (كإنستغرام:
+  /// المحادثة المكتومة تُظهر رمز الكتم بدل رقم غير المقروء).
+  Widget _conversationTrailing(
+    BuildContext context,
+    Conversation conversation,
+    bool unread,
+    bool pinned,
+    bool muted,
+  ) {
+    final colors = context.appColors;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        if (conversation.updatedAt.millisecondsSinceEpoch != 0)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (muted)
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 4),
+                  child: Icon(Icons.notifications_off_outlined,
+                      size: 13, color: colors.textDim),
+                ),
+              Text(
+                timeAgo(conversation.updatedAt),
+                style: TextStyle(
+                    color: unread ? colors.text : colors.textDim, fontSize: 11),
+              ),
+            ],
+          ),
+        if (unread && !muted)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: _UnreadBadge(conversation: conversation),
+          ),
+      ],
+    );
+  }
+}
+
+/// شارة التثبيت على الصورة الرمزية (كإنستغرام).
+class _PinBadge extends StatelessWidget {
+  final Widget child;
+  final bool pinned;
+  const _PinBadge({required this.child, required this.pinned});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!pinned) return child;
+    final colors = context.appColors;
+    return Stack(
+      children: [
+        child,
+        PositionedDirectional(
+          start: 0,
+          bottom: 0,
+          child: Container(
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: colors.surface,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.push_pin_rounded, size: 11, color: colors.text),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// شارة «غير المقروء» في صف المحادثة: رقم (كإنستغرام) وإلا نقطة.
+class _UnreadBadge extends StatefulWidget {
+  final Conversation conversation;
+  const _UnreadBadge({required this.conversation});
+
+  @override
+  State<_UnreadBadge> createState() => _UnreadBadgeState();
+}
+
+class _UnreadBadgeState extends State<_UnreadBadge> {
+  /// كاش العدّ: نفس المحادثة بنفس آخر رسالة = نفس النتيجة (بلا قراءة جديدة).
+  static final Map<String, Future<int>> _cache = {};
+
+  Future<int> _count() {
+    final conversation = widget.conversation;
+    final me = SocialService.currentUid;
+    final since =
+        conversation.readAt[me] ?? DateTime.fromMillisecondsSinceEpoch(0);
+    // في الدردشة الفردية نعدّ رسائل الطرف الآخر فقط.
+    final fromUid =
+        conversation.isGroup ? null : conversation.otherParticipant(me);
+    final key =
+        '${conversation.id}|${since.millisecondsSinceEpoch}|${conversation.lastMessageId}';
+    if (_cache.length > 300) _cache.clear();
+    return _cache.putIfAbsent(
+      key,
+      () => SocialService.unreadMessageCount(
+        conversation.id,
+        since,
+        fromUid: fromUid,
+      ).catchError((Object _) => 0),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const color = AppColors.accent;
+    return FutureBuilder<int>(
+      future: _count(),
+      builder: (context, snapshot) {
+        final count = snapshot.data ?? 0;
+        if (count <= 0) {
+          return Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          );
+        }
+        return Container(
+          constraints: const BoxConstraints(minWidth: 18),
+          height: 18,
+          padding: const EdgeInsets.symmetric(horizontal: 5),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(9),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            count > 99 ? '99+' : '$count',
+            style: const TextStyle(
+                color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// معاينة مسودة محفوظة في صف المحادثة («مسودة: …»).
+class _DraftLine extends StatelessWidget {
+  final String text;
+  const _DraftLine({required this.text});
+
+  @override
+  Widget build(BuildContext context) => Text(
+        trf('مسودة: {0}', [text]),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+            color: AppColors.likeRed, fontWeight: FontWeight.w600),
+      );
+}
+
+/// صورة مجموعة: صورتُها إن وُجدت، وإلا كولاج صور الأعضاء (كإنستغرام).
+class _GroupAvatar extends StatelessWidget {
+  final Conversation conversation;
+  final double radius;
+  const _GroupAvatar({required this.conversation, required this.radius});
+
+  @override
+  Widget build(BuildContext context) => _GroupPhoto(
+        participants: conversation.participants,
+        photoUrl: conversation.groupPhoto,
+        size: radius * 2,
+      );
+}
+
+/// صورة المجموعة الموحّدة: صورة مخصّصة أو شبكة صور الأعضاء (حتى 4).
+class _GroupPhoto extends StatelessWidget {
+  final List<String> participants;
+  final String photoUrl;
+  final double size;
+  final VoidCallback? onTap;
+
+  const _GroupPhoto({
+    required this.participants,
+    required this.photoUrl,
+    required this.size,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final photo = photoUrl.trim();
+    return GestureDetector(
+      onTap: onTap,
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: ClipOval(
+          child: photo.isEmpty
+              ? _collage(context)
+              : Image.network(
+                  photo,
+                  fit: BoxFit.cover,
+                  width: size,
+                  height: size,
+                  errorBuilder: (_, __, ___) => _collage(context),
+                ),
+        ),
+      ),
+    );
+  }
+
+  /// كولاج صور الأعضاء: مربّع واحد، أو عمودان (كإنستغرام).
+  Widget _collage(BuildContext context) {
+    final colors = context.appColors;
+    final uids = participants.take(4).toList();
+    if (uids.isEmpty) {
+      return Container(
+        color: colors.surfaceHigh,
+        child:
+            Icon(Icons.groups_rounded, size: size * 0.5, color: colors.textDim),
+      );
+    }
+    return GridView.count(
+      crossAxisCount: uids.length == 1 ? 1 : 2,
+      padding: EdgeInsets.zero,
+      physics: const NeverScrollableScrollPhysics(),
+      children: [for (final uid in uids) UserAvatar(uid: uid, radius: size)],
+    );
+  }
+}
+
+/// سطر «شوهد بواسطة ...» أسفل رسالة في مجموعة (كإنستغرام).
+class _SeenByLine extends StatelessWidget {
+  final List<String> readers;
+  final int total;
+
+  const _SeenByLine({required this.readers, required this.total});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return FutureBuilder<List<String>>(
+      future: Future.wait(readers.map((uid) async =>
+          (await UserService.profileOf(uid))?.displayName ?? '')),
+      builder: (context, snapshot) {
+        final names = (snapshot.data ?? const <String>[])
+            .where((name) => name.trim().isNotEmpty)
+            .toList();
+        if (names.isEmpty) return const SizedBox.shrink();
+        // إن شاهدها الجميع: «شوهد بواسطة الجميع» (كإنستغرام).
+        final text = total > 0 && readers.length >= total
+            ? tr('شوهد بواسطة الجميع')
+            : trf('شوهد بواسطة {0}', [names.join('، ')]);
+        return Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: colors.textDim, fontSize: 11),
+        );
+      },
+    );
+  }
+}
+
+/// اسم مرسل رسالة في مجموعة (بخط صغير ملوّن فوق الفقاعة).
+class _SenderName extends StatelessWidget {
+  final String uid;
+
+  const _SenderName({required this.uid});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<AppUser?>(
+      // من الذاكرة المؤقتة: لا قراءة إضافية من Firestore.
+      future: UserService.profileOf(uid),
+      builder: (context, snapshot) {
+        final name = snapshot.data?.displayName ?? '';
+        if (name.isEmpty) return const SizedBox.shrink();
+        return Text(
+          name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: AppColors.brandOrange,
+            fontSize: 11.5,
+            fontWeight: FontWeight.w700,
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// شاشة المحادثات المؤرشفة (تُفتح من صف «المؤرشفة» أعلى الصندوق).
+class _ArchivedChatsScreen extends StatelessWidget {
+  /// يبني صف المحادثة نفسه المستعمل في الصندوق (بلا تكرار للتصميم).
+  final Widget Function(BuildContext, Conversation) tileBuilder;
+
+  const _ArchivedChatsScreen({required this.tileBuilder});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return Scaffold(
+      backgroundColor: colors.bg,
+      appBar: AppBar(title: Text(tr('المؤرشفة'))),
+      body: StreamBuilder<List<Conversation>>(
+        stream: SocialService.conversations(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return ErrorState(
+                error: snapshot.error, title: tr('تعذر تحميل الرسائل'));
+          }
+          if (!snapshot.hasData) return const AppLoading();
+          final items = snapshot.data!
+              .where((conversation) =>
+                  conversation.visibleFor(SocialService.currentUid) &&
+                  conversation.archivedFor(SocialService.currentUid))
+              .toList();
+          if (items.isEmpty) {
+            return _MessageState(
+              message: tr('لا توجد محادثات مؤرشفة'),
+              icon: Icons.archive_outlined,
+            );
+          }
+          return ListView.builder(
+            padding: const EdgeInsets.only(bottom: 24),
+            itemCount: items.length,
+            itemBuilder: (context, index) {
+              final conversation = items[index];
+              return Column(
+                key: ValueKey(conversation.id),
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  tileBuilder(context, conversation),
+                  Divider(height: 1, indent: 76, color: colors.surfaceHigh),
+                ],
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// صف «المحفوظات» في الصندوق: يظهر فقط عند وجود رسائل محفوظة.
+class _SavedMessagesRow extends StatelessWidget {
+  const _SavedMessagesRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    return StreamBuilder<Set<String>>(
+      stream: SocialService.savedMessageIds(),
+      builder: (context, snapshot) {
+        final count = snapshot.data?.length ?? 0;
+        if (count == 0) return const SizedBox.shrink();
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              leading: Icon(Icons.bookmark_border_rounded, color: colors.text),
+              title: Text(tr('المحفوظات'),
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('$count', style: TextStyle(color: colors.textDim)),
+                  const SizedBox(width: 6),
+                  Icon(
+                    rtl
+                        ? Icons.chevron_left_rounded
+                        : Icons.chevron_right_rounded,
+                    color: colors.textDim,
+                  ),
+                ],
+              ),
+              onTap: () => rootNavigatorOf(context).push(
+                MaterialPageRoute(builder: (_) => const _SavedMessagesScreen()),
+              ),
+            ),
+            Divider(height: 1, indent: 76, color: colors.surfaceHigh),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// شاشة المحفوظات: رسائل حفظتها، والنقر يفتح المحادثة التي جاءت منها.
+class _SavedMessagesScreen extends StatelessWidget {
+  const _SavedMessagesScreen();
+
+  IconData _iconFor(String kind) {
+    switch (kind) {
+      case 'image':
+        return Icons.image_outlined;
+      case 'share':
+        return Icons.link_rounded;
+      case 'location':
+        return Icons.place_outlined;
+      case 'sticker':
+        return Icons.emoji_emotions_outlined;
+      default:
+        return Icons.chat_bubble_outline_rounded;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return Scaffold(
+      backgroundColor: colors.bg,
+      appBar: AppBar(title: Text(tr('المحفوظات'))),
+      body: StreamBuilder<List<SavedMessage>>(
+        stream: SocialService.savedMessages(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return ErrorState(
+                error: snapshot.error, title: tr('تعذر تحميل المحفوظات'));
+          }
+          if (!snapshot.hasData) return const AppLoading();
+          final items = snapshot.data!;
+          if (items.isEmpty) {
+            return _MessageState(
+              message:
+                  tr('لا توجد رسائل محفوظة\nاضغط مطولاً على رسالة واختر «حفظ»'),
+              icon: Icons.bookmark_border_rounded,
+            );
+          }
+          return StreamBuilder<List<Conversation>>(
+            stream: SocialService.conversations(),
+            builder: (context, chatSnapshot) {
+              final me = SocialService.currentUid;
+              final chats = <String, Conversation>{
+                for (final conversation
+                    in chatSnapshot.data ?? const <Conversation>[])
+                  conversation.id: conversation,
+              };
+              return ListView.separated(
+                padding: const EdgeInsets.only(bottom: 24),
+                itemCount: items.length,
+                separatorBuilder: (_, __) =>
+                    Divider(height: 1, indent: 72, color: colors.surfaceHigh),
+                itemBuilder: (context, index) {
+                  final saved = items[index];
+                  final chat = chats[saved.conversationId];
+                  final otherUid =
+                      chat == null ? '' : chat.otherParticipant(me);
+                  return ListTile(
+                    leading:
+                        Icon(_iconFor(saved.message.kind), color: colors.text),
+                    title: Text(
+                      saved.message.text,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      timeAgo(saved.savedAt),
+                      style: TextStyle(color: colors.textDim, fontSize: 11),
+                    ),
+                    onTap: otherUid.isEmpty
+                        ? null
+                        : () => rootNavigatorOf(context).push(
+                              appRoute(
+                                'chat',
+                                {
+                                  'cid': saved.conversationId,
+                                  'uid': otherUid,
+                                },
+                                (_) => ChatScreen(
+                                  conversationId: saved.conversationId,
+                                  otherUid: otherUid,
+                                ),
+                              ),
+                            ),
+                    trailing: IconButton(
+                      tooltip: tr('إزالة من المحفوظات'),
+                      icon: const Icon(Icons.bookmark_remove_outlined),
+                      onPressed: () => _removeSaved(context, saved.message.id),
+                    ),
+                  );
+                },
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// إزالة رسالة من المحفوظات.
+Future<void> _removeSaved(BuildContext context, String messageId) async {
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    await SocialService.unsaveMessage(messageId);
+  } catch (error) {
+    messenger.showSnackBar(
+      SnackBar(
+          content:
+              Text(friendlyError(error, fallback: tr('تعذر إزالة الرسالة')))),
+    );
+  }
+}
+
+/// طلبات الرسائل (كإنستغرام): محادثات بدأها آخرون ولم أردّ عليها بعد،
+/// تُقبل أو تُحذف قبل أن تظهر في الصندوق.
+class _MessageRequestsScreen extends StatefulWidget {
+  const _MessageRequestsScreen();
+
+  @override
+  State<_MessageRequestsScreen> createState() => _MessageRequestsScreenState();
+}
+
+class _MessageRequestsScreenState extends State<_MessageRequestsScreen> {
+  String? _busyId;
+
+  Future<void> _run(
+      String id, Future<void> Function() action, String failure) async {
+    if (_busyId != null) return;
+    setState(() => _busyId = id);
+    try {
+      await action();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(friendlyError(error, fallback: failure))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
+  Future<void> _accept(Conversation conversation) {
+    final otherUid = conversation.otherParticipant(SocialService.currentUid);
+    return _run(
+      conversation.id,
+      () async {
+        await SocialService.acceptChatRequest(conversation.id);
+        if (!mounted) return;
+        await Navigator.of(context).push(appRoute(
+          'chat',
+          {'cid': conversation.id, 'uid': otherUid},
+          (_) =>
+              ChatScreen(conversationId: conversation.id, otherUid: otherUid),
+        ));
+      },
+      tr('تعذر قبول الطلب'),
+    );
+  }
+
+  Future<void> _delete(Conversation conversation) => _run(
+        conversation.id,
+        () => SocialService.clearChatForMe(conversation.id),
+        tr('تعذر حذف الطلب'),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return Scaffold(
+      backgroundColor: colors.bg,
+      appBar: AppBar(title: Text(tr('طلبات الرسائل'))),
+      body: StreamBuilder<List<Conversation>>(
+        stream: SocialService.conversations(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return ErrorState(
+                error: snapshot.error, title: tr('تعذر تحميل الطلبات'));
+          }
+          if (!snapshot.hasData) return const AppLoading();
+          final me = SocialService.currentUid;
+          final requests = snapshot.data!
+              .where((c) => c.visibleFor(me) && c.isRequestFor(me))
+              .toList();
+          if (requests.isEmpty) {
+            return _MessageState(
+              message: tr('لا توجد طلبات رسائل'),
+              icon: Icons.mark_email_read_outlined,
+            );
+          }
+          return ListView(
+            padding: const EdgeInsets.only(bottom: 24),
+            children: [
+              Padding(
+                padding: const EdgeInsetsDirectional.fromSTEB(16, 14, 16, 8),
+                child: Text(
+                  tr('طلبات الرسائل من أشخاص لا تتابعهم. لن يعرفوا أنك قرأت الرسالة حتى تقبلها.'),
+                  style: TextStyle(color: colors.textDim, fontSize: 12),
+                ),
+              ),
+              for (final conversation in requests)
+                _requestTile(context, conversation, me),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _requestTile(
+      BuildContext context, Conversation conversation, String me) {
+    final colors = context.appColors;
+    final otherUid = conversation.otherParticipant(me);
+    final busy = _busyId == conversation.id;
+    return FutureBuilder<AppUser?>(
+      future: UserService.profileOf(otherUid),
+      builder: (context, userSnapshot) {
+        final user = userSnapshot.data;
+        return Column(
+          key: ValueKey(conversation.id),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              leading: UserAvatar(
+                uid: otherUid,
+                fallbackName: user?.username ?? '',
+                profile: user,
+                radius: 24,
+                showOnline: true,
+              ),
+              title: Text(user?.displayName ?? tr('مستخدم'),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text('@${user?.username ?? ''}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: colors.textDim)),
+              onTap: busy ? null : () => _accept(conversation),
+            ),
+            Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(78, 0, 16, 8),
+              child: Text(
+                conversation.lastMessage,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: colors.text, fontSize: 13),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(74, 0, 16, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: busy ? null : () => _accept(conversation),
+                      child: Text(tr('قبول')),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: busy ? null : () => _delete(conversation),
+                      child: Text(tr('حذف')),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Divider(height: 1, indent: 76, color: colors.surfaceHigh),
+          ],
         );
       },
     );
@@ -322,6 +1259,8 @@ Future<void> _showChatMenu(
     BuildContext context, Conversation conversation) async {
   final pinned = conversation.pinnedFor(SocialService.currentUid);
   final muted = conversation.mutedFor(SocialService.currentUid);
+  final archived = conversation.archivedFor(SocialService.currentUid);
+  final markedUnread = SocialService.isManuallyUnread(conversation.id);
   final action = await showModalBottomSheet<String>(
     context: context,
     builder: (sheetContext) => SafeArea(
@@ -329,8 +1268,8 @@ Future<void> _showChatMenu(
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
-            leading: Icon(
-                pinned ? Icons.push_pin_outlined : Icons.push_pin_rounded),
+            leading:
+                Icon(pinned ? Icons.push_pin_outlined : Icons.push_pin_rounded),
             title: Text(pinned ? tr('إلغاء التثبيت') : tr('تثبيت المحادثة')),
             onTap: () => Navigator.pop(sheetContext, 'pin'),
           ),
@@ -340,6 +1279,23 @@ Future<void> _showChatMenu(
                 : Icons.notifications_off_outlined),
             title: Text(muted ? tr('إلغاء الكتم') : tr('كتم المحادثة')),
             onTap: () => Navigator.pop(sheetContext, 'mute'),
+          ),
+          ListTile(
+            leading: Icon(
+                archived ? Icons.unarchive_outlined : Icons.archive_outlined),
+            title: Text(archived ? tr('إلغاء الأرشفة') : tr('أرشفة المحادثة')),
+            subtitle: archived
+                ? null
+                : Text(tr('تختفي من الصندوق وتعود عند وصول رسالة')),
+            onTap: () => Navigator.pop(sheetContext, 'archive'),
+          ),
+          ListTile(
+            leading: Icon(markedUnread
+                ? Icons.mark_chat_read_outlined
+                : Icons.mark_chat_unread_outlined),
+            title: Text(
+                markedUnread ? tr('تعليم كمقروء') : tr('تعليم كغير مقروء')),
+            onTap: () => Navigator.pop(sheetContext, 'unread'),
           ),
           ListTile(
             leading: const Icon(Icons.delete_outline_rounded),
@@ -355,21 +1311,111 @@ Future<void> _showChatMenu(
     await _confirmAndClearChat(context, conversation.id);
     return;
   }
+  if (action == 'unread') {
+    SocialService.setChatUnread(conversation.id, !markedUnread);
+    return;
+  }
   try {
     if (action == 'mute') {
-      await SocialService.setChatMuted(conversation.id, !muted);
+      if (muted) {
+        await SocialService.setChatMuted(conversation.id, muted: false);
+        if (context.mounted) {
+          _chatMenuToast(context, tr('تم إلغاء كتم المحادثة'));
+        }
+      } else {
+        final choice = await _pickMuteDuration(context);
+        if (choice == null || !context.mounted) return;
+        final now = DateTime.now();
+        final until = choice == '1h'
+            ? now.add(const Duration(hours: 1))
+            : choice == '8h'
+                ? now.add(const Duration(hours: 8))
+                : choice == '24h'
+                    ? now.add(const Duration(hours: 24))
+                    : null;
+        await SocialService.setChatMuted(conversation.id,
+            muted: true, until: until);
+        if (context.mounted) {
+          _chatMenuToast(
+            context,
+            choice == 'forever'
+                ? tr('تم كتم المحادثة')
+                : tr('تم كتم المحادثة مؤقتاً'),
+            onUndo: () =>
+                SocialService.setChatMuted(conversation.id, muted: false),
+          );
+        }
+      }
+    } else if (action == 'archive') {
+      await SocialService.setChatArchived(conversation.id, !archived);
     } else {
       await SocialService.setChatPinned(conversation.id, !pinned);
+      if (context.mounted) {
+        _chatMenuToast(
+          context,
+          pinned ? tr('تم إلغاء تثبيت المحادثة') : tr('تم تثبيت المحادثة'),
+        );
+      }
     }
   } catch (error) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content:
-                Text(friendlyError(error, fallback: tr('تعذر تحديث المحادثة')))),
+            content: Text(
+                friendlyError(error, fallback: tr('تعذر تحديث المحادثة')))),
       );
     }
   }
+}
+
+/// رسالة قصيرة أسفل الشاشة بعد إجراء على المحادثة (كإنستغرام)، مع تراجع اختياري.
+void _chatMenuToast(BuildContext context, String message,
+    {VoidCallback? onUndo}) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(message),
+      duration: const Duration(seconds: 3),
+      action: onUndo == null
+          ? null
+          : SnackBarAction(label: tr('تراجع'), onPressed: onUndo),
+    ),
+  );
+}
+
+/// اختيار مدة الكتم (كإنستغرام). تُعيد '1h' / '8h' / '24h' / 'forever' أو null.
+Future<String?> _pickMuteDuration(BuildContext context) {
+  return showModalBottomSheet<String>(
+    context: context,
+    builder: (sheetContext) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.notifications_off_outlined),
+            title: Text(tr('كتم المحادثة')),
+            subtitle: Text(tr('لن تصلك إشعارات من هذه المحادثة')),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            title: Text(tr('كتم لساعة واحدة')),
+            onTap: () => Navigator.pop(sheetContext, '1h'),
+          ),
+          ListTile(
+            title: Text(tr('كتم لـ 8 ساعات')),
+            onTap: () => Navigator.pop(sheetContext, '8h'),
+          ),
+          ListTile(
+            title: Text(tr('كتم لـ 24 ساعة')),
+            onTap: () => Navigator.pop(sheetContext, '24h'),
+          ),
+          ListTile(
+            title: Text(tr('كتم حتى إعادة التشغيل')),
+            onTap: () => Navigator.pop(sheetContext, 'forever'),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 /// يؤكد ثم يحذف المحادثة لديّ فقط (الطرف الآخر لا يتأثر). true عند النجاح.
@@ -884,14 +1930,400 @@ class _FriendsScreenState extends State<_FriendsScreen> {
   }
 }
 
+/// إنشاء مجموعة جديدة: اسم + اختيار عضوين على الأقل من الأصدقاء المتبادلين.
+class _NewGroupScreen extends StatefulWidget {
+  const _NewGroupScreen();
+
+  @override
+  State<_NewGroupScreen> createState() => _NewGroupScreenState();
+}
+
+class _NewGroupScreenState extends State<_NewGroupScreen> {
+  final _name = TextEditingController();
+  late Future<List<AppUser>> _friends = _loadFriends();
+  final Set<String> _selected = <String>{};
+  bool _creating = false;
+
+  Future<List<AppUser>> _loadFriends() async {
+    final ids = await SocialService.mutualFriendIds();
+    final users = await Future.wait(ids.map(UserService.profileOf));
+    return users.whereType<AppUser>().toList();
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  bool get _canCreate =>
+      !_creating && _name.text.trim().isNotEmpty && _selected.length >= 2;
+
+  Future<void> _create() async {
+    if (!_canCreate) return;
+    setState(() => _creating = true);
+    try {
+      final id = await SocialService.createGroup(
+        name: _name.text,
+        memberUids: _selected.toList(),
+      );
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        appRoute('chat', {'cid': id, 'uid': ''},
+            (_) => ChatScreen(conversationId: id, otherUid: '', isGroup: true)),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                friendlyError(error, fallback: tr('تعذر إنشاء المجموعة')))));
+        setState(() => _creating = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return Scaffold(
+      backgroundColor: colors.bg,
+      appBar: AppBar(
+        title: Text(tr('مجموعة جديدة')),
+        actions: [
+          TextButton(
+            onPressed: _canCreate ? _create : null,
+            child: _creating
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : Text(tr('إنشاء')),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: TextField(
+              controller: _name,
+              maxLength: SocialService.groupNameMax,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                labelText: tr('اسم المجموعة'),
+                counterText: '',
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+            child: Row(
+              children: [
+                Text(tr('الأعضاء'),
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(width: 8),
+                Text('${_selected.length}',
+                    style: TextStyle(color: colors.textDim)),
+              ],
+            ),
+          ),
+          Expanded(
+            child: FutureBuilder<List<AppUser>>(
+              future: _friends,
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return ErrorState(
+                      error: snapshot.error,
+                      title: tr('تعذر تحميل قائمة الأصدقاء'),
+                      onRetry: () => setState(() => _friends = _loadFriends()));
+                }
+                if (!snapshot.hasData) return const AppLoading();
+                final friends = snapshot.data!;
+                if (friends.isEmpty) {
+                  return _MessageState(
+                    message:
+                        tr('تحتاج صديقين متبادلين على الأقل لإنشاء مجموعة'),
+                    icon: Icons.people_outline_rounded,
+                  );
+                }
+                return ListView.builder(
+                  itemCount: friends.length,
+                  itemBuilder: (context, index) {
+                    final friend = friends[index];
+                    final checked = _selected.contains(friend.uid);
+                    return CheckboxListTile(
+                      value: checked,
+                      onChanged: _creating
+                          ? null
+                          : (value) => setState(() {
+                                if (value == true) {
+                                  _selected.add(friend.uid);
+                                } else {
+                                  _selected.remove(friend.uid);
+                                }
+                              }),
+                      controlAffinity: ListTileControlAffinity.trailing,
+                      secondary: UserAvatar(
+                        uid: friend.uid,
+                        fallbackName: friend.username,
+                        radius: 22,
+                      ),
+                      title: Text(friend.displayName,
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text('@${friend.username}',
+                          style: TextStyle(color: colors.textDim)),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// بحث عام: محادثاتي (بالاسم أو نص آخر رسالة) وحسابات المستخدمين معاً.
+class _ChatSearchScreen extends StatefulWidget {
+  /// نص ابتدائي (يأتي من البحث الفوري في الصندوق).
+  final String initialQuery;
+
+  const _ChatSearchScreen({this.initialQuery = ''});
+
+  @override
+  State<_ChatSearchScreen> createState() => _ChatSearchScreenState();
+}
+
+class _ChatMatch {
+  final Conversation conversation;
+  final AppUser user;
+  const _ChatMatch(this.conversation, this.user);
+}
+
+class _SearchOutcome {
+  final List<_ChatMatch> chats;
+  final List<AppUser> users;
+  const _SearchOutcome(this.chats, this.users);
+}
+
+class _ChatSearchScreenState extends State<_ChatSearchScreen> {
+  final _query = TextEditingController();
+  final _focus = FocusNode();
+  Timer? _debounce;
+  Future<_SearchOutcome>? _results;
+  String _term = '';
+  bool _opening = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.requestFocus();
+    final initial = widget.initialQuery.trim();
+    if (initial.isNotEmpty) {
+      _query.text = initial;
+      _term = initial;
+      _results = _search(initial);
+    }
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _query.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _onChanged(String value) {
+    final term = value.trim();
+    _debounce?.cancel();
+    if (term.isEmpty) {
+      setState(() {
+        _term = '';
+        _results = null;
+      });
+      return;
+    }
+    setState(() => _term = term);
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      setState(() => _results = _search(term));
+    });
+  }
+
+  Future<_SearchOutcome> _search(String term) async {
+    final me = SocialService.currentUid;
+    final needle = term.toLowerCase().replaceAll('@', '');
+    final conversations = (await SocialService.conversations().first)
+        .where((c) => c.visibleFor(me) && !c.isGroup)
+        .toList();
+    final profiles = await Future.wait(conversations
+        .map((c) => UserService.profileOf(c.otherParticipant(me))));
+    final chats = <_ChatMatch>[];
+    for (var i = 0; i < conversations.length; i++) {
+      final user = profiles[i];
+      if (user == null) continue;
+      final haystack = '${user.displayName} ${user.username} '
+              '${conversations[i].lastMessage}'
+          .toLowerCase();
+      if (haystack.contains(needle)) {
+        chats.add(_ChatMatch(conversations[i], user));
+      }
+    }
+    final users = await UserService.search(term);
+    return _SearchOutcome(chats, users);
+  }
+
+  Future<void> _openChat(String conversationId, String uid) async {
+    if (_opening) return;
+    setState(() => _opening = true);
+    try {
+      final cid = conversationId.isEmpty
+          ? await SocialService.startConversation(uid)
+          : conversationId;
+      if (!mounted) return;
+      await Navigator.of(context).push(appRoute(
+        'chat',
+        {'cid': cid, 'uid': uid},
+        (_) => ChatScreen(conversationId: cid, otherUid: uid),
+      ));
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(
+                  friendlyError(error, fallback: tr('تعذر بدء المحادثة')))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _opening = false);
+    }
+  }
+
+  Widget _resultTile({
+    required String uid,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    final colors = context.appColors;
+    return ListTile(
+      leading: UserAvatar(
+        uid: uid,
+        fallbackName: title,
+        radius: 23,
+        showOnline: true,
+      ),
+      title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(subtitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: colors.textDim)),
+      onTap: _opening ? null : onTap,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return Scaffold(
+      backgroundColor: colors.bg,
+      appBar: AppBar(
+        title: TextField(
+          controller: _query,
+          focusNode: _focus,
+          textInputAction: TextInputAction.search,
+          onChanged: _onChanged,
+          decoration: InputDecoration(
+            hintText: tr('ابحث في المحادثات والأشخاص'),
+            border: InputBorder.none,
+          ),
+        ),
+        actions: [
+          if (_term.isNotEmpty)
+            IconButton(
+              tooltip: tr('مسح'),
+              onPressed: () {
+                _query.clear();
+                _onChanged('');
+              },
+              icon: const Icon(Icons.close_rounded),
+            ),
+        ],
+      ),
+      body: _term.isEmpty
+          ? _MessageState(
+              message: tr('ابحث باسم الشخص أو باسم المستخدم أو نص الرسالة'),
+              icon: Icons.search_rounded,
+            )
+          : FutureBuilder<_SearchOutcome>(
+              future: _results,
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  if (snapshot.hasError) {
+                    return ErrorState(
+                      error: snapshot.error,
+                      title: tr('تعذر البحث'),
+                      onRetry: () => setState(() => _results = _search(_term)),
+                    );
+                  }
+                  return const AppLoading();
+                }
+                final outcome = snapshot.data!;
+                if (outcome.chats.isEmpty && outcome.users.isEmpty) {
+                  return _MessageState(
+                    message: trf('لا نتائج لـ «{0}»', [_term]),
+                    icon: Icons.search_off_rounded,
+                  );
+                }
+                Widget header(String label) => Padding(
+                      padding:
+                          const EdgeInsetsDirectional.fromSTEB(16, 14, 16, 6),
+                      child: Text(label,
+                          style: const TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w700)),
+                    );
+                return ListView(
+                  padding: const EdgeInsets.only(bottom: 40),
+                  children: [
+                    if (outcome.chats.isNotEmpty) header(tr('المحادثات')),
+                    for (final match in outcome.chats)
+                      _resultTile(
+                        uid: match.user.uid,
+                        title: match.user.displayName,
+                        subtitle: '@${match.user.username}',
+                        onTap: () =>
+                            _openChat(match.conversation.id, match.user.uid),
+                      ),
+                    if (outcome.users.isNotEmpty) header(tr('الأشخاص')),
+                    for (final user in outcome.users)
+                      _resultTile(
+                        uid: user.uid,
+                        title: user.displayName,
+                        subtitle: '@${user.username}',
+                        onTap: () => _openChat('', user.uid),
+                      ),
+                  ],
+                );
+              },
+            ),
+    );
+  }
+}
+
 class ChatScreen extends StatefulWidget {
   final String conversationId;
   final String otherUid;
+
+  /// محادثة جماعية (يُعرف أيضاً من مستند المحادثة بعد التحميل).
+  final bool isGroup;
 
   const ChatScreen({
     super.key,
     required this.conversationId,
     required this.otherUid,
+    this.isGroup = false,
   });
 
   @override
@@ -926,8 +2358,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // صور مرفقة بانتظار الإرسال اليدوي (حتى 10، كإنستغرام).
   final List<Uint8List> _pendingImages = [];
   static const _maxAttach = 10;
+  // وضع «مرة واحدة»: الصور المرفقة تُرسل بوسم viewOnce (تُعرض مرة واحدة فقط).
+  bool _viewOnce = false;
+  // وضع الاختفاء: الرسائل الجديدة تُختفي بعد مدة (expiresAt).
+  bool _vanish = false;
+  static const _vanishDuration = Duration(hours: 1);
   Set<String> _hidden = const {};
   StreamSubscription<Set<String>>? _hiddenSub;
+
+  // وضع التحديد المتعدد: لحذف/نسخ/إعادة توجيه عدة رسائل دفعة واحدة.
+  bool _selecting = false;
+  final Set<String> _selectedIds = <String>{};
 
   // الرسائل: اشتراك واحد يُنشأ في initState (لا يُعاد إنشاؤه مع كل build).
   StreamSubscription<List<ChatMessage>>? _messagesSub;
@@ -938,6 +2379,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Object? _messagesError;
   bool _loadingMore = false;
   bool _foreground = true;
+
+  // زر «النزول للأسفل»: يظهر عند التمرير إلى الأعلى، مع عدّاد الرسائل الجديدة
+  // التي وصلت أثناء ذلك (القائمة معكوسة: pixels = 0 تعني أحدث رسالة).
+  bool _awayFromBottom = false;
+  int _newCount = 0;
+  DateTime? _newestSeenAt;
 
   List<ChatMessage>? get _messages {
     final live = _live;
@@ -950,10 +2397,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // حالة المراسلة مع غير الأصدقاء: رسالة أولى نصية فقط ثم انتظار الردّ.
   StreamSubscription<Map<String, dynamic>?>? _chatSub;
   Map<String, dynamic>? _chatData;
+  AppUser? _otherUser; // ملف الطرف الآخر (لاسمه في «شوهد بواسطة»)
   bool? _friends; // null = لم يُعرف بعد (لا نقيّد الواجهة حتى يُعرف)
 
-  /// المحادثة غير مقبولة بعد وليسا صديقين.
+  /// محادثة جماعية (من الواجهة أو من مستند المحادثة بعد التحميل).
+  bool get _isGroup => widget.isGroup || _chatData?['isGroup'] == true;
+
+  /// المحادثة غير مقبولة بعد وليسا صديقين (لا ينطبق على المجموعات).
   bool get _restricted {
+    if (_isGroup) return false;
     final data = _chatData;
     if (data == null || _friends != false) return false;
     return !(data['accepted'] as bool? ?? true);
@@ -994,7 +2446,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     final lifecycle = WidgetsBinding.instance.lifecycleState;
     _foreground = lifecycle == null || lifecycle == AppLifecycleState.resumed;
-    _blockState = SocialService.blockState(widget.otherUid);
+    // فتح المحادثة يلغي تعليمها «غير مقروءة» يدوياً (كإنستغرام).
+    SocialService.setChatUnread(widget.conversationId, false);
+    _blockState = widget.otherUid.isEmpty
+        ? Stream<ChatBlockState>.value(
+            const ChatBlockState(blockedByMe: false, blockedByThem: false))
+        : SocialService.blockState(widget.otherUid);
     _hiddenSub = SocialService.hiddenMessageIds(widget.conversationId).listen(
       (ids) {
         if (mounted) setState(() => _hidden = ids);
@@ -1010,9 +2467,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // التسجيل لإشعارات الدفع يتم مرة عند الدخول (HomeShell) لا عند كل محادثة.
     _chatPushSub = SocialService.foregroundChatMessages.listen((message) {
       // الرسائل بيانات فقط على الويب: العنوان والنص في data.
-      final body = message.notification?.body ??
-          (message.data['body'] as String?) ??
-          '';
+      final body =
+          message.notification?.body ?? (message.data['body'] as String?) ?? '';
       // لا نُظهر تنبيهاً عن المحادثة المفتوحة أمامي الآن.
       if (message.data['conversationId'] == widget.conversationId) return;
       if (!mounted || body.isEmpty) return;
@@ -1041,9 +2497,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       },
       onError: (_) {},
     );
-    SocialService.areMutualFriends(widget.otherUid).then((value) {
-      if (mounted) setState(() => _friends = value);
-    }).catchError((Object _) {});
+    if (widget.otherUid.isNotEmpty) {
+      SocialService.areMutualFriends(widget.otherUid).then((value) {
+        if (mounted) setState(() => _friends = value);
+      }).catchError((Object _) {});
+      // اسم الطرف الآخر لسطر «شوهد بواسطة» (من الذاكرة المؤقتة، بلا قراءة إضافية).
+      UserService.profileOf(widget.otherUid).then((value) {
+        if (mounted && value != null) setState(() => _otherUser = value);
+      }).catchError((Object _) {});
+    }
     _subscribeMessages();
   }
 
@@ -1154,6 +2616,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       } else {
         await preferences.setString(_draftKey, draft);
       }
+      // يُحدّث معاينة المسودة في صندوق الرسائل.
+      chatDraftsRevision.value++;
     } catch (_) {}
   }
 
@@ -1165,6 +2629,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       (messages) {
         if (!mounted) return;
         setState(() {
+          // عدّاد «الجديد» يظهر على زر النزول للأسفل فقط إن كنت متمرّراً للأعلى.
+          if (messages.isNotEmpty) {
+            final newest = messages.last;
+            final previous = _newestSeenAt;
+            if (_awayFromBottom && previous != null) {
+              for (final message in messages) {
+                if (message.senderUid != SocialService.currentUid &&
+                    message.createdAt.isAfter(previous)) {
+                  _newCount++;
+                }
+              }
+            }
+            _newestSeenAt = newest.createdAt;
+          }
           _live = messages;
           _messagesError = null;
           _loadingMore = false;
@@ -1249,13 +2727,33 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   /// عند الوصول لأعلى القائمة (أقدم الرسائل) نحمّل صفحة أقدم فقط، دون إعادة
-  /// قراءة ما سبق.
+  /// قراءة ما سبق. وأيضاً يتابع هنا ظهور زر «النزول للأسفل».
   void _onScroll() {
-    if (!_scroll.hasClients || _loadingMore || !_hasMore) return;
+    if (!_scroll.hasClients) return;
+    final away = _scroll.position.pixels > 260;
+    if (away != _awayFromBottom) {
+      setState(() {
+        _awayFromBottom = away;
+        if (!away) _newCount = 0;
+      });
+    }
+    if (_loadingMore || !_hasMore) return;
     if (_live == null) return;
     if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 200) {
       _loadOlder();
     }
+  }
+
+  /// ينزل إلى أحدث رسالة ويصفّر عدّاد الجديد.
+  Future<void> _jumpToLatest() async {
+    if (_newCount != 0) setState(() => _newCount = 0);
+    if (!_scroll.hasClients) return;
+    await _scroll.animateTo(
+      0,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOut,
+    );
+    if (mounted) setState(() => _awayFromBottom = false);
   }
 
   Future<void> _loadOlder() async {
@@ -1447,6 +2945,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final text = _text.text.trim();
     final images = List<Uint8List>.of(_pendingImages);
     final replyTarget = _replyTarget;
+    final viewOnce = _viewOnce;
+    final expiresAt = _vanish ? DateTime.now().add(_vanishDuration) : null;
     if (text.isEmpty && images.isEmpty) return;
     _text.clear();
     setState(() {
@@ -1467,6 +2967,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             replyToMessageId: sent == 0 ? replyTarget?.id : null,
             replyToText: sent == 0 ? replyTarget?.text : null,
             replyToSenderUid: sent == 0 ? replyTarget?.senderUid : null,
+            viewOnce: viewOnce,
+            expiresAt: expiresAt,
           );
           sent++;
         }
@@ -1495,6 +2997,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               replyToMessageId: replyTarget?.id,
               replyToText: replyTarget?.text,
               replyToSenderUid: replyTarget?.senderUid,
+              expiresAt: expiresAt,
             )
           : SocialService.sendMessage(
               widget.conversationId,
@@ -1502,6 +3005,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               replyToMessageId: replyTarget?.id,
               replyToText: replyTarget?.text,
               replyToSenderUid: replyTarget?.senderUid,
+              expiresAt: expiresAt,
             );
       try {
         await sending;
@@ -1524,6 +3028,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
     } else if (mounted) {
       setState(() => _replyTarget = null);
+    }
+    // «مرة واحدة» يخصّ الصور المرفقة: يُصفَّر بعد الإرسال (كإنستغرام).
+    if (viewOnce && mounted && _viewOnce) {
+      setState(() => _viewOnce = false);
     }
   }
 
@@ -1638,6 +3146,39 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       openProfile(context, widget.otherUid);
       return;
     }
+    if (action == 'info') {
+      Navigator.of(context).push(appRoute(
+        'chatInfo',
+        {'cid': widget.conversationId, 'uid': widget.otherUid},
+        (_) => _isGroup
+            ? _GroupInfoScreen(
+                conversationId: widget.conversationId,
+                data: _chatData,
+              )
+            : ChatInfoScreen(
+                conversationId: widget.conversationId,
+                otherUid: widget.otherUid,
+              ),
+      ));
+      return;
+    }
+    if (action == 'vanish') {
+      setState(() => _vanish = !_vanish);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_vanish
+                ? tr('تم تفعيل وضع الاختفاء: الرسائل الجديدة تختفي بعد ساعة')
+                : tr('تم إيقاف وضع الاختفاء')),
+          ),
+        );
+      }
+      return;
+    }
+    if (action == 'leave') {
+      await _leaveGroup();
+      return;
+    }
     if (action == 'clear') {
       final cleared =
           await _confirmAndClearChat(context, widget.conversationId);
@@ -1689,6 +3230,128 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// حالة رسالتي: 'read' شوهدت، 'delivered' وصلت، 'sent' أُرسلت فقط.
+  /// في المجموعة تُعدّ مقروءة/مسلَّمة فقط حين يقرأها/يستلمها كل الأعضاء.
+  String _receiptOf(ChatMessage message) {
+    final others = (_chatData?['participants'] as List? ?? const [])
+        .cast<String>()
+        .where((uid) => uid != SocialService.currentUid)
+        .toList();
+    if (others.isEmpty) {
+      if (widget.otherUid.isEmpty) return 'sent';
+      others.add(widget.otherUid);
+    }
+    bool done(String uid, String field) {
+      final at = _stampOf(field, uid);
+      final listed = field == 'readAt'
+          ? message.readBy.contains(uid)
+          : message.deliveredTo.contains(uid);
+      return listed || (at != null && !message.createdAt.isAfter(at));
+    }
+
+    if (others.every((uid) => done(uid, 'readAt'))) return 'read';
+    if (others.every((uid) => done(uid, 'deliveredAt'))) return 'delivered';
+    return 'sent';
+  }
+
+  /// عنوان شريط المجموعة: الصورة والاسم وعدد الأعضاء (يُفتح منه معلومات المجموعة).
+  Widget _groupAppBarTitle(BuildContext context) {
+    final colors = context.appColors;
+    final name = ((_chatData?['groupName'] as String?) ?? '').trim();
+    final photo = ((_chatData?['groupPhoto'] as String?) ?? '').trim();
+    final participants =
+        (_chatData?['participants'] as List? ?? const []).cast<String>();
+    return InkWell(
+      onTap: _openGroupInfo,
+      child: Row(
+        children: [
+          _GroupPhoto(
+            participants: participants,
+            photoUrl: photo,
+            size: 38,
+          ),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  name.isEmpty ? tr('مجموعة') : name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  trf('{0} عضو', [participants.length]),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: colors.textDim, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// يفتح شاشة معلومات المجموعة (تعديل الاسم/الصورة وإدارة الأعضاء).
+  void _openGroupInfo() {
+    Navigator.of(context).push(appRoute(
+      'chatInfo',
+      {'cid': widget.conversationId, 'uid': ''},
+      (_) => _GroupInfoScreen(
+        conversationId: widget.conversationId,
+        data: _chatData,
+      ),
+    ));
+  }
+
+  /// مغادرة المجموعة بعد تأكيد، ثم الرجوع إلى الصندوق.
+  Future<void> _leaveGroup() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(tr('مغادرة المجموعة؟')),
+        content: Text(tr('لن تستقبل رسائل هذه المجموعة بعد الآن.')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(tr('إلغاء')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(tr('مغادرة')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await SocialService.leaveGroup(widget.conversationId);
+      if (mounted) Navigator.of(context).pop();
+    } catch (error) {
+      _showError(tr('تعذر مغادرة المجموعة'), error);
+    }
+  }
+
+  /// يثبّت رسالة داخل المحادثة (يراها الطرفان) أو يلغي التثبيت بتمرير null.
+  Future<void> _setPinnedMessage(String? messageId) async {
+    try {
+      await SocialService.setPinnedMessage(widget.conversationId, messageId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(messageId == null
+                  ? tr('تم إلغاء التثبيت')
+                  : tr('تم تثبيت الرسالة'))),
+        );
+      }
+    } catch (error) {
+      _showError(tr('تعذر تثبيت الرسالة'), error);
+    }
+  }
+
   Future<void> _showMessageActions(ChatMessage message, bool mine) async {
     Future<void> run(Future<void> Function() action, String failure) async {
       try {
@@ -1706,6 +3369,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // داخل نفس الورقة.
     const quick = ['❤️', '😂', '😮', '😢', '🔥', '👍'];
     final myReaction = message.reactions[SocialService.currentUid];
+    // إيصال رسالتي: تم الإرسال / تم التسليم / شوهد بواسطة الطرف الآخر.
+    final receipt = mine ? _receiptOf(message) : null;
+    final pinnedId = (_chatData?['pinnedMessageId'] as String?) ?? '';
+    final isPinned = pinnedId == message.id;
     var expanded = false;
     await showModalBottomSheet<void>(
       context: context,
@@ -1714,137 +3381,438 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       backgroundColor: context.appColors.surface,
       builder: (sheetContext) => StatefulBuilder(
         builder: (sheetContext, setSheetState) => SafeArea(
-        child: expanded
-            ? Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: IconButton(
-                      tooltip: tr('رجوع'),
-                      onPressed: () => setSheetState(() => expanded = false),
-                      icon: const Icon(Icons.arrow_back_rounded),
+          child: expanded
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: IconButton(
+                        tooltip: tr('رجوع'),
+                        onPressed: () => setSheetState(() => expanded = false),
+                        icon: const Icon(Icons.arrow_back_rounded),
+                      ),
                     ),
-                  ),
-                  StickerPanel(
-                    height: 320,
-                    onPick: (sticker) {
-                      Navigator.pop(sheetContext);
-                      _reactToMessage(message, sticker);
-                    },
-                  ),
-                ],
-              )
-            : Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 14, 12, 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  for (final emoji in quick)
-                    GestureDetector(
+                    StickerPanel(
+                      height: 320,
+                      onPick: (sticker) {
+                        Navigator.pop(sheetContext);
+                        _reactToMessage(message, sticker);
+                      },
+                    ),
+                  ],
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 14, 12, 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          for (final emoji in quick)
+                            GestureDetector(
+                              onTap: () {
+                                Navigator.pop(sheetContext);
+                                _reactToMessage(message, emoji);
+                              },
+                              child: Container(
+                                width: 46,
+                                height: 46,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: myReaction == emoji
+                                      ? AppColors.brandPurple.withOpacity(0.18)
+                                      : Colors.transparent,
+                                ),
+                                child: StickerGlyph(emoji, size: 32),
+                              ),
+                            ),
+                          GestureDetector(
+                            onTap: () => setSheetState(() => expanded = true),
+                            child: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: context.appColors.surfaceHigh,
+                              ),
+                              child: Icon(Icons.add_rounded,
+                                  color: context.appColors.text),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Divider(height: 1, color: context.appColors.surfaceHigh),
+                    // إيصال رسالتي: تم الإرسال / تم التسليم / شوهد بواسطة الطرف.
+                    if (receipt != null)
+                      ListTile(
+                        leading: Icon(
+                          receipt == 'sent'
+                              ? Icons.done_rounded
+                              : Icons.done_all_rounded,
+                          color: receipt == 'read'
+                              ? const Color(0xFF4FC3F7)
+                              : context.appColors.textDim,
+                        ),
+                        title: Text(switch (receipt) {
+                          'read' => tr('شوهد'),
+                          'delivered' => tr('تم التسليم'),
+                          _ => tr('تم الإرسال'),
+                        }),
+                        subtitle: receipt == 'read' && _otherUser != null
+                            ? Text('${tr('شوهد بواسطة')} '
+                                '${_otherUser!.displayName}')
+                            : null,
+                      ),
+                    ListTile(
+                      leading: Icon(
+                          isPinned ? Icons.push_pin : Icons.push_pin_outlined),
+                      title: Text(isPinned
+                          ? tr('إلغاء تثبيت الرسالة')
+                          : tr('تثبيت الرسالة')),
+                      subtitle: Text(tr('تظهر أعلى المحادثة للطرفين')),
                       onTap: () {
                         Navigator.pop(sheetContext);
-                        _reactToMessage(message, emoji);
+                        _setPinnedMessage(isPinned ? null : message.id);
                       },
-                      child: Container(
-                        width: 46,
-                        height: 46,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: myReaction == emoji
-                              ? AppColors.brandPurple.withOpacity(0.18)
-                              : Colors.transparent,
-                        ),
-                        child: StickerGlyph(emoji, size: 32),
-                      ),
                     ),
-                  GestureDetector(
-                    onTap: () => setSheetState(() => expanded = true),
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: context.appColors.surfaceHigh,
-                      ),
-                      child: Icon(Icons.add_rounded,
-                          color: context.appColors.text),
+                    StreamBuilder<Set<String>>(
+                      stream: SocialService.savedMessageIds(),
+                      builder: (context, savedSnapshot) {
+                        final saved =
+                            savedSnapshot.data?.contains(message.id) ?? false;
+                        return ListTile(
+                          leading: Icon(saved
+                              ? Icons.bookmark_rounded
+                              : Icons.bookmark_border_rounded),
+                          title: Text(
+                              saved ? tr('إلغاء الحفظ') : tr('حفظ الرسالة')),
+                          subtitle: Text(tr('تجدها في «المحفوظات»')),
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            _toggleSaved(message, saved);
+                          },
+                        );
+                      },
                     ),
-                  ),
-                ],
-              ),
-            ),
-            Divider(height: 1, color: context.appColors.surfaceHigh),
-            ListTile(
-              leading: const Icon(Icons.reply_rounded),
-              title: Text(tr('رد')),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                if (mounted) setState(() => _replyTarget = message);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.copy_rounded),
-              title: Text(tr('نسخ الرسالة')),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                Clipboard.setData(ClipboardData(text: message.text));
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(tr('تم نسخ الرسالة'))),
-                  );
-                }
-              },
-            ),
-            if (mine &&
-                message.kind == 'text' &&
-                DateTime.now().difference(message.createdAt) <=
-                    SocialService.messageEditWindow)
-              ListTile(
-                leading: const Icon(Icons.edit_rounded),
-                title: Text(tr('تعديل الرسالة')),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  if (mounted) _startEdit(message);
-                },
-              ),
-            if (mine)
-              ListTile(
-                leading: const Icon(Icons.delete_forever_rounded,
-                    color: AppColors.brandPurple),
-                title: Text(tr('حذف لدى الجميع')),
-                subtitle: Text(tr('تُحذف الرسالة من المحادثة عند الطرفين')),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  run(
-                    () => SocialService.deleteMessage(
-                        widget.conversationId, message.id),
-                    tr('تعذر حذف الرسالة'),
-                  );
-                },
-              ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline_rounded),
-              title: Text(tr('حذف لدي فقط')),
-              subtitle: Text(tr('تبقى الرسالة ظاهرة للطرف الآخر')),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                run(
-                  () => SocialService.hideMessageForMe(
-                      widget.conversationId, message.id),
-                  tr('تعذر حذف الرسالة'),
-                );
-              },
-            ),
-          ],
-        ),
+                    ListTile(
+                      leading: const Icon(Icons.reply_rounded),
+                      title: Text(tr('رد')),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        if (mounted) setState(() => _replyTarget = message);
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.copy_rounded),
+                      title: Text(tr('نسخ الرسالة')),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        Clipboard.setData(ClipboardData(text: message.text));
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(tr('تم نسخ الرسالة'))),
+                          );
+                        }
+                      },
+                    ),
+                    if (_canForward(message))
+                      ListTile(
+                        leading: const Icon(Icons.shortcut_rounded),
+                        title: Text(tr('إعادة توجيه')),
+                        subtitle: Text(tr('أرسلها إلى محادثة أخرى')),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          if (mounted) _openForwardSheet([message]);
+                        },
+                      ),
+                    ListTile(
+                      leading: const Icon(Icons.checklist_rounded),
+                      title: Text(tr('تحديد')),
+                      subtitle:
+                          Text(tr('حدّد عدة رسائل لحذفها أو توجيهها معاً')),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _enterSelection(message);
+                      },
+                    ),
+                    if (mine &&
+                        message.kind == 'text' &&
+                        DateTime.now().difference(message.createdAt) <=
+                            SocialService.messageEditWindow)
+                      ListTile(
+                        leading: const Icon(Icons.edit_rounded),
+                        title: Text(tr('تعديل الرسالة')),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          if (mounted) _startEdit(message);
+                        },
+                      ),
+                    if (mine)
+                      ListTile(
+                        leading: const Icon(Icons.delete_forever_rounded,
+                            color: AppColors.brandPurple),
+                        title: Text(tr('حذف لدى الجميع')),
+                        subtitle:
+                            Text(tr('تُحذف الرسالة من المحادثة عند الطرفين')),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          run(
+                            () => SocialService.deleteMessage(
+                                widget.conversationId, message.id),
+                            tr('تعذر حذف الرسالة'),
+                          );
+                        },
+                      ),
+                    ListTile(
+                      leading: const Icon(Icons.delete_outline_rounded),
+                      title: Text(tr('حذف لدي فقط')),
+                      subtitle: Text(tr('تبقى الرسالة ظاهرة للطرف الآخر')),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        run(
+                          () => SocialService.hideMessageForMe(
+                              widget.conversationId, message.id),
+                          tr('تعذر حذف الرسالة'),
+                        );
+                      },
+                    ),
+                  ],
+                ),
         ),
       ),
     );
+  }
+
+  /// حفظ الرسالة عندي أو إلغاء حفظها (كإنستغرام).
+  Future<void> _toggleSaved(ChatMessage message, bool saved) async {
+    try {
+      if (saved) {
+        await SocialService.unsaveMessage(message.id);
+      } else {
+        await SocialService.saveMessage(widget.conversationId, message);
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(saved ? tr('أُلغي الحفظ') : tr('حُفظت الرسالة'))),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(friendlyError(error, fallback: tr('تعذر حفظ الرسالة'))),
+        ),
+      );
+    }
+  }
+
+  /// شريط التطبيق في وضع التحديد المتعدد: العدد + إجراءات جماعية.
+  PreferredSizeWidget _selectionAppBar(BuildContext context) {
+    final count = _selectedIds.length;
+    return AppBar(
+      backgroundColor: context.appColors.surface,
+      leading: IconButton(
+        tooltip: tr('إلغاء'),
+        onPressed: _exitSelection,
+        icon: const Icon(Icons.close_rounded),
+      ),
+      title: Text(trf('{0} محددة', [count])),
+      actions: [
+        IconButton(
+          tooltip: tr('إعادة توجيه'),
+          onPressed: count == 0 ? null : _forwardSelected,
+          icon: const Icon(Icons.shortcut_rounded),
+        ),
+        IconButton(
+          tooltip: tr('نسخ'),
+          onPressed: count == 0 ? null : _copySelected,
+          icon: const Icon(Icons.copy_rounded),
+        ),
+        IconButton(
+          tooltip: tr('حذف لدي فقط'),
+          onPressed: count == 0 ? null : _deleteSelected,
+          icon: const Icon(Icons.delete_outline_rounded),
+        ),
+      ],
+    );
+  }
+
+  void _enterSelection(ChatMessage message) {
+    setState(() {
+      _selecting = true;
+      _selectedIds
+        ..clear()
+        ..add(message.id);
+    });
+  }
+
+  void _exitSelection() {
+    setState(() {
+      _selecting = false;
+      _selectedIds.clear();
+    });
+  }
+
+  void _toggleMessageSelected(String id) {
+    setState(() {
+      if (!_selectedIds.remove(id)) _selectedIds.add(id);
+    });
+  }
+
+  /// الرسائل المحددة بترتيب زمني (الأقدم أولاً) للنسخ/التوجيه.
+  List<ChatMessage> get _selectedMessages {
+    final messages = _messages ?? const <ChatMessage>[];
+    return messages
+        .where((m) => _selectedIds.contains(m.id) && !_hidden.contains(m.id))
+        .toList();
+  }
+
+  /// هل يمكن إعادة توجيه هذه الرسالة (نص/ملصق/صورة/موقع)؟
+  bool _canForward(ChatMessage message) =>
+      message.kind == 'text' ||
+      message.kind == 'sticker' ||
+      (message.kind == 'image' &&
+          (message.imageUrl != null || message.imageBytes != null)) ||
+      (message.kind == 'location' &&
+          message.lat != null &&
+          message.lng != null);
+
+  void _copySelected() {
+    final text = _selectedMessages.map((m) => m.text).join('\n').trim();
+    if (text.isEmpty) return;
+    Clipboard.setData(ClipboardData(text: text));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('تم نسخ الرسالة'))),
+      );
+    }
+  }
+
+  void _forwardSelected() {
+    final messages = _selectedMessages.where(_canForward).toList();
+    if (messages.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('لا يمكن إعادة توجيه هذه الرسائل'))),
+      );
+      return;
+    }
+    _openForwardSheet(messages);
+  }
+
+  Future<void> _deleteSelected() async {
+    final ids = _selectedMessages.map((m) => m.id).toList();
+    if (ids.isEmpty) return;
+    _exitSelection();
+    var failed = false;
+    for (final id in ids) {
+      try {
+        await SocialService.hideMessageForMe(widget.conversationId, id);
+      } catch (_) {
+        failed = true;
+      }
+    }
+    if (mounted && failed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('تعذر حذف بعض الرسائل'))),
+      );
+    }
+  }
+
+  /// يفتح ورقة اختيار محادثة (أو أكثر) لإعادة توجيه رسالة أو أكثر إليها.
+  Future<void> _openForwardSheet(List<ChatMessage> messages) {
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: context.appColors.surface,
+      builder: (_) => _ForwardSheet(
+        messages: messages,
+        exceptConversationId: widget.conversationId,
+      ),
+    );
+  }
+
+  /// يفتح وجهة بطاقة المشاركة: الملف الشخصي، أو المنشور، أو الرابط الخارجي.
+  Future<void> _openShareTarget(ChatMessage message) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final type = message.shareType;
+    final id = message.shareId;
+    if (type == 'profile' && id != null && id.isNotEmpty) {
+      openProfile(context, id);
+      return;
+    }
+    if (type == 'post' && id != null && id.isNotEmpty) {
+      Post? post;
+      try {
+        post = await PostService.postById(id);
+      } catch (error) {
+        messenger.showSnackBar(SnackBar(
+            content:
+                Text(friendlyError(error, fallback: tr('تعذر فتح المنشور')))));
+        return;
+      }
+      if (!mounted) return;
+      if (post == null) {
+        messenger.showSnackBar(
+            SnackBar(content: Text(tr('هذا المنشور لم يعد متاحاً'))));
+        return;
+      }
+      final opened = post;
+      Navigator.of(context).push<void>(appRoute<void>(
+        'post',
+        {'id': opened.id},
+        (_) => PostDetailScreen(post: opened),
+      ));
+      return;
+    }
+    final link = message.shareLink;
+    final uri = link == null ? null : Uri.tryParse(link);
+    if (uri != null) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  /// يفتح موقعاً مُرسلاً في خرائط جوجل.
+  Future<void> _openLocation(ChatMessage message) async {
+    final lat = message.lat;
+    final lng = message.lng;
+    if (lat == null || lng == null) return;
+    final uri = Uri.parse('https://maps.google.com/?q=$lat,$lng');
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content:
+              Text(friendlyError(error, fallback: tr('تعذر فتح الموقع')))));
+    }
+  }
+
+  /// يطلب موقع الجهاز الحالي ويرسله كبطاقة في المحادثة.
+  Future<void> _sendLocation() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final location = await currentChatLocation();
+    if (!mounted) return;
+    if (location == null) {
+      messenger.showSnackBar(
+          SnackBar(content: Text(tr('تعذر تحديد موقعك، تحقق من إذن الموقع'))));
+      return;
+    }
+    try {
+      await SocialService.sendLocation(
+        widget.conversationId,
+        lat: location.lat,
+        lng: location.lng,
+      );
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(
+          content:
+              Text(friendlyError(error, fallback: tr('تعذر إرسال الموقع')))));
+    }
   }
 
   /// يضع تفاعلاً على الرسالة؛ والضغط على نفس تفاعلي الحالي يزيله.
@@ -1941,736 +3909,2129 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         final blockState = blockSnapshot.data ??
             const ChatBlockState(blockedByMe: false, blockedByThem: false);
         return PopScope(
-          canPop: !_showStickers,
-          onPopInvoked: (didPop) {
-            if (!didPop) setState(() => _showStickers = false);
-          },
-          child: Scaffold(
-          backgroundColor: colors.bg,
-          appBar: AppBar(
-            titleSpacing: 0,
-            title: StreamBuilder<AppUser?>(
-              stream: UserService.profileStream(widget.otherUid),
-              builder: (context, snapshot) {
-                final user = snapshot.data;
-                return Row(
-                  children: [
-                    UserAvatar(
-                      uid: widget.otherUid,
-                      fallbackName: user?.username ?? '',
-                      radius: 19,
-                      showOnline: true,
-                      onTap: () => openProfile(context, widget.otherUid),
-                    ),
-                    const SizedBox(width: 10),
-                    Flexible(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            user?.displayName ?? tr('محادثة'),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          if (user != null)
-                            StreamBuilder<bool>(
-                              stream: PresenceService.isOnline(widget.otherUid),
-                              builder: (context, onlineSnapshot) {
-                                final typing = _typingUsers.keys.any(
-                                    (uid) => uid != SocialService.currentUid);
-                                final online = onlineSnapshot.data == true;
-                                final String label;
-                                if (typing) {
-                                  label = tr('يكتب…');
-                                } else if (online) {
-                                  label = tr('نشط الآن');
-                                } else {
-                                  label = '@${user.username}';
-                                }
-                                return Text(
-                                  label,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: (typing || online)
-                                        ? AppColors.success
-                                        : context.appColors.textDim,
-                                    fontSize: 12,
-                                    fontWeight: (typing || online)
-                                        ? FontWeight.w600
-                                        : FontWeight.normal,
-                                  ),
+            canPop: !_showStickers && !_selecting,
+            onPopInvoked: (didPop) {
+              if (didPop) return;
+              if (_showStickers) {
+                setState(() => _showStickers = false);
+              } else if (_selecting) {
+                _exitSelection();
+              }
+            },
+            child: Scaffold(
+              backgroundColor: colors.bg,
+              appBar: _selecting
+                  ? _selectionAppBar(context)
+                  : AppBar(
+                      titleSpacing: 0,
+                      title: _isGroup
+                          ? _groupAppBarTitle(context)
+                          : StreamBuilder<AppUser?>(
+                              stream:
+                                  UserService.profileStream(widget.otherUid),
+                              builder: (context, snapshot) {
+                                final user = snapshot.data;
+                                return Row(
+                                  children: [
+                                    UserAvatar(
+                                      uid: widget.otherUid,
+                                      fallbackName: user?.username ?? '',
+                                      radius: 19,
+                                      showOnline: true,
+                                      onTap: () =>
+                                          openProfile(context, widget.otherUid),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Flexible(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            user?.displayName ?? tr('محادثة'),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          if (user != null)
+                                            StreamBuilder<bool>(
+                                              stream: PresenceService.isOnline(
+                                                  widget.otherUid),
+                                              builder:
+                                                  (context, onlineSnapshot) {
+                                                final typing = _typingUsers.keys
+                                                    .any((uid) =>
+                                                        uid !=
+                                                        SocialService
+                                                            .currentUid);
+                                                final online =
+                                                    onlineSnapshot.data == true;
+                                                final String label;
+                                                if (typing) {
+                                                  label = tr('يكتب…');
+                                                } else if (online) {
+                                                  label = tr('نشط الآن');
+                                                } else {
+                                                  label = '@${user.username}';
+                                                }
+                                                return Text(
+                                                  label,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    color: (typing || online)
+                                                        ? AppColors.success
+                                                        : context
+                                                            .appColors.textDim,
+                                                    fontSize: 12,
+                                                    fontWeight:
+                                                        (typing || online)
+                                                            ? FontWeight.w600
+                                                            : FontWeight.normal,
+                                                  ),
+                                                );
+                                              },
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 );
                               },
                             ),
-                        ],
+                      actions: [
+                        IconButton(
+                          tooltip: tr('بحث في المحادثة'),
+                          onPressed: _showMessageSearch,
+                          icon: const Icon(Icons.search_rounded),
+                        ),
+                        PopupMenuButton<String>(
+                          tooltip: tr('خيارات المحادثة'),
+                          onSelected: _selectChatAction,
+                          itemBuilder: (context) => [
+                            if (!_isGroup)
+                              PopupMenuItem(
+                                value: 'profile',
+                                child: ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: Icon(Icons.person_outline),
+                                  title: Text(tr('عرض الملف الشخصي')),
+                                ),
+                              ),
+                            PopupMenuItem(
+                              value: 'info',
+                              child: ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: Icon(_isGroup
+                                    ? Icons.groups_outlined
+                                    : Icons.info_outline_rounded),
+                                title: Text(_isGroup
+                                    ? tr('معلومات المجموعة')
+                                    : tr('معلومات المحادثة')),
+                              ),
+                            ),
+                            if (!_isGroup)
+                              PopupMenuItem(
+                                value: 'vanish',
+                                child: ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: Icon(_vanish
+                                      ? Icons.visibility_outlined
+                                      : Icons.visibility_off_outlined),
+                                  title: Text(_vanish
+                                      ? tr('إيقاف وضع الاختفاء')
+                                      : tr('وضع الاختفاء')),
+                                  subtitle: _vanish
+                                      ? null
+                                      : Text(tr('تختفي الرسائل بعد ساعة')),
+                                ),
+                              ),
+                            PopupMenuItem(
+                              value: 'clear',
+                              child: ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: Icon(Icons.delete_outline_rounded),
+                                title: Text(tr('حذف المحادثة لديّ')),
+                              ),
+                            ),
+                            if (_isGroup)
+                              PopupMenuItem(
+                                value: 'leave',
+                                child: ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: const Icon(Icons.logout_rounded,
+                                      color: AppColors.likeRed),
+                                  title: Text(tr('مغادرة المجموعة'),
+                                      style: const TextStyle(
+                                          color: AppColors.likeRed)),
+                                ),
+                              )
+                            else
+                              PopupMenuItem(
+                                value: blockState.blockedByMe
+                                    ? 'unblock'
+                                    : 'block',
+                                child: ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: Icon(blockState.blockedByMe
+                                      ? Icons.person_add_alt_1
+                                      : Icons.block),
+                                  title: Text(blockState.blockedByMe
+                                      ? tr('إلغاء الحظر')
+                                      : tr('حظر المستخدم')),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+              body: Column(
+                children: [
+                  if (blockState.blocked)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 10),
+                      color: colors.surfaceHigh,
+                      child: Text(
+                        blockState.blockedByMe
+                            ? tr(
+                                'حظرت هذا المستخدم. ألغِ الحظر لإرسال الرسائل.')
+                            : tr('لا يمكنك مراسلة هذا المستخدم.'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: colors.textDim),
                       ),
                     ),
-                  ],
-                );
-              },
-            ),
-            actions: [
-              IconButton(
-                tooltip: tr('بحث في المحادثة'),
-                onPressed: _showMessageSearch,
-                icon: const Icon(Icons.search_rounded),
-              ),
-              PopupMenuButton<String>(
-                tooltip: tr('خيارات المحادثة'),
-                onSelected: _selectChatAction,
-                itemBuilder: (context) => [
-                  PopupMenuItem(
-                    value: 'profile',
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(Icons.person_outline),
-                      title: Text(tr('عرض الملف الشخصي')),
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'clear',
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(Icons.delete_outline_rounded),
-                      title: Text(tr('حذف المحادثة لديّ')),
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: blockState.blockedByMe ? 'unblock' : 'block',
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(blockState.blockedByMe
-                          ? Icons.person_add_alt_1
-                          : Icons.block),
-                      title: Text(blockState.blockedByMe
-                          ? tr('إلغاء الحظر')
-                          : tr('حظر المستخدم')),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          body: Column(
-            children: [
-              if (blockState.blocked)
-                Container(
-                  width: double.infinity,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  color: colors.surfaceHigh,
-                  child: Text(
-                    blockState.blockedByMe
-                        ? tr('حظرت هذا المستخدم. ألغِ الحظر لإرسال الرسائل.')
-                        : tr('لا يمكنك مراسلة هذا المستخدم.'),
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: colors.textDim),
-                  ),
-                ),
-              Expanded(
-                child: Builder(
-                  builder: (context) {
-                    if (_messagesError != null && _messages == null) {
-                      return ErrorState(
-                          error: _messagesError,
-                          title: tr('تعذر تحميل المحادثة'),
-                          onRetry: () {
-                            setState(() => _messagesError = null);
-                            _subscribeMessages();
-                          });
-                    }
-                    if (_messages == null) {
-                      return const AppLoading();
-                    }
-                    final cleared =
-                        _stampOf('clearedAt', SocialService.currentUid);
-                    final otherRead = _stampOf('readAt', widget.otherUid);
-                    final otherDelivered =
-                        _stampOf('deliveredAt', widget.otherUid);
-                    final messages = _messages!
-                        .where((m) =>
-                            !_hidden.contains(m.id) &&
-                            (cleared == null || m.createdAt.isAfter(cleared)))
-                        .toList();
-                    if (messages.isEmpty) {
-                      return _MessageState(
-                        message: tr('أرسل أول رسالة لبدء المحادثة'),
-                        icon: Icons.waving_hand_outlined,
-                      );
-                    }
-                    int? unreadDividerAfter;
-                    for (var i = 0; i < messages.length; i++) {
-                      final message = messages[messages.length - 1 - i];
-                      if (message.senderUid != SocialService.currentUid &&
-                          (_readAtWhenOpened == null ||
-                              message.createdAt.isAfter(_readAtWhenOpened!))) {
-                        unreadDividerAfter = i;
-                      }
-                    }
-                    final unreadDividerPosition = unreadDividerAfter == null
-                        ? null
-                        : unreadDividerAfter + 1;
-                    return ListView.builder(
-                      controller: _scroll,
-                      reverse: true,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 12),
-                      itemCount: messages.length +
-                          (unreadDividerPosition == null ? 0 : 1) +
-                          (_loadingMore ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (_loadingMore &&
-                            index ==
-                                messages.length +
-                                    (unreadDividerPosition == null ? 0 : 1)) {
-                          return const Padding(
-                            padding: EdgeInsets.all(12),
-                            child: Center(
-                              child: SizedBox(
-                                width: 20,
-                                height: 20,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              ),
-                            ),
+                  Expanded(
+                    child: Builder(
+                      builder: (context) {
+                        if (_messagesError != null && _messages == null) {
+                          return ErrorState(
+                              error: _messagesError,
+                              title: tr('تعذر تحميل المحادثة'),
+                              onRetry: () {
+                                setState(() => _messagesError = null);
+                                _subscribeMessages();
+                              });
+                        }
+                        if (_messages == null) {
+                          return const AppLoading();
+                        }
+                        final cleared =
+                            _stampOf('clearedAt', SocialService.currentUid);
+                        final otherRead = _stampOf('readAt', widget.otherUid);
+                        final otherDelivered =
+                            _stampOf('deliveredAt', widget.otherUid);
+                        final now = DateTime.now();
+                        final messages = _messages!
+                            .where((m) =>
+                                !_hidden.contains(m.id) &&
+                                // وضع الاختفاء: تُخفى الرسائل المنتهية صلاحيتها.
+                                (m.expiresAt == null ||
+                                    m.expiresAt!.isAfter(now)) &&
+                                (cleared == null ||
+                                    m.createdAt.isAfter(cleared)))
+                            .toList();
+                        if (messages.isEmpty) {
+                          return _MessageState(
+                            message: tr('أرسل أول رسالة لبدء المحادثة'),
+                            icon: Icons.waving_hand_outlined,
                           );
                         }
-                        if (index == unreadDividerPosition) {
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            child: Center(
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 5),
-                                decoration: BoxDecoration(
-                                  color: colors.surfaceHigh,
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: Text(
-                                  tr('رسائل غير مقروءة'),
-                                  style: TextStyle(
-                                    color: colors.textDim,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
+                        int? unreadDividerAfter;
+                        for (var i = 0; i < messages.length; i++) {
+                          final message = messages[messages.length - 1 - i];
+                          if (message.senderUid != SocialService.currentUid &&
+                              (_readAtWhenOpened == null ||
+                                  message.createdAt
+                                      .isAfter(_readAtWhenOpened!))) {
+                            unreadDividerAfter = i;
+                          }
+                        }
+                        final unreadDividerPosition = unreadDividerAfter == null
+                            ? null
+                            : unreadDividerAfter + 1;
+                        // الرسالة المثبّتة: تُعرض فقط إن كانت ضمن المحمّل ولم
+                        // يحذفها الطرف لديّه.
+                        final pinnedId =
+                            (_chatData?['pinnedMessageId'] as String?) ?? '';
+                        ChatMessage? pinnedMessage;
+                        if (pinnedId.isNotEmpty &&
+                            !_hidden.contains(pinnedId)) {
+                          for (final message in messages) {
+                            if (message.id == pinnedId) {
+                              pinnedMessage = message;
+                              break;
+                            }
+                          }
+                        }
+                        final list = ListView.builder(
+                          controller: _scroll,
+                          reverse: true,
+                          // تمرير أنعم: يبني هامشاً من الرسائل خارج الشاشة.
+                          cacheExtent: 900,
+                          // مساحة أعلى القائمة تُترك لشريط الرسالة المثبّتة.
+                          padding: EdgeInsetsDirectional.fromSTEB(
+                              14, pinnedMessage == null ? 12 : 62, 14, 12),
+                          itemCount: messages.length +
+                              (unreadDividerPosition == null ? 0 : 1) +
+                              (_loadingMore ? 1 : 0),
+                          itemBuilder: (context, index) {
+                            if (_loadingMore &&
+                                index ==
+                                    messages.length +
+                                        (unreadDividerPosition == null
+                                            ? 0
+                                            : 1)) {
+                              return const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: Center(
+                                  child: SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
                                   ),
                                 ),
-                              ),
-                            ),
-                          );
-                        }
-                        final messageIndex = unreadDividerPosition != null &&
-                                index > unreadDividerPosition
-                            ? index - 1
-                            : index;
-                        final message =
-                            messages[messages.length - 1 - messageIndex];
-                        final mine =
-                            message.senderUid == SocialService.currentUid;
-                        final sticker = message.kind == 'sticker';
-                        // مقروءة/مسلَّمة: إيصال المحادثة (readAt/deliveredAt)
-                        // أو الحقول القديمة في الرسالة نفسها (رسائل سابقة).
-                        final isRead =
-                            message.readBy.contains(widget.otherUid) ||
-                                (otherRead != null &&
-                                    !message.createdAt.isAfter(otherRead));
-                        final isDelivered = isRead ||
-                            message.deliveredTo.contains(widget.otherUid) ||
-                            (otherDelivered != null &&
-                                !message.createdAt.isAfter(otherDelivered));
-                        final reactionCounts = <String, int>{};
-                        for (final reaction in message.reactions.values) {
-                          reactionCounts.update(reaction, (count) => count + 1,
-                              ifAbsent: () => 1);
-                        }
-                        final bubble = GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onDoubleTap: () => _quickHeart(message),
-                          onLongPress: () => _showMessageActions(message, mine),
-                          child: Container(
-                            constraints: BoxConstraints(
-                                maxWidth: MediaQuery.sizeOf(context).width *
-                                    (mine ? 0.78 : 0.70)),
-                            margin: const EdgeInsets.only(top: 4),
-                            padding: sticker
-                                ? const EdgeInsets.symmetric(
-                                    horizontal: 4, vertical: 2)
-                                : const EdgeInsets.symmetric(
-                                    horizontal: 13, vertical: 9),
-                            decoration: sticker
-                                ? null
-                                : BoxDecoration(
-                                    color: mine
-                                        ? AppColors.brandPurple
-                                        : colors.surfaceHigh,
-                                    borderRadius: BorderRadiusDirectional.only(
-                                      topStart: const Radius.circular(18),
-                                      topEnd: const Radius.circular(18),
-                                      bottomStart:
-                                          Radius.circular(mine ? 18 : 4),
-                                      bottomEnd: Radius.circular(mine ? 4 : 18),
-                                    ),
-                                  ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                if (message.replyToMessageId != null &&
-                                    (message.replyToText ?? '')
-                                        .trim()
-                                        .isNotEmpty)
-                                  GestureDetector(
-                                    behavior: HitTestBehavior.opaque,
-                                    onTap: NoteService.isNoteReplyId(
-                                            message.replyToMessageId)
-                                        ? null
-                                        : () => _jumpToMessage(
-                                            message.replyToMessageId!),
-                                    child: Container(
-                                    width: double.infinity,
-                                    margin: const EdgeInsets.only(bottom: 6),
+                              );
+                            }
+                            if (index == unreadDividerPosition) {
+                              return Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 10),
+                                child: Center(
+                                  child: Container(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 8),
+                                        horizontal: 12, vertical: 5),
                                     decoration: BoxDecoration(
-                                      color: mine
-                                          ? Colors.white.withOpacity(0.12)
-                                          : colors.surface,
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                        color: mine
-                                            ? Colors.white.withOpacity(0.2)
-                                            : colors.surfaceHigh,
+                                      color: colors.surfaceHigh,
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    child: Text(
+                                      tr('رسائل غير مقروءة'),
+                                      style: TextStyle(
+                                        color: colors.textDim,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
                                       ),
                                     ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          NoteService.isNoteReplyId(
-                                                  message.replyToMessageId)
-                                              ? tr('ردّ على ملاحظة')
-                                              : tr('ردّ على رسالة'),
-                                          style: TextStyle(
-                                            color: mine
-                                                ? Colors.white70
-                                                : colors.textDim,
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w600,
-                                          ),
+                                  ),
+                                ),
+                              );
+                            }
+                            final messageIndex =
+                                unreadDividerPosition != null &&
+                                        index > unreadDividerPosition
+                                    ? index - 1
+                                    : index;
+                            final message =
+                                messages[messages.length - 1 - messageIndex];
+                            final mine =
+                                message.senderUid == SocialService.currentUid;
+                            final sticker = message.kind == 'sticker';
+                            // مقروءة/مسلَّمة: إيصال المحادثة (readAt/deliveredAt)
+                            // أو الحقول القديمة في الرسالة نفسها (رسائل سابقة).
+                            final isRead =
+                                message.readBy.contains(widget.otherUid) ||
+                                    (otherRead != null &&
+                                        !message.createdAt.isAfter(otherRead));
+                            final isDelivered = isRead ||
+                                message.deliveredTo.contains(widget.otherUid) ||
+                                (otherDelivered != null &&
+                                    !message.createdAt.isAfter(otherDelivered));
+                            // المجموعة: «شوهد بواسطة ...» بدل علامات الإيصال
+                            // (كإنستغرام)، وتظهر أسفل أحدث رسالة أرسلتُها فقط.
+                            final groupOthers = _isGroup
+                                ? ((_chatData?['participants'] as List? ??
+                                        const [])
+                                    .cast<String>()
+                                    .where((uid) =>
+                                        uid != SocialService.currentUid)
+                                    .toList())
+                                : const <String>[];
+                            final groupReaders = _isGroup
+                                ? groupOthers.where((uid) {
+                                    final at = _stampOf('readAt', uid);
+                                    return message.readBy.contains(uid) ||
+                                        (at != null &&
+                                            !message.createdAt.isAfter(at));
+                                  }).toList()
+                                : const <String>[];
+                            // تجميع الرسائل المتتالية لنفس المرسل (كإنستغرام):
+                            // الصورة والوقت يظهران على أحدث رسالة في المجموعة فقط.
+                            final newer = messageIndex >= 1
+                                ? messages[messages.length - messageIndex]
+                                : null;
+                            final grouped = newer != null &&
+                                newer.senderUid == message.senderUid &&
+                                _sameDay(newer.createdAt, message.createdAt) &&
+                                newer.createdAt
+                                        .difference(message.createdAt)
+                                        .inMinutes <
+                                    5;
+                            // المجموعة: اسم المرسل يظهر أعلى أول رسالة في التجميع.
+                            final older = messageIndex + 1 < messages.length
+                                ? messages[messages.length - 2 - messageIndex]
+                                : null;
+                            final startsRun = _isGroup &&
+                                !mine &&
+                                (older == null ||
+                                    older.senderUid != message.senderUid ||
+                                    !_sameDay(
+                                        older.createdAt, message.createdAt) ||
+                                    message.createdAt
+                                            .difference(older.createdAt)
+                                            .inMinutes >=
+                                        5);
+                            final reactionCounts = <String, int>{};
+                            for (final reaction in message.reactions.values) {
+                              reactionCounts.update(
+                                  reaction, (count) => count + 1,
+                                  ifAbsent: () => 1);
+                            }
+                            // رسالة صورة: تُعرض بلا فقاعة (لا خلفية ولا حشو)
+                            // كإنستغرام، والنص المصاحب يظهر داخل فقاعة أسفلها.
+                            final hasImage = message.kind == 'image' &&
+                                (message.imageUrl != null ||
+                                    message.imageBytes != null);
+                            // صورة «تُعرض مرة واحدة»: لا تُعرض للمرسل، ومبهمة
+                            // للمستلم حتى يفتحها.
+                            final isViewOnce = hasImage && message.viewOnce;
+                            final viewOnceOpened = !isViewOnce
+                                ? false
+                                : (mine
+                                    ? message.viewedBy.any(
+                                        (u) => u != SocialService.currentUid)
+                                    : message.viewedBy
+                                        .contains(SocialService.currentUid));
+                            // مشاركة غنية (بطاقة منشور/ملف شخصي): بلا فقاعة.
+                            final isShare = message.kind == 'share';
+                            // موقع مُرسل: بطاقة بلا فقاعة (كإنستغرام).
+                            final isLocation = message.kind == 'location' &&
+                                message.lat != null &&
+                                message.lng != null;
+                            // نص افتراضي للصور بلا تعليق: لا يُعرض كتعليق.
+                            final rawCaption =
+                                hasImage ? message.text.trim() : '';
+                            final caption = (rawCaption == '📷 صورة' ||
+                                    rawCaption == '📷 Photo')
+                                ? ''
+                                : rawCaption;
+                            final hasQuote = message.replyToMessageId != null &&
+                                (message.replyToText ?? '').trim().isNotEmpty;
+                            // عرض إنستغرام: الصورة تملأ عرض الفقاعة (بحد أقصى 340)
+                            // حتى تندمج مع فقاعة النص بنفس العرض تماماً.
+                            final fullMax = MediaQuery.sizeOf(context).width *
+                                (mine ? 0.78 : 0.70);
+                            final maxW = (hasImage || isShare || isLocation) &&
+                                    fullMax > 340.0
+                                ? 340.0
+                                : fullMax;
+                            final selected = _selectedIds.contains(message.id);
+                            final bubble = GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              // في وضع التحديد يتولّى الصف كله النقر لتحديد الرسالة.
+                              onDoubleTap: _selecting
+                                  ? null
+                                  : () => _quickHeart(message),
+                              onLongPress: _selecting
+                                  ? null
+                                  : () => _showMessageActions(message, mine),
+                              child: Container(
+                                constraints: BoxConstraints(maxWidth: maxW),
+                                margin: EdgeInsets.only(top: grouped ? 2 : 4),
+                                padding: hasImage
+                                    ? (hasQuote
+                                        ? const EdgeInsetsDirectional.fromSTEB(
+                                            6, 6, 6, 0)
+                                        : EdgeInsets.zero)
+                                    : (sticker || isShare || isLocation
+                                        ? EdgeInsets.zero
+                                        : const EdgeInsets.symmetric(
+                                            horizontal: 13, vertical: 9)),
+                                decoration: (sticker ||
+                                        hasImage ||
+                                        isShare ||
+                                        isLocation)
+                                    ? null
+                                    : BoxDecoration(
+                                        color: mine
+                                            ? AppColors.brandPurple
+                                            : colors.surfaceHigh,
+                                        borderRadius:
+                                            BorderRadiusDirectional.only(
+                                          topStart: const Radius.circular(18),
+                                          topEnd: const Radius.circular(18),
+                                          // ذيل الفقاعة يظهر على أحدث رسالة فقط.
+                                          bottomStart: Radius.circular(
+                                              mine ? 18 : (grouped ? 18 : 4)),
+                                          bottomEnd: Radius.circular(
+                                              mine ? (grouped ? 18 : 4) : 18),
                                         ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          message.replyToText ?? '',
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            color: mine
-                                                ? Colors.white
-                                                : colors.text,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                          textDirection:
-                                              SocialService.inferTextDirection(
-                                                  message.replyToText ?? ''),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  ),
-                                if (message.kind == 'image' &&
-                                    (message.imageUrl != null ||
-                                        message.imageBytes != null))
-                                  _ChatImage(
-                                    url: message.imageUrl,
-                                    bytes: message.imageBytes,
-                                    onTap: () => message.imageUrl != null
-                                        ? _openNetworkImage(message.imageUrl!)
-                                        : _openImage(message.imageBytes!),
-                                  )
-                                else if (sticker)
-                                  StickerMessage(message.text)
-                                else
-                                  _messageBody(message.text, mine: mine),
-                                if (reactionCounts.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 5),
-                                    child: Wrap(
-                                      spacing: 4,
-                                      children: [
-                                        for (final reaction
-                                            in reactionCounts.entries)
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 6, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              color: mine
-                                                  ? Colors.white
-                                                      .withOpacity(0.16)
-                                                  : colors.surface,
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                            ),
-                                            child: Text(
-                                              '${reaction.key} ${reaction.value}',
-                                              style:
-                                                  const TextStyle(fontSize: 11),
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        );
-                        // علامتا القراءة والوقت أسفل الفقاعة (خارجها).
-                        final meta = Padding(
-                          padding: const EdgeInsetsDirectional.only(
-                              top: 2, bottom: 4, start: 4, end: 4),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (mine) ...[
-                                Icon(
-                                  isDelivered
-                                      ? Icons.done_all_rounded
-                                      : Icons.done_rounded,
-                                  size: 16,
-                                  // قُرئت: علامتان زرقاوان (مثل واتساب).
-                                  color: isRead
-                                      ? const Color(0xFF4FC3F7)
-                                      : isDelivered
-                                          ? colors.textDim
-                                          : colors.textDim.withOpacity(0.6),
-                                ),
-                                const SizedBox(width: 4),
-                              ],
-                              if (message.edited) ...[
-                                Text(
-                                  tr('معدّلة'),
-                                  style: TextStyle(
-                                    color: colors.textDim,
-                                    fontSize: 10,
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                              ],
-                              Text(
-                                _clock(message.createdAt),
-                                style: TextStyle(
-                                  color: colors.textDim,
-                                  fontSize: 10,
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                        final bubbleWithMeta = Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: mine
-                              ? CrossAxisAlignment.end
-                              : CrossAxisAlignment.start,
-                          children: [bubble, meta],
-                        );
-                        final alignedRow = Align(
-                          alignment: mine
-                              ? AlignmentDirectional.centerEnd
-                              : AlignmentDirectional.centerStart,
-                          child: mine
-                              ? bubbleWithMeta
-                              : Row(
-                                  mainAxisSize: MainAxisSize.min,
+                                      ),
+                                child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.end,
                                   children: [
-                                    // النقر على صورة المرسل يفتح حسابه.
-                                    Padding(
-                                      padding: const EdgeInsetsDirectional.only(
-                                          end: 6, bottom: 22),
-                                      child: UserAvatar(
-                                        uid: message.senderUid,
-                                        radius: 14,
-                                        onTap: () => openProfile(
-                                            context, message.senderUid),
+                                    // وسم إعادة التوجيه أعلى الفقاعة (كإنستغرام).
+                                    if (message.forwarded && !hasImage)
+                                      Padding(
+                                        padding:
+                                            const EdgeInsets.only(bottom: 3),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.shortcut_rounded,
+                                              size: 13,
+                                              color: mine
+                                                  ? Colors.white70
+                                                  : colors.textDim,
+                                            ),
+                                            const SizedBox(width: 3),
+                                            Text(
+                                              tr('مُعاد توجيهه'),
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontStyle: FontStyle.italic,
+                                                color: mine
+                                                    ? Colors.white70
+                                                    : colors.textDim,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                    Flexible(child: bubbleWithMeta),
+                                    if (message.replyToMessageId != null &&
+                                        (message.replyToText ?? '')
+                                            .trim()
+                                            .isNotEmpty)
+                                      GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onTap: NoteService.isNoteReplyId(
+                                                message.replyToMessageId)
+                                            ? null
+                                            : () => _jumpToMessage(
+                                                message.replyToMessageId!),
+                                        child: Container(
+                                          width: double.infinity,
+                                          margin:
+                                              const EdgeInsets.only(bottom: 6),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 10, vertical: 8),
+                                          decoration: BoxDecoration(
+                                            color: mine
+                                                ? Colors.white.withOpacity(0.12)
+                                                : colors.surface,
+                                            borderRadius:
+                                                BorderRadius.circular(10),
+                                            border: Border.all(
+                                              color: mine
+                                                  ? Colors.white
+                                                      .withOpacity(0.2)
+                                                  : colors.surfaceHigh,
+                                            ),
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                NoteService.isNoteReplyId(
+                                                        message
+                                                            .replyToMessageId)
+                                                    ? tr('ردّ على ملاحظة')
+                                                    : tr('ردّ على رسالة'),
+                                                style: TextStyle(
+                                                  color: mine
+                                                      ? Colors.white70
+                                                      : colors.textDim,
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                message.replyToText ?? '',
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: mine
+                                                      ? Colors.white
+                                                      : colors.text,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                                textDirection: SocialService
+                                                    .inferTextDirection(
+                                                        message.replyToText ??
+                                                            ''),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    if (hasImage)
+                                      isViewOnce
+                                          ? _ViewOnceImage(
+                                              url: message.imageUrl,
+                                              bytes: message.imageBytes,
+                                              width: maxW,
+                                              mine: mine,
+                                              opened: viewOnceOpened,
+                                              borderRadius:
+                                                  BorderRadiusDirectional.only(
+                                                topStart:
+                                                    const Radius.circular(18),
+                                                topEnd:
+                                                    const Radius.circular(18),
+                                                bottomStart: Radius.circular(
+                                                    caption.isEmpty ? 18 : 0),
+                                                bottomEnd: Radius.circular(
+                                                    caption.isEmpty ? 18 : 0),
+                                              ),
+                                              onReveal: () async {
+                                                try {
+                                                  await SocialService
+                                                      .markMessageViewed(
+                                                          widget.conversationId,
+                                                          message.id);
+                                                } catch (_) {}
+                                              },
+                                            )
+                                          : _ChatImage(
+                                              url: message.imageUrl,
+                                              bytes: message.imageBytes,
+                                              width: maxW,
+                                              // مع نص: تندمج الصورة مع الفقاعة
+                                              // أسفلها (زوايا مشتركة) كإنستغرام.
+                                              borderRadius:
+                                                  BorderRadiusDirectional.only(
+                                                topStart:
+                                                    const Radius.circular(18),
+                                                topEnd:
+                                                    const Radius.circular(18),
+                                                bottomStart: Radius.circular(
+                                                    caption.isEmpty ? 18 : 0),
+                                                bottomEnd: Radius.circular(
+                                                    caption.isEmpty ? 18 : 0),
+                                              ),
+                                              onTap: () =>
+                                                  message.imageUrl != null
+                                                      ? _openNetworkImage(
+                                                          message.imageUrl!)
+                                                      : _openImage(
+                                                          message.imageBytes!),
+                                            )
+                                    else if (sticker)
+                                      StickerMessage(message.text)
+                                    else if (isShare)
+                                      _ShareCard(
+                                        message: message,
+                                        mine: mine,
+                                        width: maxW,
+                                        onTap: () => _openShareTarget(message),
+                                      )
+                                    else if (isLocation)
+                                      _LocationCard(
+                                        message: message,
+                                        mine: mine,
+                                        width: maxW,
+                                        onTap: () => _openLocation(message),
+                                      )
+                                    else
+                                      _messageBody(message.text, mine: mine),
+                                    // نص مصاحب للصورة: فقاعة ملتصقة أسفلها.
+                                    if (caption.isNotEmpty)
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 12, vertical: 8),
+                                        decoration: BoxDecoration(
+                                          color: mine
+                                              ? AppColors.brandPurple
+                                              : colors.surfaceHigh,
+                                          borderRadius:
+                                              BorderRadiusDirectional.only(
+                                            bottomStart: Radius.circular(
+                                                mine ? 18 : (grouped ? 18 : 4)),
+                                            bottomEnd: Radius.circular(
+                                                mine ? (grouped ? 18 : 4) : 18),
+                                          ),
+                                        ),
+                                        child:
+                                            _messageBody(caption, mine: mine),
+                                      ),
+                                    if (reactionCounts.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 5),
+                                        child: Wrap(
+                                          spacing: 4,
+                                          children: [
+                                            for (final reaction
+                                                in reactionCounts.entries)
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 6,
+                                                        vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: (sticker || hasImage)
+                                                      ? colors.surfaceHigh
+                                                      : (mine
+                                                          ? Colors.white
+                                                              .withOpacity(0.16)
+                                                          : colors.surface),
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                ),
+                                                child: Text(
+                                                  '${reaction.key} ${reaction.value}',
+                                                  style: const TextStyle(
+                                                      fontSize: 11),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
                                   ],
                                 ),
-                        );
-                        final row = KeyedSubtree(
-                          key: _keyFor(message.id),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 300),
-                            decoration: BoxDecoration(
-                              color: _highlightId == message.id
-                                  ? AppColors.brandOrange.withOpacity(0.18)
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: alignedRow,
-                          ),
-                        );
-                        // فاصل التاريخ فوق أول رسالة في كل يوم.
-                        final previous = messageIndex + 1 < messages.length
-                            ? messages[messages.length - 2 - messageIndex]
-                            : null;
-                        if (previous != null &&
-                            _sameDay(previous.createdAt, message.createdAt)) {
-                          return row;
-                        }
-                        return Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: colors.surfaceHigh,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  _dayLabel(message.createdAt),
-                                  style: TextStyle(
-                                      color: colors.textDim, fontSize: 11),
+                              ),
+                            );
+                            // علامتا القراءة والوقت أسفل الفقاعة (خارجها).
+                            final meta = Padding(
+                              padding: const EdgeInsetsDirectional.only(
+                                  top: 2, bottom: 4, start: 4, end: 4),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  // المجموعة: لا علامات إيصال (كإنستغرام).
+                                  if (mine && !_isGroup) ...[
+                                    Icon(
+                                      isDelivered
+                                          ? Icons.done_all_rounded
+                                          : Icons.done_rounded,
+                                      size: 16,
+                                      // قُرئت: علامتان زرقاوان (مثل واتساب).
+                                      color: isRead
+                                          ? const Color(0xFF4FC3F7)
+                                          : isDelivered
+                                              ? colors.textDim
+                                              : colors.textDim.withOpacity(0.6),
+                                    ),
+                                    const SizedBox(width: 4),
+                                  ],
+                                  if (message.edited) ...[
+                                    Text(
+                                      tr('معدّلة'),
+                                      style: TextStyle(
+                                        color: colors.textDim,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                  ],
+                                  Text(
+                                    _clock(message.createdAt),
+                                    style: TextStyle(
+                                      color: colors.textDim,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                            final bubbleWithMeta = Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: mine
+                                  ? CrossAxisAlignment.end
+                                  : CrossAxisAlignment.start,
+                              children: [
+                                // اسم المرسل أعلى فقاعة المجموعة (لمن ليس أنا).
+                                if (startsRun)
+                                  Padding(
+                                    padding: const EdgeInsetsDirectional.only(
+                                        start: 4, bottom: 2),
+                                    child: _SenderName(uid: message.senderUid),
+                                  ),
+                                bubble,
+                                // الوقت والإيصال على أحدث رسالة في المجموعة فقط.
+                                if (!grouped) meta,
+                                // «شوهد بواسطة ...» أسفل أحدث رسالة أرسلتُها (كإنستغرام).
+                                if (mine &&
+                                    _isGroup &&
+                                    !grouped &&
+                                    messageIndex == 0 &&
+                                    groupReaders.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsetsDirectional.only(
+                                        start: 4, bottom: 4),
+                                    child: _SeenByLine(
+                                      readers: groupReaders,
+                                      total: groupOthers.length,
+                                    ),
+                                  ),
+                              ],
+                            );
+                            final alignedRow = Align(
+                              alignment: mine
+                                  ? AlignmentDirectional.centerEnd
+                                  : AlignmentDirectional.centerStart,
+                              child: mine
+                                  ? bubbleWithMeta
+                                  : Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.end,
+                                      children: [
+                                        // الصورة تظهر لأول رسالة في المجموعة فقط،
+                                        // والنقر عليها يفتح حساب المرسل.
+                                        if (grouped)
+                                          const SizedBox(width: 34)
+                                        else
+                                          Padding(
+                                            padding: const EdgeInsetsDirectional
+                                                .only(
+                                              end: 6,
+                                              bottom: 22,
+                                            ),
+                                            child: UserAvatar(
+                                              uid: message.senderUid,
+                                              radius: 14,
+                                              onTap: () => openProfile(
+                                                  context, message.senderUid),
+                                            ),
+                                          ),
+                                        Flexible(child: bubbleWithMeta),
+                                      ],
+                                    ),
+                            );
+                            // السحب يميناً أو يساراً = ردّ على الرسالة (كإنستغرام)،
+                            // وفي وضع التحديد يستبدل الصف بنقرة تحديد.
+                            final rowBody = _selecting
+                                ? GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () =>
+                                        _toggleMessageSelected(message.id),
+                                    child: Row(
+                                      children: [
+                                        Padding(
+                                          padding:
+                                              const EdgeInsetsDirectional.only(
+                                                  start: 4, end: 8),
+                                          child: Icon(
+                                            selected
+                                                ? Icons.check_circle_rounded
+                                                : Icons.circle_outlined,
+                                            size: 22,
+                                            color: selected
+                                                ? AppColors.brandPurple
+                                                : colors.textDim,
+                                          ),
+                                        ),
+                                        Expanded(child: alignedRow),
+                                      ],
+                                    ),
+                                  )
+                                : _SwipeToReply(
+                                    alignment: mine
+                                        ? AlignmentDirectional.centerEnd
+                                        : AlignmentDirectional.centerStart,
+                                    onReply: () =>
+                                        setState(() => _replyTarget = message),
+                                    child: alignedRow,
+                                  );
+                            final row = KeyedSubtree(
+                              key: _keyFor(message.id),
+                              // عزل إعادة الرسم لكل رسالة: تمرير أنعم في القوائم الطويلة.
+                              child: RepaintBoundary(
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 300),
+                                  decoration: BoxDecoration(
+                                    color: selected
+                                        ? AppColors.brandPurple
+                                            .withOpacity(0.12)
+                                        : (_highlightId == message.id
+                                            ? AppColors.brandOrange
+                                                .withOpacity(0.18)
+                                            : Colors.transparent),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: rowBody,
                                 ),
                               ),
-                            ),
-                            row,
+                            );
+                            // فاصل التاريخ فوق أول رسالة في كل يوم.
+                            final previous = messageIndex + 1 < messages.length
+                                ? messages[messages.length - 2 - messageIndex]
+                                : null;
+                            if (previous != null &&
+                                _sameDay(
+                                    previous.createdAt, message.createdAt)) {
+                              return row;
+                            }
+                            return Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 8),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: colors.surfaceHigh,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      _dayLabel(message.createdAt),
+                                      style: TextStyle(
+                                          color: colors.textDim, fontSize: 11),
+                                    ),
+                                  ),
+                                ),
+                                row,
+                              ],
+                            );
+                          },
+                        );
+                        return Stack(
+                          children: [
+                            Positioned.fill(child: list),
+                            // شريط الرسالة المثبّتة أعلى القائمة (مثل إنستغرام).
+                            if (pinnedMessage != null)
+                              PositionedDirectional(
+                                top: 0,
+                                start: 0,
+                                end: 0,
+                                child: _PinnedMessageBanner(
+                                  message: pinnedMessage,
+                                  onOpen: () =>
+                                      _jumpToMessage(pinnedMessage!.id),
+                                  onUnpin: () => _setPinnedMessage(null),
+                                ),
+                              ),
+                            // زر النزول لأحدث رسالة مع عدّاد الجديد.
+                            if (_awayFromBottom)
+                              PositionedDirectional(
+                                bottom: 14,
+                                end: 14,
+                                child: _JumpToLatestButton(
+                                  count: _newCount,
+                                  onTap: _jumpToLatest,
+                                ),
+                              ),
                           ],
                         );
                       },
-                    );
-                  },
+                    ),
+                  ),
+                  if (_typingUsers.keys
+                      .any((uid) => uid != SocialService.currentUid))
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
+                        child: _TypingBubble(
+                          // في المجموعة: صورة آخر من يكتب فعلاً.
+                          otherUid: _isGroup
+                              ? _typingUsers.keys.firstWhere(
+                                  (uid) => uid != SocialService.currentUid,
+                                  orElse: () => widget.otherUid)
+                              : widget.otherUid,
+                        ),
+                      ),
+                    ),
+                  if (!blockState.blocked && _waitingForReply)
+                    SafeArea(
+                      top: false,
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 14),
+                        color: colors.surfaceHigh,
+                        child: Text(
+                          tr('انتظر رد الطرف الآخر لتكمل المراسلة'),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: colors.textDim),
+                        ),
+                      ),
+                    )
+                  else if (!blockState.blocked) ...[
+                    if (_firstMessageToStranger)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                        child: Text(
+                          tr('هذه أول رسالة لغير صديق: نص فقط، ولن تستطيع إرسال غيرها حتى يردّ.'),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: colors.textDim, fontSize: 12),
+                        ),
+                      ),
+                    if (_failedText != null || _failedImages.isNotEmpty)
+                      Container(
+                        margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: colors.surfaceHigh,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                tr('تعذر إرسال الرسالة'),
+                                style: TextStyle(color: colors.textDim),
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: _sending
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        if (_failedImages.isNotEmpty &&
+                                            _pendingImages.isEmpty) {
+                                          _pendingImages.addAll(_failedImages);
+                                        }
+                                        if (_failedText != null &&
+                                            _text.text.isEmpty) {
+                                          _text.text = _failedText!;
+                                        }
+                                      });
+                                      _send();
+                                    },
+                              icon: const Icon(Icons.refresh_rounded),
+                              label: Text(tr('إعادة المحاولة')),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (_pendingImages.isNotEmpty)
+                      _PendingImagesStrip(
+                        images: _pendingImages,
+                        onRemove: (index) =>
+                            setState(() => _pendingImages.removeAt(index)),
+                      ),
+                    if (_viewOnce || _vanish)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: colors.surfaceHigh,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.visibility_off_outlined,
+                                size: 16, color: colors.textDim),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _viewOnce && _vanish
+                                    ? tr(
+                                        'الصورة ستُعرض مرة واحدة · والرسائل تختفي بعد ساعة')
+                                    : _viewOnce
+                                        ? tr('الصورة التالية ستُعرض مرة واحدة')
+                                        : tr(
+                                            'وضع الاختفاء: الرسائل تختفي بعد ساعة'),
+                                style: TextStyle(
+                                    color: colors.textDim, fontSize: 12),
+                              ),
+                            ),
+                            if (_viewOnce)
+                              IconButton(
+                                onPressed: () =>
+                                    setState(() => _viewOnce = false),
+                                icon: const Icon(Icons.close_rounded, size: 16),
+                                visualDensity: VisualDensity.compact,
+                                tooltip: tr('إلغاء «مرة واحدة»'),
+                              ),
+                          ],
+                        ),
+                      ),
+                    if (_replyTarget != null)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: colors.surfaceHigh,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '${tr('رد على')}: ${_replyTarget!.text}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    color: colors.textDim, fontSize: 12),
+                                textDirection: SocialService.inferTextDirection(
+                                    _replyTarget!.text),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () =>
+                                  setState(() => _replyTarget = null),
+                              icon: const Icon(Icons.close_rounded, size: 18),
+                              tooltip: tr('إلغاء الرد'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (_editTarget != null)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                        padding: const EdgeInsetsDirectional.only(
+                            start: 12, top: 4, bottom: 4),
+                        decoration: BoxDecoration(
+                          color: colors.surfaceHigh,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.edit_rounded,
+                                size: 16, color: colors.textDim),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '${tr('تعديل الرسالة')}: ${_editTarget!.text}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    color: colors.textDim, fontSize: 12),
+                                textDirection: SocialService.inferTextDirection(
+                                    _editTarget!.text),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: _sending ? null : _cancelEdit,
+                              icon: const Icon(Icons.close_rounded, size: 18),
+                              tooltip: tr('إلغاء التعديل'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    SafeArea(
+                      top: false,
+                      bottom: !_showStickers,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 7, 8, 8),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            // الأزرار تستدعي المنتقي مباشرة داخل الضغطة (شرط المتصفحات).
+                            IconButton(
+                              tooltip: _viewOnce
+                                  ? tr('إلغاء الإرسال مرة واحدة')
+                                  : tr('إرسال صورة مرة واحدة'),
+                              visualDensity: VisualDensity.compact,
+                              color: _viewOnce ? AppColors.accent : null,
+                              onPressed: (_sending ||
+                                      _firstMessageToStranger ||
+                                      _editTarget != null)
+                                  ? null
+                                  : () =>
+                                      setState(() => _viewOnce = !_viewOnce),
+                              icon: Icon(_viewOnce
+                                  ? Icons.visibility_off_rounded
+                                  : Icons.visibility_outlined),
+                            ),
+                            IconButton(
+                              tooltip: tr('التقاط صورة'),
+                              visualDensity: VisualDensity.compact,
+                              onPressed: (_sending ||
+                                      _firstMessageToStranger ||
+                                      _editTarget != null)
+                                  ? null
+                                  : () => _pickImage(ImageSource.camera),
+                              icon: const Icon(Icons.photo_camera_outlined),
+                            ),
+                            IconButton(
+                              tooltip: tr('إرسال صورة'),
+                              visualDensity: VisualDensity.compact,
+                              onPressed: (_sending ||
+                                      _firstMessageToStranger ||
+                                      _editTarget != null)
+                                  ? null
+                                  : () => _pickImage(ImageSource.gallery),
+                              icon: const Icon(Icons.image_outlined),
+                            ),
+                            IconButton(
+                              tooltip: tr('الملصقات والرموز التعبيرية'),
+                              visualDensity: VisualDensity.compact,
+                              onPressed: _toggleStickers,
+                              icon: Icon(_showStickers
+                                  ? Icons.keyboard_alt_outlined
+                                  : Icons.emoji_emotions_outlined),
+                            ),
+                            IconButton(
+                              tooltip: tr('إرسال موقعي'),
+                              visualDensity: VisualDensity.compact,
+                              onPressed: (_sending ||
+                                      _firstMessageToStranger ||
+                                      _editTarget != null)
+                                  ? null
+                                  : _sendLocation,
+                              icon: const Icon(Icons.location_on_outlined),
+                            ),
+                            Expanded(
+                              child: TextField(
+                                controller: _text,
+                                focusNode: _messageFocus,
+                                minLines: 1,
+                                maxLines: 4,
+                                maxLength: 2000,
+                                textInputAction: TextInputAction.send,
+                                onSubmitted: (_) => _send(),
+                                decoration: InputDecoration(
+                                  hintText: tr('اكتب رسالة...'),
+                                  counterText: '',
+                                  isDense: true,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            IconButton.filled(
+                              onPressed: _sending ? null : _send,
+                              style: IconButton.styleFrom(
+                                  backgroundColor: AppColors.accent),
+                              icon: _sending
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2, color: Colors.white))
+                                  : const Icon(Icons.send_rounded,
+                                      color: Colors.white),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (_showStickers)
+                      SafeArea(
+                        top: false,
+                        child: StickerPanel(controller: _text),
+                      ),
+                  ],
+                ],
+              ),
+            ));
+      },
+    );
+  }
+}
+
+/// شريط الرسالة المثبّتة أعلى قائمة المحادثة: يفتح الرسالة أو يلغي التثبيت.
+class _PinnedMessageBanner extends StatelessWidget {
+  final ChatMessage message;
+  final VoidCallback onOpen;
+  final VoidCallback onUnpin;
+
+  const _PinnedMessageBanner({
+    required this.message,
+    required this.onOpen,
+    required this.onUnpin,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final raw = message.kind == 'image'
+        ? tr('صورة')
+        : (message.text.trim().isEmpty ? tr('مرفق') : message.text.trim());
+    return Material(
+      color: colors.surface,
+      child: InkWell(
+        onTap: onOpen,
+        child: Container(
+          padding: const EdgeInsetsDirectional.fromSTEB(12, 6, 4, 6),
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: colors.surfaceHigh)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 3,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: AppColors.brandPurple,
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              if (_typingUsers.keys
-                  .any((uid) => uid != SocialService.currentUid))
-                Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
-                    child: _TypingBubble(otherUid: widget.otherUid),
-                  ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      tr('رسالة مثبّتة'),
+                      style: const TextStyle(
+                        color: AppColors.brandPurple,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      raw,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: colors.text, fontSize: 12),
+                      textDirection: SocialService.inferTextDirection(raw),
+                    ),
+                  ],
                 ),
-              if (!blockState.blocked && _waitingForReply)
-                SafeArea(
-                  top: false,
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 14),
-                    color: colors.surfaceHigh,
-                    child: Text(
-                      tr('انتظر رد الطرف الآخر لتكمل المراسلة'),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: colors.textDim),
-                    ),
+              ),
+              GestureDetector(
+                onTap: onUnpin,
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Icon(Icons.push_pin_outlined,
+                      size: 18, color: colors.textDim),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// زر العودة إلى أحدث رسالة مع شارة عدد الرسائل الجديدة الواردة.
+class _JumpToLatestButton extends StatelessWidget {
+  final int count;
+  final VoidCallback onTap;
+
+  const _JumpToLatestButton({required this.count, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return Material(
+      color: colors.surfaceHigh,
+      elevation: 3,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.keyboard_arrow_down_rounded, color: colors.text),
+              if (count > 0) ...[
+                const SizedBox(width: 4),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: AppColors.accent,
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                )
-              else if (!blockState.blocked) ...[
-                if (_firstMessageToStranger)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-                    child: Text(
-                      tr('هذه أول رسالة لغير صديق: نص فقط، ولن تستطيع إرسال غيرها حتى يردّ.'),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: colors.textDim, fontSize: 12),
-                    ),
-                  ),
-                if (_failedText != null || _failedImages.isNotEmpty)
-                  Container(
-                    margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: colors.surfaceHigh,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            tr('تعذر إرسال الرسالة'),
-                            style: TextStyle(color: colors.textDim),
-                          ),
-                        ),
-                        TextButton.icon(
-                          onPressed: _sending
-                              ? null
-                              : () {
-                                  setState(() {
-                                    if (_failedImages.isNotEmpty &&
-                                        _pendingImages.isEmpty) {
-                                      _pendingImages.addAll(_failedImages);
-                                    }
-                                    if (_failedText != null &&
-                                        _text.text.isEmpty) {
-                                      _text.text = _failedText!;
-                                    }
-                                  });
-                                  _send();
-                                },
-                          icon: const Icon(Icons.refresh_rounded),
-                          label: Text(tr('إعادة المحاولة')),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (_pendingImages.isNotEmpty)
-                  _PendingImagesStrip(
-                    images: _pendingImages,
-                    onRemove: (index) =>
-                        setState(() => _pendingImages.removeAt(index)),
-                  ),
-                if (_replyTarget != null)
-                  Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: colors.surfaceHigh,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '${tr('رد على')}: ${_replyTarget!.text}',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style:
-                                TextStyle(color: colors.textDim, fontSize: 12),
-                            textDirection: SocialService.inferTextDirection(
-                                _replyTarget!.text),
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => setState(() => _replyTarget = null),
-                          icon: const Icon(Icons.close_rounded, size: 18),
-                          tooltip: tr('إلغاء الرد'),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (_editTarget != null)
-                  Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                    padding: const EdgeInsetsDirectional.only(
-                        start: 12, top: 4, bottom: 4),
-                    decoration: BoxDecoration(
-                      color: colors.surfaceHigh,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.edit_rounded,
-                            size: 16, color: colors.textDim),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            '${tr('تعديل الرسالة')}: ${_editTarget!.text}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style:
-                                TextStyle(color: colors.textDim, fontSize: 12),
-                            textDirection: SocialService.inferTextDirection(
-                                _editTarget!.text),
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: _sending ? null : _cancelEdit,
-                          icon: const Icon(Icons.close_rounded, size: 18),
-                          tooltip: tr('إلغاء التعديل'),
-                        ),
-                      ],
-                    ),
-                  ),
-                SafeArea(
-                  top: false,
-                  bottom: !_showStickers,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 7, 8, 8),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        // الأزرار تستدعي المنتقي مباشرة داخل الضغطة (شرط المتصفحات).
-                        IconButton(
-                          tooltip: tr('التقاط صورة'),
-                          visualDensity: VisualDensity.compact,
-                          onPressed: (_sending ||
-                                  _firstMessageToStranger ||
-                                  _editTarget != null)
-                              ? null
-                              : () => _pickImage(ImageSource.camera),
-                          icon: const Icon(Icons.photo_camera_outlined),
-                        ),
-                        IconButton(
-                          tooltip: tr('إرسال صورة'),
-                          visualDensity: VisualDensity.compact,
-                          onPressed: (_sending ||
-                                  _firstMessageToStranger ||
-                                  _editTarget != null)
-                              ? null
-                              : () => _pickImage(ImageSource.gallery),
-                          icon: const Icon(Icons.image_outlined),
-                        ),
-                        IconButton(
-                          tooltip: tr('الملصقات والرموز التعبيرية'),
-                          visualDensity: VisualDensity.compact,
-                          onPressed: _toggleStickers,
-                          icon: Icon(_showStickers
-                              ? Icons.keyboard_alt_outlined
-                              : Icons.emoji_emotions_outlined),
-                        ),
-                        Expanded(
-                          child: TextField(
-                            controller: _text,
-                            focusNode: _messageFocus,
-                            minLines: 1,
-                            maxLines: 4,
-                            maxLength: 2000,
-                            textInputAction: TextInputAction.send,
-                            onSubmitted: (_) => _send(),
-                            decoration: InputDecoration(
-                              hintText: tr('اكتب رسالة...'),
-                              counterText: '',
-                              isDense: true,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 5),
-                        IconButton.filled(
-                          onPressed: _sending ? null : _send,
-                          style: IconButton.styleFrom(
-                              backgroundColor: AppColors.accent),
-                          icon: _sending
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2, color: Colors.white))
-                              : const Icon(Icons.send_rounded,
-                                  color: Colors.white),
-                        ),
-                      ],
+                  child: Text(
+                    count > 99 ? '99+' : '$count',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
-                if (_showStickers)
-                  SafeArea(
-                    top: false,
-                    child: StickerPanel(controller: _text),
-                  ),
               ],
             ],
           ),
-        ));
+        ),
+      ),
+    );
+  }
+}
+
+/// السحب أفقياً على الرسالة = ردّ عليها (كإنستغرام)، مع أيقونة تظهر أثناء السحب.
+class _SwipeToReply extends StatefulWidget {
+  final AlignmentGeometry alignment;
+  final VoidCallback onReply;
+  final Widget child;
+
+  const _SwipeToReply({
+    required this.alignment,
+    required this.onReply,
+    required this.child,
+  });
+
+  @override
+  State<_SwipeToReply> createState() => _SwipeToReplyState();
+}
+
+class _SwipeToReplyState extends State<_SwipeToReply> {
+  static const double _threshold = 54;
+  static const double _maxDrag = 72;
+  double _drag = 0; // مقدار السحب للداخل (موجب دائماً).
+  bool _triggered = false;
+
+  /// اتجاه السحب الفيزيائي (x) الذي يُعدّ «نحو الوسط» حسب جهة الفقاعة واللغة.
+  double _inwardSign(BuildContext context) {
+    final mine = widget.alignment == AlignmentDirectional.centerEnd;
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    return (mine ? -1.0 : 1.0) * (rtl ? -1.0 : 1.0);
+  }
+
+  void _update(BuildContext context, double dx) {
+    if (_triggered) return;
+    final inward = dx * _inwardSign(context);
+    final next = (_drag + inward).clamp(0.0, _maxDrag).toDouble();
+    if (next == _drag) return;
+    setState(() => _drag = next);
+    if (_drag >= _threshold) {
+      _triggered = true;
+      HapticFeedback.selectionClick();
+      widget.onReply();
+    }
+  }
+
+  void _reset() {
+    if (_drag == 0 && !_triggered) return;
+    setState(() {
+      _drag = 0;
+      _triggered = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // الأيقونة تظهر في الجهة المقابلة للفقاعة (حيث تتكوّن المساحة).
+    final iconAlignment = widget.alignment == AlignmentDirectional.centerEnd
+        ? AlignmentDirectional.centerStart
+        : AlignmentDirectional.centerEnd;
+    return GestureDetector(
+      behavior: HitTestBehavior.deferToChild,
+      onHorizontalDragUpdate: (details) => _update(context, details.delta.dx),
+      onHorizontalDragEnd: (_) => _reset(),
+      onHorizontalDragCancel: _reset,
+      child: Stack(
+        alignment: iconAlignment,
+        children: [
+          Opacity(
+            opacity: (_drag / _threshold).clamp(0.0, 1.0),
+            child: Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.brandPurple.withOpacity(0.15),
+              ),
+              child: const Icon(Icons.reply_rounded,
+                  size: 18, color: AppColors.brandPurple),
+            ),
+          ),
+          Transform.translate(
+            offset: Offset(_drag * _inwardSign(context), 0),
+            child: widget.child,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// معلومات المحادثة: ملف الطرف الآخر + شبكة الصور المشتركة (كإنستغرام).
+class ChatInfoScreen extends StatelessWidget {
+  final String conversationId;
+  final String otherUid;
+
+  const ChatInfoScreen({
+    super.key,
+    required this.conversationId,
+    required this.otherUid,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return Scaffold(
+      backgroundColor: colors.bg,
+      appBar: AppBar(title: Text(tr('معلومات المحادثة'))),
+      body: StreamBuilder<AppUser?>(
+        stream: UserService.profileStream(otherUid),
+        builder: (context, snapshot) {
+          final user = snapshot.data;
+          return ListView(
+            children: [
+              const SizedBox(height: 18),
+              Center(
+                child: UserAvatar(
+                  uid: otherUid,
+                  fallbackName: user?.username ?? '',
+                  radius: 44,
+                  profile: user,
+                  onTap: () => openProfile(context, otherUid),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Center(
+                child: Text(
+                  user?.displayName ?? '',
+                  style: TextStyle(
+                    color: colors.text,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if ((user?.username ?? '').isNotEmpty) ...[
+                const SizedBox(height: 3),
+                Center(
+                  child: Text(
+                    '@${user!.username}',
+                    style: TextStyle(color: colors.textDim, fontSize: 13),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: OutlinedButton.icon(
+                  onPressed: () => openProfile(context, otherUid),
+                  icon: const Icon(Icons.person_outline, size: 18),
+                  label: Text(tr('عرض الملف الشخصي')),
+                ),
+              ),
+              const SizedBox(height: 22),
+              Padding(
+                padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 8),
+                child: Row(
+                  children: [
+                    Icon(Icons.photo_library_outlined,
+                        size: 18, color: colors.textDim),
+                    const SizedBox(width: 8),
+                    Text(
+                      tr('الصور في المحادثة'),
+                      style: TextStyle(
+                          color: colors.text, fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+              ),
+              _ChatMediaGrid(conversationId: conversationId),
+              const SizedBox(height: 24),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// شاشة معلومات المجموعة: تعديل الاسم/الصورة وإدارة الأعضاء والمشرفين.
+class _GroupInfoScreen extends StatefulWidget {
+  final String conversationId;
+
+  /// آخر نسخة معروفة من مستند المحادثة (لتجنّب انتظار أول تحديث).
+  final Map<String, dynamic>? data;
+
+  const _GroupInfoScreen({required this.conversationId, this.data});
+
+  @override
+  State<_GroupInfoScreen> createState() => _GroupInfoScreenState();
+}
+
+class _GroupInfoScreenState extends State<_GroupInfoScreen> {
+  final _picker = ImagePicker();
+  StreamSubscription<Map<String, dynamic>?>? _sub;
+  Map<String, dynamic>? _data;
+  bool _busy = false;
+
+  String get _me => SocialService.currentUid;
+
+  @override
+  void initState() {
+    super.initState();
+    _data = widget.data;
+    _sub = SocialService.chatStream(widget.conversationId).listen((data) {
+      if (mounted && data != null) setState(() => _data = data);
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  List<String> get _participants =>
+      ((_data?['participants'] as List?) ?? const []).cast<String>();
+
+  List<String> get _admins =>
+      ((_data?['admins'] as List?) ?? const []).cast<String>();
+
+  String get _createdBy => (_data?['createdBy'] as String?) ?? '';
+  String get _name => ((_data?['groupName'] as String?) ?? '').trim();
+  String get _photo => ((_data?['groupPhoto'] as String?) ?? '').trim();
+
+  /// أنا مشرف؟ (المنشئ مشرف دائماً.)
+  bool get _iAmAdmin => _createdBy == _me || _admins.contains(_me);
+
+  /// ترتيب الأعضاء: المنشئ أولاً ثم المشرفون ثم البقية.
+  List<String> get _sortedMembers {
+    int rank(String uid) {
+      if (uid == _createdBy) return 0;
+      return _admins.contains(uid) ? 1 : 2;
+    }
+
+    final list = [..._participants];
+    list.sort((a, b) {
+      final byRank = rank(a).compareTo(rank(b));
+      return byRank != 0 ? byRank : a.compareTo(b);
+    });
+    return list;
+  }
+
+  Future<void> _run(Future<void> Function() action, String failure) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await action();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(friendlyError(error, fallback: failure))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _editName() async {
+    final controller = TextEditingController(text: _name);
+    final value = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(tr('اسم المجموعة')),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: SocialService.groupNameMax,
+          decoration: InputDecoration(hintText: tr('اسم المجموعة')),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(tr('إلغاء')),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
+            child: Text(tr('حفظ')),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value == null || value.isEmpty || value == _name) return;
+    await _run(() => SocialService.setGroupName(widget.conversationId, value),
+        tr('تعذر تعديل اسم المجموعة'));
+  }
+
+  Future<void> _changePhoto() async {
+    final picked =
+        await _picker.pickImage(source: ImageSource.gallery, imageQuality: 88);
+    if (picked == null) return;
+    await _run(() async {
+      final bytes = await fitImageUnderLimit(await picked.readAsBytes());
+      final url = await PostService.uploadChatImage(bytes);
+      if (url == null) {
+        throw StateError(
+            tr('تغيير صورة المجموعة يتطلب تفعيل Cloudinary أو Storage'));
+      }
+      await SocialService.setGroupPhoto(widget.conversationId, url);
+    }, tr('تعذر تغيير صورة المجموعة'));
+  }
+
+  Future<void> _addMembers() async {
+    await Navigator.of(context).push<bool>(appRoute(
+      'groupAdd',
+      {'cid': widget.conversationId},
+      (_) => _AddGroupMembersScreen(
+        conversationId: widget.conversationId,
+        existing: _participants,
+      ),
+    ));
+  }
+
+  Future<void> _toggleAdmin(String uid) async {
+    final admin = !_admins.contains(uid);
+    await _run(
+      () => SocialService.setGroupAdmin(widget.conversationId, uid, admin),
+      admin ? tr('تعذر ترقية العضو') : tr('تعذر إزالة الإشراف'),
+    );
+  }
+
+  Future<void> _removeMember(String uid) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(tr('إزالة العضو؟')),
+        content: Text(tr('سيخرج هذا العضو من المجموعة.')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(tr('إلغاء')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(tr('إزالة')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await _run(
+        () => SocialService.removeGroupMember(widget.conversationId, uid),
+        tr('تعذر إزالة العضو'));
+  }
+
+  Future<void> _leave() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(tr('مغادرة المجموعة؟')),
+        content: Text(tr('لن تستقبل رسائل هذه المجموعة بعد الآن.')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(tr('إلغاء')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(tr('مغادرة')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await SocialService.leaveGroup(widget.conversationId);
+      if (mounted) Navigator.of(context).pop();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                friendlyError(error, fallback: tr('تعذر مغادرة المجموعة')))));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    if (_data == null) {
+      return Scaffold(
+        backgroundColor: colors.bg,
+        appBar: AppBar(title: Text(tr('معلومات المجموعة'))),
+        body: const AppLoading(),
+      );
+    }
+    return Scaffold(
+      backgroundColor: colors.bg,
+      appBar: AppBar(title: Text(tr('معلومات المجموعة'))),
+      body: ListView(
+        children: [
+          const SizedBox(height: 18),
+          Center(
+            child: Stack(
+              alignment: Alignment.bottomRight,
+              children: [
+                _GroupPhoto(
+                  participants: _participants,
+                  photoUrl: _photo,
+                  size: 88,
+                  onTap: _iAmAdmin && !_busy ? _changePhoto : null,
+                ),
+                if (_iAmAdmin)
+                  Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: colors.surface,
+                      border: Border.all(color: colors.surfaceHigh, width: 2),
+                    ),
+                    child: Icon(Icons.photo_camera_outlined,
+                        size: 16, color: colors.text),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Center(
+            child: Text(
+              _name.isEmpty ? tr('مجموعة') : _name,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: colors.text,
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(height: 3),
+          Center(
+            child: Text(
+              trf('{0} عضو', [_participants.length]),
+              style: TextStyle(color: colors.textDim, fontSize: 13),
+            ),
+          ),
+          if (_iAmAdmin) ...[
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: OutlinedButton.icon(
+                onPressed: _busy ? null : _editName,
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                label: Text(tr('تعديل اسم المجموعة')),
+              ),
+            ),
+          ],
+          const SizedBox(height: 22),
+          Padding(
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 8, 8),
+            child: Row(
+              children: [
+                Icon(Icons.people_outline_rounded,
+                    size: 18, color: colors.textDim),
+                const SizedBox(width: 8),
+                Text(
+                  tr('الأعضاء'),
+                  style: TextStyle(
+                      color: colors.text, fontWeight: FontWeight.w700),
+                ),
+                const Spacer(),
+                if (_iAmAdmin)
+                  TextButton.icon(
+                    onPressed: _busy ? null : _addMembers,
+                    icon: const Icon(Icons.person_add_alt_1, size: 18),
+                    label: Text(tr('إضافة')),
+                  ),
+              ],
+            ),
+          ),
+          for (final uid in _sortedMembers)
+            _GroupMemberTile(
+              uid: uid,
+              isAdmin: _admins.contains(uid),
+              isCreator: uid == _createdBy,
+              // المنشئ لا يرقّي/يُزال.
+              canManage: _iAmAdmin && uid != _createdBy && uid != _me,
+              onToggleAdmin: () => _toggleAdmin(uid),
+              onRemove: () => _removeMember(uid),
+            ),
+          const SizedBox(height: 16),
+          ListTile(
+            leading: const Icon(Icons.logout_rounded, color: AppColors.likeRed),
+            title: Text(tr('مغادرة المجموعة'),
+                style: const TextStyle(color: AppColors.likeRed)),
+            onTap: _busy ? null : _leave,
+          ),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+}
+
+/// صف عضو في مجموعة: الاسم والدور وقائمة إدارة (ترقية/إزالة).
+class _GroupMemberTile extends StatelessWidget {
+  final String uid;
+  final bool isAdmin;
+  final bool isCreator;
+  final bool canManage;
+  final VoidCallback? onToggleAdmin;
+  final VoidCallback? onRemove;
+
+  const _GroupMemberTile({
+    required this.uid,
+    required this.isAdmin,
+    required this.isCreator,
+    required this.canManage,
+    this.onToggleAdmin,
+    this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final me = SocialService.currentUid;
+    return FutureBuilder<AppUser?>(
+      future: UserService.profileOf(uid),
+      builder: (context, snapshot) {
+        final user = snapshot.data;
+        final name = user?.displayName ?? tr('مستخدم');
+        return ListTile(
+          leading: UserAvatar(
+            uid: uid,
+            fallbackName: user?.username ?? '',
+            radius: 22,
+            onTap: () => openProfile(context, uid),
+          ),
+          title: Text(
+            uid == me ? '$name · ${tr('أنت')}' : name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(
+            isCreator
+                ? tr('المنشئ')
+                : isAdmin
+                    ? tr('مشرف')
+                    : '@${user?.username ?? ''}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: colors.textDim),
+          ),
+          trailing: canManage
+              ? PopupMenuButton<String>(
+                  tooltip: tr('إدارة العضو'),
+                  onSelected: (value) {
+                    if (value == 'admin') onToggleAdmin?.call();
+                    if (value == 'remove') onRemove?.call();
+                  },
+                  itemBuilder: (_) => [
+                    PopupMenuItem(
+                      value: 'admin',
+                      child: Text(
+                          isAdmin ? tr('إزالة الإشراف') : tr('ترقية إلى مشرف')),
+                    ),
+                    PopupMenuItem(
+                      value: 'remove',
+                      child: Text(tr('إزالة من المجموعة'),
+                          style: const TextStyle(color: AppColors.likeRed)),
+                    ),
+                  ],
+                )
+              : null,
+        );
+      },
+    );
+  }
+}
+
+/// شاشة إضافة أعضاء إلى مجموعة (من الأصدقاء المتبادلين غير الموجودين).
+class _AddGroupMembersScreen extends StatefulWidget {
+  final String conversationId;
+  final List<String> existing;
+
+  const _AddGroupMembersScreen(
+      {required this.conversationId, required this.existing});
+
+  @override
+  State<_AddGroupMembersScreen> createState() => _AddGroupMembersScreenState();
+}
+
+class _AddGroupMembersScreenState extends State<_AddGroupMembersScreen> {
+  final Set<String> _selected = <String>{};
+  bool _busy = false;
+  late Future<List<AppUser>> _friends = _load();
+
+  Future<List<AppUser>> _load() async {
+    final ids = await SocialService.mutualFriendIds();
+    final users = await Future.wait(ids.map(UserService.profileOf));
+    return users
+        .whereType<AppUser>()
+        .where((user) => !widget.existing.contains(user.uid))
+        .toList();
+  }
+
+  Future<void> _add() async {
+    if (_selected.isEmpty || _busy) return;
+    setState(() => _busy = true);
+    try {
+      await SocialService.addGroupMembers(
+          widget.conversationId, _selected.toList());
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                friendlyError(error, fallback: tr('تعذر إضافة الأعضاء')))));
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return Scaffold(
+      backgroundColor: colors.bg,
+      appBar: AppBar(
+        title: Text(tr('إضافة أعضاء')),
+        actions: [
+          TextButton(
+            onPressed: (_busy || _selected.isEmpty) ? null : _add,
+            child: _busy
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : Text(tr('إضافة')),
+          ),
+        ],
+      ),
+      body: FutureBuilder<List<AppUser>>(
+        future: _friends,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return ErrorState(
+                error: snapshot.error,
+                title: tr('تعذر تحميل قائمة الأصدقاء'),
+                onRetry: () => setState(() => _friends = _load()));
+          }
+          if (!snapshot.hasData) return const AppLoading();
+          final friends = snapshot.data!;
+          if (friends.isEmpty) {
+            return _MessageState(
+              message: tr('لا يوجد أصدقاء متبادلون لإضافتهم'),
+              icon: Icons.person_add_alt_1_outlined,
+            );
+          }
+          return ListView.builder(
+            itemCount: friends.length,
+            itemBuilder: (context, index) {
+              final friend = friends[index];
+              final checked = _selected.contains(friend.uid);
+              return CheckboxListTile(
+                value: checked,
+                onChanged: _busy
+                    ? null
+                    : (value) => setState(() {
+                          if (value == true) {
+                            _selected.add(friend.uid);
+                          } else {
+                            _selected.remove(friend.uid);
+                          }
+                        }),
+                controlAffinity: ListTileControlAffinity.trailing,
+                secondary: UserAvatar(
+                  uid: friend.uid,
+                  fallbackName: friend.username,
+                  radius: 22,
+                ),
+                title: Text(friend.displayName,
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text('@${friend.username}',
+                    style: TextStyle(color: colors.textDim)),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// شبكة الصور المتبادلة في المحادثة (الأحدث أولاً).
+class _ChatMediaGrid extends StatefulWidget {
+  final String conversationId;
+  const _ChatMediaGrid({required this.conversationId});
+
+  @override
+  State<_ChatMediaGrid> createState() => _ChatMediaGridState();
+}
+
+class _ChatMediaGridState extends State<_ChatMediaGrid> {
+  late final Future<List<ChatMessage>> _future =
+      SocialService.chatImages(widget.conversationId);
+
+  void _open(ChatMessage message) {
+    final url = message.imageUrl;
+    if (url != null && url.isNotEmpty) {
+      Navigator.of(context, rootNavigator: true).push(
+        MaterialPageRoute<void>(
+          fullscreenDialog: true,
+          builder: (_) => _NetworkImageViewer(url: url),
+        ),
+      );
+      return;
+    }
+    final bytes = message.imageBytes;
+    if (bytes != null) openFullScreenImage(context, bytes);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return FutureBuilder<List<ChatMessage>>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Center(
+              child: Text(tr('تعذر تحميل الوسائط'),
+                  style: TextStyle(color: colors.textDim)),
+            ),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          );
+        }
+        final images = snapshot.data!
+            .where((m) =>
+                !m.viewOnce &&
+                ((m.imageUrl != null && m.imageUrl!.isNotEmpty) ||
+                    m.imageBytes != null))
+            .toList();
+        if (images.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Center(
+              child: Text(tr('لا توجد صور بعد'),
+                  style: TextStyle(color: colors.textDim)),
+            ),
+          );
+        }
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            mainAxisSpacing: 4,
+            crossAxisSpacing: 4,
+          ),
+          itemCount: images.length,
+          itemBuilder: (context, index) {
+            final message = images[index];
+            final url = message.imageUrl;
+            return GestureDetector(
+              onTap: () => _open(message),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: (url != null && url.isNotEmpty)
+                    ? Image.network(
+                        PostService.optimizedImageUrl(url, 400),
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) =>
+                            Container(color: colors.surfaceHigh),
+                      )
+                    : Image.memory(message.imageBytes!, fit: BoxFit.cover),
+              ),
+            );
+          },
+        );
       },
     );
   }
@@ -3468,7 +6829,8 @@ class BlockedUsersScreen extends StatelessWidget {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(tr('إلغاء الحظر؟')),
-        content: Text(tr('سيتمكن هذا المستخدم من مراسلتك مجدداً إذا كنتما تتابعان بعضكما.')),
+        content: Text(tr(
+            'سيتمكن هذا المستخدم من مراسلتك مجدداً إذا كنتما تتابعان بعضكما.')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -3657,20 +7019,375 @@ class _MessageState extends StatelessWidget {
       );
 }
 
+/// ورقة اختيار المحادثات لإعادة توجيه رسالة أو أكثر إليها (اختيار متعدد
+/// كإنستغرام).
+class _ForwardSheet extends StatefulWidget {
+  final List<ChatMessage> messages;
+  final String exceptConversationId;
 
-/// صورة داخل فقاعة المحادثة: أكبر وأوضح، تحافظ على النسبة (حتى ارتفاع معقول)،
-/// وتعود للرابط الأصلي إن فشل الرابط المُحسَّن.
-class _ChatImage extends StatelessWidget {
-  final String? url;
-  final Uint8List? bytes;
-  final VoidCallback onTap;
-  const _ChatImage({this.url, this.bytes, required this.onTap});
+  const _ForwardSheet({
+    required this.messages,
+    required this.exceptConversationId,
+  });
+
+  @override
+  State<_ForwardSheet> createState() => _ForwardSheetState();
+}
+
+class _ForwardSheetState extends State<_ForwardSheet> {
+  final Set<String> _selected = <String>{};
+  bool _sending = false;
+
+  Future<void> _send() async {
+    if (_selected.isEmpty || _sending) return;
+    setState(() => _sending = true);
+    final targets = _selected.toList();
+    final messenger = ScaffoldMessenger.of(context);
+    var sent = 0;
+    Object? error;
+    for (final conversationId in targets) {
+      try {
+        for (final message in widget.messages) {
+          await SocialService.forwardMessage(conversationId, message);
+        }
+        sent++;
+      } catch (failure) {
+        error = failure;
+      }
+    }
+    if (!mounted) return;
+    Navigator.pop(context);
+    messenger.showSnackBar(SnackBar(
+      content: Text(sent == 0
+          ? friendlyError(error, fallback: tr('تعذر إعادة التوجيه'))
+          : sent == 1
+              ? tr('تمت إعادة التوجيه')
+              : '${tr('تمت إعادة التوجيه')} ($sent)'),
+    ));
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.appColors;
-    final width =
-        (MediaQuery.sizeOf(context).width * 0.62).clamp(200.0, 300.0).toDouble();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsetsDirectional.fromSTEB(16, 14, 16, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(tr('إعادة التوجيه إلى'),
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w700)),
+              ),
+              if (_selected.isNotEmpty)
+                TextButton(
+                  onPressed: _sending ? null : _send,
+                  child: _sending
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text('${tr('إرسال')} (${_selected.length})'),
+                ),
+            ],
+          ),
+        ),
+        Divider(height: 1, color: colors.surfaceHigh),
+        Flexible(
+          child: StreamBuilder<List<Conversation>>(
+            stream: SocialService.conversations(),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return SizedBox(
+                  height: 220,
+                  child: ErrorState(
+                      error: snapshot.error, title: tr('تعذر تحميل الرسائل')),
+                );
+              }
+              if (!snapshot.hasData) {
+                return const SizedBox(height: 220, child: AppLoading());
+              }
+              final items = snapshot.data!
+                  .where((conversation) =>
+                      conversation.visibleFor(SocialService.currentUid) &&
+                      conversation.id != widget.exceptConversationId)
+                  .toList();
+              if (items.isEmpty) {
+                return SizedBox(
+                  height: 220,
+                  child: _MessageState(
+                    message: tr('لا توجد محادثات أخرى'),
+                    icon: Icons.chat_bubble_outline_rounded,
+                  ),
+                );
+              }
+              return ListView.builder(
+                shrinkWrap: true,
+                padding: const EdgeInsets.only(bottom: 12),
+                itemCount: items.length,
+                itemBuilder: (context, index) {
+                  final conversation = items[index];
+                  final otherUid =
+                      conversation.otherParticipant(SocialService.currentUid);
+                  final selected = _selected.contains(conversation.id);
+                  return FutureBuilder<AppUser?>(
+                    future: UserService.profileOf(otherUid),
+                    builder: (context, userSnapshot) {
+                      final user = userSnapshot.data;
+                      return ListTile(
+                        leading: UserAvatar(
+                          uid: otherUid,
+                          fallbackName: user?.username ?? '',
+                          profile: user,
+                          radius: 22,
+                        ),
+                        title: Text(
+                          user?.displayName ?? tr('مستخدم'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: Icon(
+                          selected
+                              ? Icons.check_circle_rounded
+                              : Icons.circle_outlined,
+                          color:
+                              selected ? AppColors.brandPurple : colors.textDim,
+                        ),
+                        onTap: () => setState(() {
+                          if (!_selected.remove(conversation.id)) {
+                            _selected.add(conversation.id);
+                          }
+                        }),
+                      );
+                    },
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// بطاقة مشاركة غنية داخل المحادثة (منشور/ملف شخصي) قابلة للنقر.
+class _ShareCard extends StatelessWidget {
+  final ChatMessage message;
+  final bool mine;
+  final double width;
+  final VoidCallback onTap;
+  const _ShareCard({
+    required this.message,
+    required this.mine,
+    required this.width,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final image = message.shareImage;
+    final subtitle = (message.shareSubtitle ?? '').trim();
+    final isProfile = message.shareType == 'profile';
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: width,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: mine ? colors.surface : colors.surfaceHigh,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: mine
+                ? AppColors.brandPurple.withOpacity(0.7)
+                : colors.surfaceHigh,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Row(
+                children: [
+                  Icon(
+                    isProfile ? Icons.person_rounded : Icons.grid_on_rounded,
+                    size: 15,
+                    color: colors.textDim,
+                  ),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      message.text,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: colors.text,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (image != null && image.isNotEmpty)
+              GestureDetector(
+                onTap: onTap,
+                child: Image.network(
+                  PostService.optimizedImageUrl(image, 600),
+                  width: double.infinity,
+                  height: 200,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                ),
+              ),
+            if (subtitle.isNotEmpty)
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                child: Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: colors.textDim, fontSize: 12),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// بطاقة موقع داخل المحادثة (كإنستغرام): تُفتح في خرائط جوجل بالنقر.
+class _LocationCard extends StatelessWidget {
+  final ChatMessage message;
+  final bool mine;
+  final double width;
+  final VoidCallback onTap;
+  const _LocationCard({
+    required this.message,
+    required this.mine,
+    required this.width,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final lat = message.lat ?? 0;
+    final lng = message.lng ?? 0;
+    final label = message.text.trim();
+    final showLabel = label.isNotEmpty && label != tr('📍 موقع');
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: width,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: mine ? colors.surface : colors.surfaceHigh,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: mine
+                ? AppColors.brandPurple.withOpacity(0.7)
+                : colors.surfaceHigh,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              height: 150,
+              color: colors.surfaceHigh,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Icon(Icons.map_rounded, size: 56, color: colors.textDim),
+                  Positioned(
+                    bottom: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.55),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}',
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 11),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              child: Row(
+                children: [
+                  Icon(Icons.location_on_rounded,
+                      size: 16, color: AppColors.brandPurple),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      showLabel ? label : tr('📍 موقع'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: colors.text,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    tr('فتح'),
+                    style: TextStyle(
+                      color: AppColors.brandPurple,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// صورة داخل المحادثة: بلا إطار (كإنستغرام)، تحافظ على نسبة الأبعاد مع حدّ
+/// أقصى للارتفاع، وتعود للرابط الأصلي إن فشل الرابط المُحسَّن.
+class _ChatImage extends StatelessWidget {
+  final String? url;
+  final Uint8List? bytes;
+  final double width;
+  final BorderRadiusGeometry borderRadius;
+  final VoidCallback onTap;
+  const _ChatImage({
+    this.url,
+    this.bytes,
+    required this.width,
+    required this.borderRadius,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final maxHeight = (MediaQuery.sizeOf(context).height * 0.6)
+        .clamp(240.0, 460.0)
+        .toDouble();
     Widget placeholder(double height) => SizedBox(
           width: width,
           height: height,
@@ -3702,7 +7419,8 @@ class _ChatImage extends StatelessWidget {
       final optimized = PostService.optimizedImageUrl(raw, 800);
       image = network(
         optimized,
-        onError: () => optimized == raw ? failed() : network(raw, onError: failed),
+        onError: () =>
+            optimized == raw ? failed() : network(raw, onError: failed),
       );
     } else {
       image = Image.memory(bytes!, width: width, fit: BoxFit.cover);
@@ -3711,10 +7429,187 @@ class _ChatImage extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(13),
+        borderRadius: borderRadius,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 380),
+          constraints: BoxConstraints(maxHeight: maxHeight),
           child: image,
+        ),
+      ),
+    );
+  }
+}
+
+/// صورة «تُعرض مرة واحدة»: تظهر مبهمة للمستلم حتى يضغطها فيُسجَّل فتحها
+/// وتُعرض لثوانٍ ثم تختفي. المرسل لا يرى الصورة بعد الإرسال (كإنستغرام).
+class _ViewOnceImage extends StatefulWidget {
+  final String? url;
+  final Uint8List? bytes;
+  final double width;
+  final bool mine;
+  final bool opened;
+  final BorderRadiusGeometry borderRadius;
+  final VoidCallback onReveal;
+
+  const _ViewOnceImage({
+    this.url,
+    this.bytes,
+    required this.width,
+    required this.mine,
+    required this.opened,
+    required this.borderRadius,
+    required this.onReveal,
+  });
+
+  @override
+  State<_ViewOnceImage> createState() => _ViewOnceImageState();
+}
+
+class _ViewOnceImageState extends State<_ViewOnceImage> {
+  static const _revealSeconds = 7;
+  bool _revealed = false;
+  bool _consumed = false;
+  Timer? _timer;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _reveal() {
+    if (widget.mine || widget.opened || _revealed || _consumed) return;
+    setState(() => _revealed = true);
+    widget.onReveal();
+    _timer = Timer(const Duration(seconds: _revealSeconds), () {
+      if (!mounted) return;
+      setState(() {
+        _revealed = false;
+        _consumed = true;
+      });
+    });
+  }
+
+  Widget _rawImage({double? height}) {
+    final w = widget.width;
+    if (widget.url != null) {
+      final optimized = PostService.optimizedImageUrl(widget.url!, 800);
+      return Image.network(
+        optimized,
+        width: w,
+        height: height,
+        fit: BoxFit.cover,
+        loadingBuilder: (context, child, progress) => progress == null
+            ? child
+            : SizedBox(
+                width: w,
+                height: height ?? 200,
+                child: const Center(
+                    child: CircularProgressIndicator(strokeWidth: 2)),
+              ),
+        errorBuilder: (context, _, __) => SizedBox(
+          width: w,
+          height: height ?? 120,
+          child: const Center(child: Icon(Icons.broken_image_outlined)),
+        ),
+      );
+    }
+    return Image.memory(widget.bytes!,
+        width: w, height: height, fit: BoxFit.cover);
+  }
+
+  Widget _hint(IconData icon, String label, Color color) => SizedBox(
+        width: widget.width,
+        height: 190,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.06),
+            borderRadius: widget.borderRadius,
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 32, color: color),
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      color: color, fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    // المرسل: لا يرى المحتوى، فقط حالة الفتح.
+    if (widget.mine) {
+      return _hint(
+        widget.opened
+            ? Icons.visibility_outlined
+            : Icons.visibility_off_outlined,
+        widget.opened
+            ? tr('فتح المستلم الصورة')
+            : tr('صورة مرة واحدة · لم تُفتح بعد'),
+        colors.textDim,
+      );
+    }
+    // المستلم: بعد الفتح مرة واحدة تُقفل نهائياً.
+    if (widget.opened || _consumed) {
+      return _hint(
+          Icons.visibility_off_outlined, tr('انتهت الصورة'), colors.textDim);
+    }
+    if (_revealed) {
+      final maxHeight = (MediaQuery.sizeOf(context).height * 0.6)
+          .clamp(240.0, 460.0)
+          .toDouble();
+      return ClipRRect(
+        borderRadius: widget.borderRadius,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxHeight),
+          child: _rawImage(),
+        ),
+      );
+    }
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _reveal,
+      child: ClipRRect(
+        borderRadius: widget.borderRadius,
+        child: SizedBox(
+          width: widget.width,
+          height: 190,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ImageFiltered(
+                imageFilter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                child: _rawImage(height: 190),
+              ),
+              Container(color: Colors.black.withOpacity(0.28)),
+              const Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.touch_app_outlined, color: Colors.white, size: 30),
+                  SizedBox(height: 6),
+                ],
+              ),
+              Center(
+                child: Text(
+                  tr('اضغط للعرض مرة واحدة'),
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -3821,7 +7716,6 @@ class _PendingImagesStrip extends StatelessWidget {
   }
 }
 
-
 /// فقاعة «يكتب الآن» مثل إنستغرام: صورة الشخص مع ثلاث نقاط متحركة.
 class _TypingBubble extends StatefulWidget {
   final String otherUid;
@@ -3865,8 +7759,8 @@ class _TypingBubbleState extends State<_TypingBubble>
               mainAxisSize: MainAxisSize.min,
               children: List.generate(3, (i) {
                 final t = (_controller.value + i * 0.18) % 1.0;
-                final wave = Curves.easeInOut
-                    .transform(t < 0.5 ? t * 2 : 2 - t * 2);
+                final wave =
+                    Curves.easeInOut.transform(t < 0.5 ? t * 2 : 2 - t * 2);
                 return Container(
                   width: 7,
                   height: 7,

@@ -976,9 +976,14 @@ class _ProfileShareSheetState extends State<_ProfileShareSheet> {
     setState(() => _sharingUid = friend.uid);
     try {
       final conversationId = await SocialService.startConversation(friend.uid);
-      await SocialService.sendMessage(
+      await SocialService.sendShare(
         conversationId,
-        trf('شاهد ملف @{0} على Haigram\n{1}', [widget.user.username, widget.user.link]),
+        type: 'profile',
+        id: widget.user.uid,
+        title: '@${widget.user.username}',
+        subtitle: widget.user.bio,
+        image: widget.user.photoUrl,
+        link: widget.user.link,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

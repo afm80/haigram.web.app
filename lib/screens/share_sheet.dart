@@ -106,14 +106,29 @@ class _PostShareSheetState extends State<_PostShareSheet> {
     if (_sending || _selected.isEmpty) return;
     setState(() => _sending = true);
     final note = _note.text.trim();
-    final text = [if (note.isNotEmpty) note, _shareText].join('\n');
     final friends = _selected.values.toList();
     var sent = 0;
     Object? lastError;
     for (final friend in friends) {
       try {
         final cid = await SocialService.startConversation(friend.uid);
-        await SocialService.sendMessage(cid, text);
+        if (note.isNotEmpty) await SocialService.sendMessage(cid, note);
+        try {
+          // بطاقة مشاركة غنية داخل المحادثة (بلا رابط نصي).
+          await SocialService.sendShare(
+            cid,
+            type: 'post',
+            id: _post.id,
+            title: trf('منشور @{0}', [_post.username]),
+            subtitle: _post.caption,
+            image: _post.mediaUrl,
+            link: _link,
+          );
+        } catch (_) {
+          // غير الأصدقاء: رسالتهم الأولى نص فقط، فيُرسل الرابط كنص.
+          if (note.isNotEmpty) rethrow;
+          await SocialService.sendMessage(cid, _shareText);
+        }
         sent++;
       } catch (error) {
         lastError = error;
