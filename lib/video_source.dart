@@ -1,5 +1,5 @@
 // مصدر الفيديو: يتعرّف على رابط الفيديو (يوتيوب، فيميو، دايلي موشن، تويتش،
-// تيك توك، فيسبوك، إنستغرام، ملف فيديو مباشر، بث HLS) ويحدد طريقة عرضه.
+// فيسبوك (غير الريلز)، ملف فيديو مباشر، بث HLS) ويحدد طريقة عرضه.
 // لا يعتمد على Firebase، فيمكن اختباره وحده.
 import 'dart:convert';
 import 'dart:ui' show Color;
@@ -11,9 +11,7 @@ enum VideoProvider {
   vimeo,
   dailymotion,
   twitch,
-  tiktok,
-  facebook,
-  instagram,
+  facebook, // الفيديوهات العادية فقط (ريلز فيسبوك غير مدعومة)
   file, // mp4 / webm ... رابط مباشر
   hls, // بث m3u8
 }
@@ -24,7 +22,7 @@ class VideoSource {
   /// معرّف الفيديو على المنصة (لروابط الملفات والبث: بصمة قصيرة للرابط).
   final String id;
 
-  /// الرابط الأصلي بعد تنظيفه (https). للمنصات يُستعمل في «فتح في المنصة».
+  /// الرابط الأصلي بعد تنظيفه (https). يُستعمل للتضمين والتعرّف فقط.
   final String url;
 
   /// فيديو عمودي (9:16): يظهر مع الشورتز.
@@ -34,7 +32,6 @@ class VideoSource {
   final bool isLive;
 
   /// معلومات إضافية: hash فيميو الخاص، أو نوع تويتش (video/clip/channel)،
-  /// أو نوع منشور إنستغرام (reel/p/tv).
   final String? extra;
 
   const VideoSource._(this.provider, this.id, this.url,
@@ -94,12 +91,8 @@ class VideoSource {
         (host == 'player.twitch.tv')) {
       return _twitch(host, seg);
     }
-    // تيك توك
-    if (bare == 'tiktok.com') return _tiktok(seg);
     // فيسبوك
     if (bare == 'facebook.com' || bare == 'fb.com') return _facebook(uri, seg);
-    // إنستغرام
-    if (bare == 'instagram.com') return _instagram(seg);
 
     // ملف فيديو مباشر أو بث HLS: الامتداد في المسار (نتجاهل الاستعلام).
     final last = seg.isEmpty ? '' : seg.last.toLowerCase();
@@ -124,12 +117,23 @@ class VideoSource {
     if (uri == null) return false;
     final host = uri.host.toLowerCase();
     final first = uri.pathSegments.isEmpty ? '' : uri.pathSegments.first;
-    return host == 'vm.tiktok.com' ||
-        host == 'vt.tiktok.com' ||
-        (host.endsWith('tiktok.com') && first == 't') ||
-        host == 'fb.watch' ||
-        ((host.endsWith('facebook.com') || host.endsWith('instagram.com')) &&
-            first == 'share');
+    return host == 'fb.watch' ||
+        (host.endsWith('facebook.com') && first == 'share');
+  }
+
+  /// رابط ريلز فيسبوك (غير مدعوم: الريلز فيديوهات عمودية).
+  static bool isFacebookReel(String input) {
+    var text = input.trim();
+    if (!text.contains('://')) text = 'https://$text';
+    final uri = Uri.tryParse(text);
+    if (uri == null) return false;
+    final host = uri.host.toLowerCase();
+    if (!(host == 'facebook.com' || host.endsWith('.facebook.com') ||
+        host == 'fb.com' || host.endsWith('.fb.com'))) {
+      return false;
+    }
+    final first = uri.pathSegments.where((s) => s.isNotEmpty).firstOrNull;
+    return first == 'reel' || first == 'reels';
   }
 
   static String? youtubeIdOf(Uri uri) {
@@ -221,31 +225,15 @@ class VideoSource {
     return null;
   }
 
-  static VideoSource? _tiktok(List<String> seg) {
-    final idRe = RegExp(r'^\d{8,25}$');
-    String? id;
-    final v = seg.indexOf('video');
-    if (v >= 0 && v + 1 < seg.length) id = seg[v + 1];
-    if (id == null && seg.length >= 3 && seg[0] == 'embed' && seg[1] == 'v2') {
-      id = seg[2];
-    }
-    if (id == null && seg.length >= 2 && seg[0] == 'v') id = seg[1];
-    if (id == null || !idRe.hasMatch(id)) return null;
-    return VideoSource._(
-        VideoProvider.tiktok, id, 'https://www.tiktok.com/@_/video/$id',
-        isShort: true);
-  }
-
   static VideoSource? _facebook(Uri uri, List<String> seg) {
     final idRe = RegExp(r'^\d{6,20}$');
     String? id;
-    var reel = false;
     var path = '';
+    // ريلز فيسبوك (فيديوهات عمودية) غير مدعومة.
     if (seg.isNotEmpty && (seg.first == 'reel' || seg.first == 'reels')) {
-      if (seg.length >= 2) id = seg[1];
-      reel = true;
-      path = '/reel/$id';
-    } else if (seg.isNotEmpty && seg.first == 'watch') {
+      return null;
+    }
+    if (seg.isNotEmpty && seg.first == 'watch') {
       id = uri.queryParameters['v'];
       path = '/watch/?v=$id';
     } else if (seg.isNotEmpty && seg.first == 'video.php') {
@@ -261,21 +249,7 @@ class VideoSource {
     }
     if (id == null || !idRe.hasMatch(id)) return null;
     return VideoSource._(
-        VideoProvider.facebook, id, 'https://www.facebook.com$path',
-        isShort: reel);
-  }
-
-  static VideoSource? _instagram(List<String> seg) {
-    // /reel/CODE ، /reels/CODE ، /p/CODE ، /tv/CODE ، /user/reel/CODE
-    final i = seg.indexWhere((s) => const {'reel', 'reels', 'p', 'tv'}.contains(s));
-    if (i < 0 || i + 1 >= seg.length) return null;
-    var kind = seg[i];
-    final code = seg[i + 1];
-    if (!RegExp(r'^[A-Za-z0-9_-]{5,20}$').hasMatch(code)) return null;
-    if (kind == 'reels') kind = 'reel';
-    return VideoSource._(VideoProvider.instagram, code,
-        'https://www.instagram.com/$kind/$code/',
-        isShort: kind == 'reel', extra: kind);
+        VideoProvider.facebook, id, 'https://www.facebook.com$path');
   }
 
   /// بصمة قصيرة ثابتة للرابط (FNV-1a) لاستعمالها كمعرّف.
@@ -296,7 +270,6 @@ class VideoSource {
   /// نسبة العرض إلى الارتفاع.
   double get aspect {
     if (isShort) return 9 / 16;
-    if (provider == VideoProvider.instagram) return 4 / 5;
     return 16 / 9;
   }
 
@@ -309,9 +282,7 @@ class VideoSource {
         VideoProvider.vimeo => 'Vimeo',
         VideoProvider.dailymotion => 'Dailymotion',
         VideoProvider.twitch => 'Twitch',
-        VideoProvider.tiktok => 'TikTok',
         VideoProvider.facebook => 'Facebook',
-        VideoProvider.instagram => 'Instagram',
         VideoProvider.file => tr('فيديو'),
         VideoProvider.hls => tr('بث مباشر'),
       };
@@ -334,9 +305,7 @@ class VideoSource {
         VideoProvider.vimeo => const [Color(0xFF1AB7EA), Color(0xFF0B5F7A)],
         VideoProvider.dailymotion => const [Color(0xFF0066DC), Color(0xFF00316B)],
         VideoProvider.twitch => const [Color(0xFF9146FF), Color(0xFF3B1A80)],
-        VideoProvider.tiktok => const [Color(0xFF25F4EE), Color(0xFF111111), Color(0xFFFE2C55)],
         VideoProvider.facebook => const [Color(0xFF1877F2), Color(0xFF0A3A7A)],
-        VideoProvider.instagram => const [Color(0xFFF58529), Color(0xFFDD2A7B), Color(0xFF515BD4)],
         VideoProvider.file || VideoProvider.hls =>
           const [Color(0xFF1B1F2A), Color(0xFF0B0D12)],
       };
@@ -361,13 +330,9 @@ class VideoSource {
             'https://player.twitch.tv/?channel=$id&parent=$p&autoplay=true',
           _ => 'https://player.twitch.tv/?video=v$id&parent=$p&autoplay=true',
         };
-      case VideoProvider.tiktok:
-        return 'https://www.tiktok.com/embed/v2/$id';
       case VideoProvider.facebook:
         return 'https://www.facebook.com/plugins/video.php'
             '?href=${Uri.encodeQueryComponent(url)}&show_text=false&autoplay=true';
-      case VideoProvider.instagram:
-        return '${url}embed/';
       case VideoProvider.file:
       case VideoProvider.hls:
         return null;
@@ -385,9 +350,7 @@ class VideoSource {
       VideoProvider.vimeo => inDomain(['vimeo.com']),
       VideoProvider.dailymotion => inDomain(['dailymotion.com']),
       VideoProvider.twitch => inDomain(['twitch.tv']),
-      VideoProvider.tiktok => inDomain(['tiktok.com']),
       VideoProvider.facebook => inDomain(['facebook.com']),
-      VideoProvider.instagram => inDomain(['instagram.com']),
       VideoProvider.file || VideoProvider.hls => inDomain(['haigram.web.app']),
     };
   }

@@ -24,8 +24,10 @@ String trf(String ar, List<Object?> args) {
 
 const Map<String, String> _en = {
   // روابط الفيديو والبث من عدة منصات
-  'شارك رابط فيديو عمودي (Shorts أو TikTok أو Reels) وسيظهر هنا في ملفك.':
-      "Share a vertical video link (Shorts, TikTok or Reels) and it will appear here on your profile.",
+  'شارك رابط YouTube Short وسيظهر هنا في ملفك.':
+      "Share a YouTube Short link and it will appear here on your profile.",
+  'ريلز فيسبوك غير مدعومة. استخدم فيديو فيسبوك عادياً':
+      "Facebook Reels are not supported. Use a regular Facebook video.",
   'شارك رابط فيديو أو بث وسيظهر هنا في ملفك.':
       "Share a video or stream link and it will appear here on your profile.",
   'الصق رابط الفيديو أو البث': "Paste a video or stream link",
@@ -43,8 +45,6 @@ const Map<String, String> _en = {
   'الفيديو يعمل ({0})': "Video works ({0})",
   'معاينة من {0}: إن لم يظهر الفيديو أو ظهر خطأ فلن يعمل بعد النشر':
       "Preview from {0}: if the video doesn't appear or shows an error, it won't work after posting",
-  'فتح في {0}': "Open in {0}",
-  'فتح الرابط': "Open link",
   'بث مباشر': "Live stream",
   'مباشر': "LIVE",
   'شاهد الفيديو': "Watch the video",
