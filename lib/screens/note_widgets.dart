@@ -113,7 +113,7 @@ class NoteRailItem extends StatelessWidget {
   });
 
   /// ارتفاع منطقة الفقاعة فوق الصورة.
-  static const bubbleZone = 54.0;
+  static const bubbleZone = 44.0;
 
   @override
   Widget build(BuildContext context) {
@@ -121,7 +121,7 @@ class NoteRailItem extends StatelessWidget {
     final showBubble = note != null || isMine;
     final label = isMine ? tr('ملاحظتك') : (profile?.username ?? '');
     return SizedBox(
-      width: 76,
+      width: 84,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
@@ -147,7 +147,7 @@ class NoteRailItem extends StatelessWidget {
                   uid: uid,
                   profile: profile,
                   fallbackName: profile?.username ?? '',
-                  radius: 25,
+                  radius: 32,
                   showOnline: !isMine,
                   hasStory: hasStory,
                   storySeen: storySeen,
@@ -176,7 +176,7 @@ class NoteRailItem extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 11, color: colors.text),
+            style: TextStyle(fontSize: 12, color: colors.text),
           ),
         ],
       ),

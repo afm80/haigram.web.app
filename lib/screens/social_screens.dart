@@ -1675,7 +1675,7 @@ class _FollowingRailState extends State<_FollowingRail> {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 148,
+      height: 150,
       child: StreamBuilder<List<String>>(
         stream: _following,
         builder: (context, snapshot) {
@@ -1728,7 +1728,7 @@ class _FollowingRailState extends State<_FollowingRail> {
 
                 return ListView.separated(
                   scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 12, 4),
+                  padding: const EdgeInsetsDirectional.fromSTEB(12, 0, 12, 4),
                   itemCount: 1 + (ordered.isEmpty ? 1 : ordered.length),
                   separatorBuilder: (_, __) => const SizedBox(width: 4),
                   itemBuilder: (context, index) {
