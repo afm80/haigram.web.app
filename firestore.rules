@@ -491,6 +491,25 @@ service cloud.firestore {
                   == getAfter(/databases/$(database)/documents/chats/$(chatId)/messages/$(request.resource.data.lastMessageId)).data.createdAt))
           )
           ||
+          // تعديل نص آخر رسالة (رسالتي): يتغير lastMessage وحده ليطابق النص
+          // الجديد، دون المساس بـ updatedAt فلا تقفز المحادثة ولا تصبح «غير مقروءة».
+          (request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['lastMessage'])
+            && !isBlocked(
+              resource.data.participants[0],
+              resource.data.participants[1]
+            )
+            && resource.data.lastMessageId is string
+            && resource.data.lastMessageId.size() > 0
+            && resource.data.lastSenderUid == request.auth.uid
+            && request.resource.data.lastMessage is string
+            && request.resource.data.lastMessage.size() > 0
+            && request.resource.data.lastMessage.size() <= 2000
+            && get(/databases/$(database)/documents/chats/$(chatId)/messages/$(resource.data.lastMessageId)).data.senderUid
+              == request.auth.uid
+            && getAfter(/databases/$(database)/documents/chats/$(chatId)/messages/$(resource.data.lastMessageId)).data.text
+              == request.resource.data.lastMessage)
+          ||
           // إيصالات المحادثة ومسحها لديّ: كل مستخدم يكتب مدخله فقط.
           // readAt = وقت آخر رسالة قرأتها، deliveredAt = آخر رسالة وصلتني،
           // clearedAt = «حذف المحادثة لديّ» (يخفي ما قبله عني فقط).
@@ -667,6 +686,23 @@ service cloud.firestore {
             (request.resource.data.diff(resource.data).affectedKeys()
                 .hasOnly(['reactions'])
               && validReactionUpdate())
+            ||
+            // تعديل نص رسالتي النصية خلال 15 دقيقة من إرسالها (يطابق
+            // SocialService.messageEditWindow). يُسجَّل وقت التعديل editedAt.
+            (resource.data.senderUid == request.auth.uid
+              && resource.data.kind == 'text'
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['text', 'editedAt'])
+              && request.resource.data.text is string
+              && request.resource.data.text.size() > 0
+              && request.resource.data.text.size() <= 2000
+              && request.resource.data.text != resource.data.text
+              && request.resource.data.editedAt == request.time
+              && request.time < resource.data.createdAt + duration.value(15, 'm')
+              && !isBlocked(
+                chatNow().participants[0],
+                chatNow().participants[1]
+              ))
           );
         allow delete: if isChatParticipant()
           && resource.data.senderUid == request.auth.uid;
