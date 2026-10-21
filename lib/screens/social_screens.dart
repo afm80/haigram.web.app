@@ -152,14 +152,14 @@ class _InboxScreenState extends State<InboxScreen> {
                   onPressed: () => rootNavigatorOf(context).push(
                     MaterialPageRoute(builder: (_) => const _NewGroupScreen()),
                   ),
-                  icon: const Icon(Icons.group_add_outlined),
+                  icon: const Icon(Icons.group_add_rounded),
                 ),
                 IconButton(
                   tooltip: tr('رسالة جديدة'),
                   onPressed: () => rootNavigatorOf(context).push(
                     MaterialPageRoute(builder: (_) => const _FriendsScreen()),
                   ),
-                  icon: const Icon(Icons.edit_outlined),
+                  icon: const Icon(Icons.edit_rounded),
                 ),
               ],
       ),
@@ -617,7 +617,8 @@ class _UnreadBadgeState extends State<_UnreadBadge> {
 
   @override
   Widget build(BuildContext context) {
-    const color = AppColors.accent;
+    // نفس شارة الإشعارات: دائرة حمراء (لا مستطيل أفقي).
+    const color = AppColors.notificationRed;
     return FutureBuilder<int>(
       future: _count(),
       builder: (context, snapshot) {
@@ -626,22 +627,26 @@ class _UnreadBadgeState extends State<_UnreadBadge> {
           return Container(
             width: 10,
             height: 10,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            decoration: const BoxDecoration(color: color, shape: BoxShape.circle),
           );
         }
         return Container(
-          constraints: const BoxConstraints(minWidth: 18),
-          height: 18,
-          padding: const EdgeInsets.symmetric(horizontal: 5),
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(9),
-          ),
+          width: 20,
+          height: 20,
+          decoration: const BoxDecoration(color: color, shape: BoxShape.circle),
           alignment: Alignment.center,
-          child: Text(
-            count > 99 ? '99+' : '$count',
-            style: const TextStyle(
-                color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Padding(
+              padding: const EdgeInsets.all(2),
+              child: Text(
+                count > 99 ? '99+' : '$count',
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700),
+              ),
+            ),
           ),
         );
       },
