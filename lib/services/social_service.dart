@@ -55,6 +55,26 @@ class Conversation {
   final Map<String, bool> pinned;
   final Map<String, bool> muted;
 
+  /// كتم مؤقت: وقت انتهاء الكتم لكل مستخدم (كإنستغرام: ساعة/8/24 ساعة).
+  final Map<String, DateTime> mutedUntil;
+
+  /// من أرشف المحادثة ومتى (مفتاحها uid).
+  final Map<String, bool> archived;
+  final Map<String, DateTime> archivedAt;
+
+  /// مقبولة: غير المقبولة = طلب رسالة لم يردّ عليه أحد بعد.
+  final bool accepted;
+
+  /// علّمتها «غير مقروءة» يدوياً على هذا الجهاز (كإنستغرام). لا تُزامن.
+  final bool localUnread;
+
+  /// محادثة جماعية: اسم وصورة، من أنشأها، وقائمة المشرفين.
+  final bool isGroup;
+  final String groupName;
+  final String groupPhoto;
+  final String createdBy;
+  final List<String> admins;
+
   const Conversation({
     required this.id,
     required this.participants,
@@ -67,16 +87,53 @@ class Conversation {
     this.clearedAt = const {},
     this.pinned = const {},
     this.muted = const {},
+    this.mutedUntil = const {},
+    this.archived = const {},
+    this.archivedAt = const {},
+    this.accepted = true,
+    this.localUnread = false,
+    this.isGroup = false,
+    this.groupName = '',
+    this.groupPhoto = '',
+    this.createdBy = '',
+    this.admins = const [],
   });
 
   bool pinnedFor(String uid) => pinned[uid] == true;
-  bool mutedFor(String uid) => muted[uid] == true;
+
+  /// مكتومة لديّ: كتم دائم، أو كتم مؤقت لم ينتهِ بعد.
+  bool mutedFor(String uid) {
+    if (muted[uid] == true) return true;
+    final until = mutedUntil[uid];
+    return until != null && until.isAfter(DateTime.now());
+  }
+
+  /// هل هذا المستخدم مشرف في المجموعة؟ (المنشئ مشرف دائماً)
+  bool isAdminOf(String uid) =>
+      isGroup && (createdBy == uid || admins.contains(uid));
+
+  /// عنوان المجموعة الظاهر في الواجهة.
+  String get groupTitle => groupName.trim().isEmpty ? 'مجموعة' : groupName;
+
+  /// باقي الأعضاء (غيري).
+  List<String> othersFor(String uid) =>
+      participants.where((participant) => participant != uid).toList();
+
+  /// مؤرشفة لديّ ولم يصلها نشاط بعد الأرشفة: تعود تلقائياً للصندوق عند وصول
+  /// رسالة جديدة (كإنستغرام).
+  bool archivedFor(String uid) {
+    if (archived[uid] != true) return false;
+    final at = archivedAt[uid];
+    return at == null || !updatedAt.isAfter(at);
+  }
 
   String otherParticipant(String uid) =>
       participants.firstWhere((participant) => participant != uid);
 
   /// آخر رسالة من الطرف الآخر ولم أفتح المحادثة بعدها.
+  /// تشمل التعليم اليدوي «كغير مقروء» (كإنستغرام).
   bool unreadFor(String uid) {
+    if (localUnread) return true;
     if (lastMessageId.isEmpty ||
         lastSenderUid.isEmpty ||
         lastSenderUid == uid) {
@@ -93,13 +150,26 @@ class Conversation {
     return cleared == null || updatedAt.isAfter(cleared);
   }
 
+  /// طلب رسالة لي: غير مقبولة، ووصلتني رسالة من الطرف الآخر ولم أردّ بعد
+  /// (كإنستغرام: تظهر في «طلبات الرسائل» منفصلة عن الصندوق).
+  bool isRequestFor(String uid) =>
+      !accepted &&
+      lastMessageId.isNotEmpty &&
+      lastSenderUid.isNotEmpty &&
+      lastSenderUid != uid;
+
   /// null إن كان المستند تالفاً (بدل أن يكسر قائمة المحادثات كلها).
   static Conversation? tryFromDoc(
-      QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+      QueryDocumentSnapshot<Map<String, dynamic>> doc,
+      {bool localUnread = false}) {
     try {
       final data = doc.data();
       final participants = List<String>.from(data['participants'] as List);
-      if (participants.length != 2 || participants[0] == participants[1]) {
+      final group = data['isGroup'] == true;
+      if (group) {
+        if (participants.length < 2) return null;
+      } else if (participants.length != 2 ||
+          participants[0] == participants[1]) {
         return null;
       }
       return Conversation(
@@ -115,6 +185,16 @@ class Conversation {
         clearedAt: _tsMap(data['clearedAt']),
         pinned: _boolMap(data['pinned']),
         muted: _boolMap(data['muted']),
+        mutedUntil: _tsMap(data['mutedUntil']),
+        archived: _boolMap(data['archived']),
+        archivedAt: _tsMap(data['archivedAt']),
+        accepted: data['accepted'] as bool? ?? true,
+        localUnread: localUnread,
+        isGroup: group,
+        groupName: data['groupName'] as String? ?? '',
+        groupPhoto: data['groupPhoto'] as String? ?? '',
+        createdBy: data['createdBy'] as String? ?? '',
+        admins: List<String>.from(data['admins'] as List? ?? const []),
       );
     } catch (_) {
       return null;
@@ -139,8 +219,33 @@ class ChatMessage {
   /// عُدّلت الرسالة بعد إرسالها (يظهر وسم «معدّلة»).
   final bool edited;
 
+  /// أُعيد توجيهها من محادثة أخرى (يظهر وسم «مُعاد توجيهه»).
+  final bool forwarded;
+
+  /// مشاركة غنية (بطاقة) داخل المحادثة: النوع (post/profile) والمعرّف.
+  final String? shareType;
+  final String? shareId;
+
+  /// سطر وصفي تحت عنوان البطاقة (وصف المنشور أو نبذة الملف).
+  final String? shareSubtitle;
+  final String? shareImage;
+  final String? shareLink;
+
   /// رابط الصورة عند استعمال Cloudinary/Storage (وضع التجربة يستعمل [imageBytes]).
   final String? imageUrl;
+
+  /// موقع مُرسل (kind == 'location').
+  final double? lat;
+  final double? lng;
+
+  /// صورة «تُعرض مرة واحدة» (view-once): تُخفى عن المستلم بعد أول فتح.
+  final bool viewOnce;
+
+  /// من فتح الصورة مرة الواحدة (يُضاف المستلم نفسه عند العرض).
+  final List<String> viewedBy;
+
+  /// وضع الاختفاء: وقت انتهاء صلاحية الرسالة؛ تُخفى بعده.
+  final DateTime? expiresAt;
 
   const ChatMessage({
     required this.id,
@@ -156,7 +261,18 @@ class ChatMessage {
     this.replyToSenderUid,
     this.reactions = const {},
     this.edited = false,
+    this.forwarded = false,
+    this.shareType,
+    this.shareId,
+    this.shareSubtitle,
+    this.shareImage,
+    this.shareLink,
     this.imageUrl,
+    this.lat,
+    this.lng,
+    this.viewOnce = false,
+    this.viewedBy = const [],
+    this.expiresAt,
   });
 
   static ChatMessage? fromMap(
@@ -176,10 +292,23 @@ class ChatMessage {
         kind: data['kind'] as String? ?? 'text',
         imageBytes: (data['image'] as Blob?)?.bytes,
         imageUrl: data['imageUrl'] as String?,
+        lat: (data['lat'] as num?)?.toDouble(),
+        lng: (data['lng'] as num?)?.toDouble(),
         replyToMessageId: data['replyToMessageId'] as String?,
         replyToText: data['replyToText'] as String?,
         replyToSenderUid: data['replyToSenderUid'] as String?,
         edited: data.containsKey('editedAt'),
+        forwarded: data['forwarded'] == true,
+        shareType: data['shareType'] as String?,
+        shareId: data['shareId'] as String?,
+        shareSubtitle: data['shareSubtitle'] as String?,
+        shareImage: data['shareImage'] as String?,
+        shareLink: data['shareLink'] as String?,
+        viewOnce: data['viewOnce'] == true,
+        viewedBy: List<String>.from(data['viewedBy'] as List? ?? const []),
+        expiresAt: data['expiresAt'] is Timestamp
+            ? (data['expiresAt'] as Timestamp).toDate()
+            : null,
         reactions: Map<String, String>.from(
           (data['reactions'] as Map?)?.map(
                 (key, value) => MapEntry(key as String, value as String),
@@ -201,6 +330,40 @@ class ChatMessage {
       doc.data(),
       pendingWrites: doc.metadata.hasPendingWrites,
     );
+  }
+}
+
+/// رسالة محفوظة: نسخة من الرسالة + المحادثة التي جاءت منها (كإنستغرام).
+class SavedMessage {
+  final ChatMessage message;
+  final String conversationId;
+  final DateTime savedAt;
+
+  const SavedMessage({
+    required this.message,
+    required this.conversationId,
+    required this.savedAt,
+  });
+
+  static SavedMessage? tryFromDoc(
+      QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    try {
+      final data = doc.data();
+      final message = ChatMessage.fromMap(
+        doc.id,
+        data,
+        pendingWrites: doc.metadata.hasPendingWrites,
+      );
+      if (message == null) return null;
+      return SavedMessage(
+        message: message,
+        conversationId: data['conversationId'] as String? ?? '',
+        savedAt:
+            _readTs(data['savedAt'], pending: doc.metadata.hasPendingWrites),
+      );
+    } catch (_) {
+      return null;
+    }
   }
 }
 
@@ -539,49 +702,127 @@ class SocialService {
     });
   }
 
-  /// محادثات/رسائل أُرسل لها «تم التسليم» في هذه الجلسة، حتى لا نكتب
+  /// محادثات أُرسل لها «تم التسليم» في هذه الجلسة، حتى لا نكتب
   /// المستند نفسه عند كل تحديث لقائمة المحادثات.
   static final Set<String> _deliveredMarked = <String>{};
 
-  static Stream<List<Conversation>> conversations() => _chats
+  /// محادثات علّمتها «غير مقروءة» يدوياً على هذا الجهاز (كإنستغرام: لا تُزامن
+  /// على السيرفر ولا تمسّ إيصالات القراءة).
+  static final Set<String> _manualUnread = <String>{};
+
+  /// يُبَث عند تغيّر [_manualUnread] لإعادة بناء القوائم دون كتابة على السيرفر.
+  static final StreamController<void> _unreadChanges =
+      StreamController<void>.broadcast();
+
+  /// هل علّمتُ المحادثة «غير مقروءة» يدوياً؟
+  static bool isManuallyUnread(String conversationId) =>
+      _manualUnread.contains(conversationId);
+
+  /// تعليم محادثة «غير مقروءة» أو إلغاء ذلك (محلياً على هذا الجهاز فقط).
+  static void setChatUnread(String conversationId, bool unread) {
+    final changed = unread
+        ? _manualUnread.add(conversationId)
+        : _manualUnread.remove(conversationId);
+    if (changed) _unreadChanges.add(null);
+  }
+
+  static Stream<List<Conversation>> conversations() {
+    // ندمج تغيّرات «غير المقروء» المحلية مع لقطة Firestore، فنعيد الإصدار
+    // الأخيرة عند كل تغيير محلي (بلا قراءة أو كتابة إضافية).
+    final controller = StreamController<List<Conversation>>();
+    QuerySnapshot<Map<String, dynamic>>? latest;
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? source;
+    StreamSubscription<void>? local;
+
+    void emit() {
+      final snapshot = latest;
+      if (snapshot == null || controller.isClosed) return;
+      controller.add(_mapConversations(snapshot));
+    }
+
+    controller.onListen = () {
+      source = _chats
           .where('participants', arrayContains: _uid)
           .snapshots()
-          .map((snapshot) {
-        final items = snapshot.docs
-            .map(Conversation.tryFromDoc)
-            .whereType<Conversation>()
-            .toList()
-          ..sort((a, b) {
-            // المحادثات المثبتة أولاً، ثم الأحدث.
-            final aPinned = a.pinnedFor(_uid);
-            final bPinned = b.pinnedFor(_uid);
-            if (aPinned != bPinned) return aPinned ? -1 : 1;
-            return b.updatedAt.compareTo(a.updatedAt);
-          });
-        for (final conversation in items) {
-          if (conversation.lastSenderUid != _uid &&
-              conversation.lastMessageId.isNotEmpty) {
-            final delivered = conversation.deliveredAt[_uid];
-            if (delivered != null &&
-                !conversation.updatedAt.isAfter(delivered)) {
-              continue;
-            }
-            final key = '${conversation.id}/${conversation.lastMessageId}';
-            if (_deliveredMarked.add(key)) {
-              // حقل واحد في المحادثة بدل قراءة الرسالة وتعديلها.
-              unawaited(_stampChat(
-                conversation.id,
-                'deliveredAt',
-                conversation.updatedAt,
-              ).catchError((Object _) {
-                _deliveredMarked
-                    .remove(key); // تُعاد المحاولة عند التحديث التالي
-              }));
-            }
-          }
-        }
-        return items;
+          .listen((snapshot) {
+        latest = snapshot;
+        emit();
+      }, onError: controller.addError);
+      local = _unreadChanges.stream.listen((_) => emit());
+    };
+    controller.onCancel = () async {
+      await source?.cancel();
+      await local?.cancel();
+    };
+    return controller.stream;
+  }
+
+  /// يحوّل لقطة المحادثات إلى نماذج مرتّبة ويعلّم «تم التسليم» لمن يحتاج.
+  static List<Conversation> _mapConversations(
+      QuerySnapshot<Map<String, dynamic>> snapshot) {
+    final items = snapshot.docs
+        .map((doc) => Conversation.tryFromDoc(
+              doc,
+              localUnread: _manualUnread.contains(doc.id),
+            ))
+        .whereType<Conversation>()
+        .toList()
+      ..sort((a, b) {
+        // المحادثات المثبتة أولاً، ثم الأحدث.
+        final aPinned = a.pinnedFor(_uid);
+        final bPinned = b.pinnedFor(_uid);
+        if (aPinned != bPinned) return aPinned ? -1 : 1;
+        return b.updatedAt.compareTo(a.updatedAt);
       });
+    for (final conversation in items) {
+      if (conversation.lastSenderUid != _uid &&
+          conversation.lastMessageId.isNotEmpty) {
+        final delivered = conversation.deliveredAt[_uid];
+        if (delivered != null && !conversation.updatedAt.isAfter(delivered)) {
+          continue;
+        }
+        final key = '${conversation.id}/${conversation.lastMessageId}';
+        if (_deliveredMarked.add(key)) {
+          // حقل واحد في المحادثة بدل قراءة الرسالة وتعديلها.
+          unawaited(_stampChat(
+            conversation.id,
+            'deliveredAt',
+            conversation.updatedAt,
+          ).catchError((Object _) {
+            _deliveredMarked.remove(key); // تُعاد المحاولة عند التحديث التالي
+          }));
+        }
+      }
+    }
+    return items;
+  }
+
+  /// عدد الرسائل الواردة منذ [since] (تجميع count رخيص، بلا قراءة الرسائل).
+  /// عند تمرير [fromUid] نحصر العدّ على رسائل الطرف الآخر (دردشة فردية).
+  /// يُستعمل لشارة «غير المقروء» الرقمية في قائمة المحادثات.
+  static Future<int> unreadMessageCount(
+    String conversationId,
+    DateTime since, {
+    String? fromUid,
+  }) {
+    Query<Map<String, dynamic>> query = _chats
+        .doc(conversationId)
+        .collection('messages')
+        .where('createdAt', isGreaterThan: Timestamp.fromDate(since));
+    if (fromUid != null && fromUid.isNotEmpty) {
+      query = query.where('senderUid', isEqualTo: fromUid);
+    }
+    return query.count().get().then((result) => result.count ?? 0);
+  }
+
+  /// عدد المحادثات التي فيها رسالة غير مقروءة (لشارة تبويب الرسائل، كإنستغرام).
+  /// تستثني المؤرشفة (لها صفّها المستقل) وتشمل طلبات الرسائل غير المقروءة.
+  static Stream<int> unreadChatCount() => conversations().map((items) => items
+      .where((conversation) =>
+          conversation.visibleFor(_uid) &&
+          !conversation.archivedFor(_uid) &&
+          conversation.unreadFor(_uid))
+      .length);
 
   /// يكتب وقتي في حقل خريطة بالمحادثة (readAt / deliveredAt). نزيد ميلي ثانية
   /// واحدة لأن الويب يقصّ الميكروثواني، فلا تبقى الرسالة «غير مقروءة» للأبد.
@@ -691,14 +932,75 @@ class SocialService {
         .update({'clearedAt.$_uid': FieldValue.serverTimestamp()});
   }
 
-  /// تثبيت المحادثة (أو إلغاء تثبيتها) لديّ فقط.
-  static Future<void> setChatPinned(String conversationId, bool pinned) {
-    return _chats.doc(conversationId).update({'pinned.$_uid': pinned});
+  /// قبول طلب رسالة: يجعل المحادثة مقبولة بلا إرسال رسالة (كإنستغرام)، متاح
+  /// فقط لمن وصلته رسالة الطرف الآخر ولم يردّ بعد.
+  static Future<void> acceptChatRequest(String conversationId) {
+    return _chats.doc(conversationId).update({'accepted': true});
   }
 
-  /// كتم المحادثة (أو إلغاء كتمها) لديّ فقط: لا إشعار دفع لرسائلها.
-  static Future<void> setChatMuted(String conversationId, bool muted) {
-    return _chats.doc(conversationId).update({'muted.$_uid': muted});
+  /// الحد الأقصى لعدد المحادثات المثبّتة (كإنستغرام).
+  static const int maxPinnedChats = 3;
+
+  /// تثبيت المحادثة (أو إلغاء تثبيتها) لديّ فقط.
+  static Future<void> setChatPinned(String conversationId, bool pinned) async {
+    if (pinned) {
+      final snapshot = await _chats.doc(conversationId).get();
+      final current = _boolMap(snapshot.data()?['pinned']);
+      final count = current.values.where((value) => value).length;
+      if (current[_uid] != true && count >= maxPinnedChats) {
+        throw StateError(tr('يمكنك تثبيت 3 محادثات فقط'));
+      }
+    }
+    await _chats.doc(conversationId).update({'pinned.$_uid': pinned});
+  }
+
+  /// كتم المحادثة لديّ فقط: حتى وقت محدد، أو حتى إعادة التشغيل (بلا وقت).
+  /// لا إشعار دفع لرسائلها.
+  static Future<void> setChatMuted(
+    String conversationId, {
+    required bool muted,
+    DateTime? until,
+  }) {
+    final forever = muted && until == null;
+    final expiry =
+        muted && until != null ? until : DateTime.fromMillisecondsSinceEpoch(0);
+    return _chats.doc(conversationId).update({
+      'muted.$_uid': forever,
+      'mutedUntil.$_uid': Timestamp.fromDate(expiry),
+    });
+  }
+
+  /// أرشفة المحادثة لديّ (أو إلغاء أرشفتها): تخفيها من الصندوق، وتعود تلقائياً
+  /// عند وصول رسالة جديدة (بفضل archivedAt مقابل updatedAt).
+  static Future<void> setChatArchived(String conversationId, bool archived) {
+    return _chats.doc(conversationId).update({
+      'archived.$_uid': archived,
+      'archivedAt.$_uid': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// تثبيت رسالة داخل المحادثة (أو إلغاء تثبيتها بتمرير null): تظهر للطرفين.
+  static Future<void> setPinnedMessage(
+      String conversationId, String? messageId) {
+    return _chats
+        .doc(conversationId)
+        .update({'pinnedMessageId': messageId ?? ''});
+  }
+
+  /// صور المحادثة (الأحدث أولاً) لشبكة الوسائط المشتركة في تفاصيل المحادثة.
+  static Future<List<ChatMessage>> chatImages(String conversationId,
+      {int limit = 30}) async {
+    final snapshot = await _chats
+        .doc(conversationId)
+        .collection('messages')
+        .where('kind', isEqualTo: 'image')
+        .orderBy('createdAt', descending: true)
+        .limit(limit)
+        .get();
+    return snapshot.docs
+        .map(ChatMessage.tryFromDoc)
+        .whereType<ChatMessage>()
+        .toList();
   }
 
   static Future<bool> areMutualFriends(String otherUid) async {
@@ -762,12 +1064,108 @@ class SocialService {
     return conversationId;
   }
 
+  // ===== المحادثات الجماعية =====
+
+  /// ثوابت حدود المجموعة (مطابقة لقواعد Firestore).
+  static const groupNameMax = 60;
+  static const groupMembersMax = 250;
+
+  /// ينشئ مجموعة باسم [name] وعضوين على الأقل غيري من [memberUids]، ويعيد
+  /// معرّف المحادثة. المنشئ مشرف، والمجموعة مقبولة دائماً (لا طلب رسالة).
+  static Future<String> createGroup({
+    required String name,
+    required List<String> memberUids,
+    String? photoUrl,
+  }) async {
+    final cleanName = name.trim();
+    if (cleanName.isEmpty || cleanName.length > groupNameMax) {
+      throw ArgumentError(tr('اسم المجموعة غير صالح'));
+    }
+    final members = <String>{_uid, ...memberUids}
+        .where((uid) => uid.isNotEmpty)
+        .toList()
+      ..sort();
+    if (members.length < 3) {
+      throw ArgumentError(tr('المجموعة تحتاج عضوين على الأقل معك'));
+    }
+    if (members.length > groupMembersMax) {
+      throw ArgumentError(tr('عدد أعضاء المجموعة كبير'));
+    }
+    final photo = (photoUrl ?? '').trim();
+    final reference = _chats.doc();
+    await reference.set({
+      'participants': members,
+      'isGroup': true,
+      'groupName': cleanName,
+      if (photo.isNotEmpty) 'groupPhoto': photo,
+      'createdBy': _uid,
+      'admins': [_uid],
+      'lastMessage': '',
+      'lastSenderUid': '',
+      'lastMessageId': '',
+      'accepted': true,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    return reference.id;
+  }
+
+  /// يضيف أعضاء إلى مجموعة (المشرف فقط حسب القواعد).
+  static Future<void> addGroupMembers(
+      String conversationId, List<String> uids) async {
+    final clean = uids.where((uid) => uid.isNotEmpty && uid != _uid).toList();
+    if (clean.isEmpty) return;
+    await _chats.doc(conversationId).update({
+      'participants': FieldValue.arrayUnion(clean),
+    });
+  }
+
+  /// يزيل عضواً من المجموعة (المشرف فقط، ولا يمكن إزالة المنشئ).
+  static Future<void> removeGroupMember(
+      String conversationId, String uid) async {
+    if (uid == _uid) return leaveGroup(conversationId);
+    await _chats.doc(conversationId).update({
+      'participants': FieldValue.arrayRemove([uid]),
+      'admins': FieldValue.arrayRemove([uid]),
+    });
+  }
+
+  /// يغادر المجموعة (يبقى المنشئ؛ إن غادر وحده تُهمَل المجموعة).
+  static Future<void> leaveGroup(String conversationId) {
+    return _chats.doc(conversationId).update({
+      'participants': FieldValue.arrayRemove([_uid]),
+      'admins': FieldValue.arrayRemove([_uid]),
+    });
+  }
+
+  static Future<void> setGroupName(String conversationId, String name) async {
+    final clean = name.trim();
+    if (clean.isEmpty || clean.length > groupNameMax) {
+      throw ArgumentError(tr('اسم المجموعة غير صالح'));
+    }
+    await _chats.doc(conversationId).update({'groupName': clean});
+  }
+
+  static Future<void> setGroupPhoto(String conversationId, String photoUrl) {
+    return _chats.doc(conversationId).update({'groupPhoto': photoUrl.trim()});
+  }
+
+  /// يرقّي/يعزل مشرفاً (المشرف فقط).
+  static Future<void> setGroupAdmin(
+      String conversationId, String uid, bool admin) {
+    return _chats.doc(conversationId).update({
+      'admins':
+          admin ? FieldValue.arrayUnion([uid]) : FieldValue.arrayRemove([uid]),
+    });
+  }
+
   static Future<void> sendMessage(
     String conversationId,
     String text, {
     String? replyToMessageId,
     String? replyToText,
     String? replyToSenderUid,
+    DateTime? expiresAt,
   }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty || trimmed.length > 2000) {
@@ -780,6 +1178,7 @@ class SocialService {
       replyToMessageId: replyToMessageId,
       replyToText: replyToText,
       replyToSenderUid: replyToSenderUid,
+      expiresAt: expiresAt,
     );
   }
 
@@ -789,6 +1188,7 @@ class SocialService {
     String? replyToMessageId,
     String? replyToText,
     String? replyToSenderUid,
+    DateTime? expiresAt,
   }) async {
     if (sticker.isEmpty || sticker.length > 24) {
       throw ArgumentError.value(sticker, 'sticker', tr('ملصق غير صالح'));
@@ -800,6 +1200,7 @@ class SocialService {
       replyToMessageId: replyToMessageId,
       replyToText: replyToText,
       replyToSenderUid: replyToSenderUid,
+      expiresAt: expiresAt,
     );
   }
 
@@ -809,6 +1210,8 @@ class SocialService {
     String? replyToMessageId,
     String? replyToText,
     String? replyToSenderUid,
+    bool viewOnce = false,
+    DateTime? expiresAt,
   }) async {
     // مع Cloudinary/Storage تُرفع الصورة وتُحفظ بالرابط فقط، فيمكن أن تكون
     // أكبر وأوضح؛ وضع التجربة (داخل المستند) يبقى بحد 700 كيلوبايت.
@@ -828,8 +1231,172 @@ class SocialService {
       replyToMessageId: replyToMessageId,
       replyToText: replyToText,
       replyToSenderUid: replyToSenderUid,
+      viewOnce: viewOnce,
+      expiresAt: expiresAt,
     );
   }
+
+  /// يسجّل أن المستلم فتح صورة «تُعرض مرة واحدة» (يُخفى المحتوى بعدها لديه).
+  /// يُحدَّث التسليم/القراءة معه ليبقى الطلب صالحاً وفق القواعد.
+  static Future<void> markMessageViewed(
+      String conversationId, String messageId) async {
+    await _chats
+        .doc(conversationId)
+        .collection('messages')
+        .doc(messageId)
+        .update({
+      'viewedBy': FieldValue.arrayUnion([_uid]),
+      'deliveredTo': FieldValue.arrayUnion([_uid]),
+      'readBy': FieldValue.arrayUnion([_uid]),
+    });
+  }
+
+  /// إعادة توجيه رسالة (نص / صورة / ملصق / موقع) إلى محادثة أخرى كما هي،
+  /// موسومة بـ«مُعاد توجيهه». الصورة تُعاد برابطها نفسه بلا رفع جديد.
+  static Future<void> forwardMessage(
+      String conversationId, ChatMessage message) async {
+    if (message.kind == 'image') {
+      final url = message.imageUrl;
+      final bytes = message.imageBytes;
+      if (url == null && bytes == null) {
+        throw StateError(tr('لا يمكن إعادة توجيه هذه الرسالة'));
+      }
+      await _sendChatMessage(
+        conversationId,
+        text: tr('📷 صورة'),
+        kind: 'image',
+        imageUrl: url,
+        imageBytes: url == null ? bytes : null,
+        forwarded: true,
+      );
+      return;
+    }
+    if (message.kind == 'location') {
+      final lat = message.lat;
+      final lng = message.lng;
+      if (lat == null || lng == null) {
+        throw StateError(tr('لا يمكن إعادة توجيه هذه الرسالة'));
+      }
+      final label = message.text.trim();
+      await _sendChatMessage(
+        conversationId,
+        text: label.isEmpty || label.length > 200 ? tr('📍 موقع') : label,
+        kind: 'location',
+        lat: lat,
+        lng: lng,
+        forwarded: true,
+      );
+      return;
+    }
+    final text = message.text.trim();
+    if ((message.kind != 'text' && message.kind != 'sticker') ||
+        text.isEmpty ||
+        text.length > 2000) {
+      throw StateError(tr('لا يمكن إعادة توجيه هذه الرسالة'));
+    }
+    await _sendChatMessage(
+      conversationId,
+      text: text,
+      kind: message.kind,
+      forwarded: true,
+    );
+  }
+
+  /// مشاركة غنية داخل المحادثة: منشور أو ملف شخصي كبطاقة قابلة للنقر.
+  /// [title] هو نص البطاقة (يُستعمل أيضاً كمعاينة في قائمة المحادثات).
+  static Future<void> sendShare(
+    String conversationId, {
+    required String type,
+    String? id,
+    required String title,
+    String? subtitle,
+    String? image,
+    String? link,
+  }) async {
+    if (type != 'post' && type != 'profile') {
+      throw ArgumentError.value(type, 'type', tr('نوع مشاركة غير صالح'));
+    }
+    final cleanTitle = title.trim();
+    if (cleanTitle.isEmpty || cleanTitle.length > 200) {
+      throw ArgumentError(tr('عنوان المشاركة غير صالح'));
+    }
+    String? clean(String? value, int max) {
+      final trimmed = value?.trim() ?? '';
+      return trimmed.isEmpty || trimmed.length > max ? null : trimmed;
+    }
+
+    await _sendChatMessage(
+      conversationId,
+      text: cleanTitle,
+      kind: 'share',
+      shareType: type,
+      shareId: clean(id, 128),
+      shareSubtitle: clean(subtitle, 1000),
+      shareImage: clean(image, 1000),
+      shareLink: clean(link, 1000),
+    );
+  }
+
+  /// إرسال موقعي الحالي كبطاقة (كإنستغرام). [label] اسمها الظاهر إن وُجد.
+  static Future<void> sendLocation(
+    String conversationId, {
+    required double lat,
+    required double lng,
+    String? label,
+  }) async {
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      throw ArgumentError(tr('موقع غير صالح'));
+    }
+    final clean = (label ?? '').trim();
+    await _sendChatMessage(
+      conversationId,
+      text: clean.isEmpty || clean.length > 200 ? tr('📍 موقع') : clean,
+      kind: 'location',
+      lat: lat,
+      lng: lng,
+    );
+  }
+
+  // ===== الرسائل المحفوظة (Saved) =====
+  static CollectionReference<Map<String, dynamic>> _savedMessages() =>
+      _db.collection('users').doc(_uid).collection('savedMessages');
+
+  /// معرّفات الرسائل المحفوظة (لعرض «حفظ» أو «إلغاء الحفظ»).
+  static Stream<Set<String>> savedMessageIds() => _savedMessages()
+      .snapshots()
+      .map((snapshot) => {for (final doc in snapshot.docs) doc.id});
+
+  /// المحفوظات (الأحدث حفظاً أولاً).
+  static Stream<List<SavedMessage>> savedMessages() => _savedMessages()
+      .orderBy('savedAt', descending: true)
+      .snapshots()
+      .map((snapshot) => snapshot.docs
+          .map(SavedMessage.tryFromDoc)
+          .whereType<SavedMessage>()
+          .toList());
+
+  /// حفظ نسخة من الرسالة عندي (لا تُحذف بحذف الرسالة الأصلية).
+  static Future<void> saveMessage(String conversationId, ChatMessage message) {
+    return _savedMessages().doc(message.id).set({
+      'conversationId': conversationId,
+      'senderUid': message.senderUid,
+      'text': message.text,
+      'kind': message.kind,
+      'createdAt': message.createdAt,
+      'savedAt': FieldValue.serverTimestamp(),
+      if (message.imageUrl != null) 'imageUrl': message.imageUrl,
+      if (message.shareType != null) 'shareType': message.shareType,
+      if (message.shareId != null) 'shareId': message.shareId,
+      if (message.shareSubtitle != null) 'shareSubtitle': message.shareSubtitle,
+      if (message.shareImage != null) 'shareImage': message.shareImage,
+      if (message.shareLink != null) 'shareLink': message.shareLink,
+      if (message.lat != null) 'lat': message.lat,
+      if (message.lng != null) 'lng': message.lng,
+    });
+  }
+
+  static Future<void> unsaveMessage(String messageId) =>
+      _savedMessages().doc(messageId).delete();
 
   // ===== «حذف لديّ فقط»: معرّفات الرسائل المخفية عن المستخدم الحالي =====
   static DocumentReference<Map<String, dynamic>> _hiddenDoc(
@@ -948,9 +1515,8 @@ class SocialService {
         'lastMessage': previous?.data()['text'] ?? '',
         'lastSenderUid': previous?.data()['senderUid'] ?? '',
         'lastMessageId': previous?.id ?? '',
-        'updatedAt': previous == null
-            ? FieldValue.serverTimestamp()
-            : previousCreatedAt,
+        'updatedAt':
+            previous == null ? FieldValue.serverTimestamp() : previousCreatedAt,
       });
     }
     batch.delete(message);
@@ -966,6 +1532,16 @@ class SocialService {
     String? replyToMessageId,
     String? replyToText,
     String? replyToSenderUid,
+    bool forwarded = false,
+    String? shareType,
+    String? shareId,
+    String? shareSubtitle,
+    String? shareImage,
+    String? shareLink,
+    double? lat,
+    double? lng,
+    bool viewOnce = false,
+    DateTime? expiresAt,
   }) async {
     final chat = _chats.doc(conversationId);
     final message = chat.collection('messages').doc();
@@ -1011,6 +1587,16 @@ class SocialService {
           'deliveredTo': [_uid],
           'readBy': [_uid],
           'createdAt': FieldValue.serverTimestamp(),
+          if (forwarded) 'forwarded': true,
+          if (viewOnce) 'viewOnce': true,
+          if (expiresAt != null) 'expiresAt': Timestamp.fromDate(expiresAt),
+          if (shareType != null) 'shareType': shareType,
+          if (shareId != null) 'shareId': shareId,
+          if (shareSubtitle != null) 'shareSubtitle': shareSubtitle,
+          if (shareImage != null) 'shareImage': shareImage,
+          if (shareLink != null) 'shareLink': shareLink,
+          if (lat != null) 'lat': lat,
+          if (lng != null) 'lng': lng,
           if (replyToMessageId != null) 'replyToMessageId': replyToMessageId,
           if (replyToText != null) 'replyToText': replyToText,
           if (replyToSenderUid != null) 'replyToSenderUid': replyToSenderUid,
@@ -1059,7 +1645,7 @@ class SocialService {
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     return [
       for (final c in items)
-        if (c.visibleFor(_uid)) c.otherParticipant(_uid),
+        if (!c.isGroup && c.visibleFor(_uid)) c.otherParticipant(_uid),
     ];
   }
 
