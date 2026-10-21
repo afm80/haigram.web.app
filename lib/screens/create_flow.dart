@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -9,6 +10,9 @@ import '../theme.dart';
 
 import '../l10n.dart';
 import '../net_error.dart';
+import '../video_source.dart';
+import 'video_cover.dart';
+import 'video_embed_stub.dart' if (dart.library.html) 'video_embed_web.dart';
 
 enum CreateKind { post, story, video }
 
@@ -464,6 +468,11 @@ class ComposeScreen extends StatefulWidget {
 class _ComposeScreenState extends State<ComposeScreen> {
   final _caption = TextEditingController();
   final _videoLink = TextEditingController();
+  Timer? _linkDebounce;
+  VideoSource? _preview; // الفيديو المعروض في المعاينة (رابط صالح)
+  String? _linkError; // سبب رفض الرابط، أو فشل تشغيل المعاينة
+  bool _playFailed = false; // فشل تشغيل ملف/بث في المعاينة (نعرف النتيجة لهما فقط)
+  bool _playOk = false;
   double _progress = 0;
   bool _busy = false;
   String? _error;
@@ -508,10 +517,108 @@ class _ComposeScreenState extends State<ComposeScreen> {
   bool get _allowVideo => _textOnly && _isVideoKind;
 
   @override
+  void initState() {
+    super.initState();
+    _videoLink.addListener(_onLinkChanged);
+  }
+
+  @override
   void dispose() {
+    _linkDebounce?.cancel();
     _caption.dispose();
     _videoLink.dispose();
     super.dispose();
+  }
+
+  /// يحلّل الرابط بعد توقف الكتابة ويعرض المعاينة أو سبب الرفض.
+  void _onLinkChanged() {
+    _linkDebounce?.cancel();
+    _linkDebounce = Timer(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
+      final text = _videoLink.text.trim();
+      final video = text.isEmpty ? null : VideoSource.parse(text);
+      final error = text.isEmpty || video != null
+          ? null
+          : (VideoSource.isUnresolvableShortLink(text)
+              ? tr('هذا رابط مختصر. افتح الفيديو وانسخ رابطه الكامل')
+              : tr('رابط الفيديو غير مدعوم أو غير صالح'));
+      // نفس الفيديو: لا نعيد بناء المعاينة.
+      if (video?.key == _preview?.key && error == _linkError) return;
+      setState(() {
+        _preview = video;
+        _linkError = error;
+        _playFailed = false;
+        _playOk = false;
+      });
+    });
+  }
+
+  void _onPreviewResult(bool ok) {
+    if (!mounted) return;
+    setState(() {
+      _playOk = ok;
+      _playFailed = !ok;
+      _linkError = ok
+          ? null
+          : tr('تعذر تشغيل هذا الفيديو. تأكد أن الرابط صحيح وعام ويسمح بالتشغيل من المواقع الأخرى');
+    });
+  }
+
+  /// معاينة الفيديو قبل النشر: يشاهد المستخدم أنه يعمل فعلاً.
+  Widget _previewBox(BuildContext context) {
+    final v = _preview;
+    if (v == null) return const SizedBox.shrink();
+    final maxH = MediaQuery.of(context).size.height * (v.isShort ? 0.5 : 0.35);
+    final ok = !_playFailed;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: maxH * v.aspect),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: _playFailed
+                    ? AspectRatio(
+                        aspectRatio: v.aspect,
+                        child: VideoCover(source: v, showPlay: false))
+                    : buildVideoEmbed(v,
+                        key: ValueKey('preview-${v.key}'),
+                        onResult: _onPreviewResult),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Icon(
+                  ok
+                      ? (_playOk
+                          ? Icons.check_circle_rounded
+                          : Icons.info_outline_rounded)
+                      : Icons.error_outline_rounded,
+                  size: 16,
+                  color: context.appColors.textDim),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  _playFailed
+                      ? tr('لم يعمل الفيديو. لا يمكن نشره')
+                      : _playOk
+                          ? trf('الفيديو يعمل ({0})', [v.platformName])
+                          : trf('معاينة من {0}: إن لم يظهر الفيديو أو ظهر خطأ فلن يعمل بعد النشر',
+                              [v.platformName]),
+                  style: TextStyle(
+                      color: context.appColors.textDim, fontSize: 12.5),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   String get _hint => switch (widget.kind) {
@@ -528,19 +635,25 @@ class _ComposeScreenState extends State<ComposeScreen> {
       return;
     }
     final link = _allowVideo ? _videoLink.text.trim() : '';
-    String? videoId;
+    VideoSource? video;
     if (link.isNotEmpty) {
-      videoId = PostService.youtubeId(link);
-      if (videoId == null) {
-        setState(() => _error = tr('رابط يوتيوب غير صالح'));
+      video = VideoSource.parse(link);
+      if (video == null) {
+        setState(() => _error = VideoSource.isUnresolvableShortLink(link)
+            ? tr('هذا رابط مختصر. افتح الفيديو وانسخ رابطه الكامل')
+            : tr('رابط الفيديو غير مدعوم أو غير صالح'));
+        return;
+      }
+      if (_playFailed) {
+        setState(() => _error = tr('لم يعمل الفيديو في المعاينة. لا يمكن نشره'));
         return;
       }
     }
-    if (_isVideoKind && videoId == null) {
-      setState(() => _error = tr('أضف رابط فيديو يوتيوب أولاً'));
+    if (_isVideoKind && video == null) {
+      setState(() => _error = tr('أضف رابط فيديو أولاً'));
       return;
     }
-    if (_textOnly && caption.isEmpty && videoId == null) {
+    if (_textOnly && caption.isEmpty && video == null) {
       setState(() => _error = tr('اكتب شيئاً أو أضف رابط فيديو أولاً'));
       return;
     }
@@ -558,9 +671,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
       final m = _images.isEmpty ? null : _images.first;
       if (m == null) {
-        await PostService.publishText(caption,
-            videoId: videoId,
-            isShort: videoId != null && PostService.isShortsLink(link));
+        await PostService.publishText(caption, video: video);
       } else {
         final type = switch (widget.kind) {
           CreateKind.post => PostType.photo,
@@ -686,6 +797,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
               ),
             const SizedBox(height: 16),
             if (_allowVideo) ...[
+              _previewBox(context),
               TextField(
                 controller: _videoLink,
                 autofocus: _isVideoKind,
@@ -693,9 +805,11 @@ class _ComposeScreenState extends State<ComposeScreen> {
                 textDirection: TextDirection.ltr,
                 decoration: InputDecoration(
                   hintText: _isVideoKind
-                      ? tr('الصق رابط فيديو يوتيوب')
-                      : tr('رابط فيديو يوتيوب (اختياري)'),
+                      ? tr('الصق رابط الفيديو أو البث')
+                      : tr('رابط فيديو (اختياري)'),
                   prefixIcon: const Icon(Icons.play_circle_outline_rounded),
+                  errorText: _linkError,
+                  errorMaxLines: 3,
                 ),
               ),
               const SizedBox(height: 12),

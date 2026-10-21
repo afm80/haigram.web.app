@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -16,6 +15,7 @@ import 'common_widgets.dart';
 import 'create_flow.dart' show CreateKind, startCreate;
 import 'photo_tools.dart';
 import 'post_widgets.dart';
+import 'video_cover.dart';
 import 'settings_screen.dart';
 import 'social_screens.dart' show ChatScreen;
 import 'story_widgets.dart' show StoryViewer;
@@ -1810,8 +1810,8 @@ enum _ProfileTabKind { grid, shorts, videos, reposts }
 /// تبويب في الملف الشخصي. كل منشور ينتمي إلى تبويب واحد على الأقل:
 /// - إعادة النشر: كل ما أُعيد نشره، وهو مستبعد من بقية التبويبات.
 /// - الشبكة: الصور فقط.
-/// - Shorts: شورتز يوتيوب فقط (9:16).
-/// - فيديو: فيديوهات يوتيوب الطويلة فقط (16:9).
+/// - Shorts: الفيديوهات العمودية (شورتز، تيك توك، ريلز) 9:16.
+/// - فيديو: الفيديوهات الأفقية والبث (16:9).
 class _PostsTab extends StatefulWidget {
   final String uid;
   final bool isMe;
@@ -1914,7 +1914,7 @@ class _PostsTabState extends State<_PostsTab> {
           icon: Icons.smart_display_outlined,
           title: me ? tr('ابدأ بأول Short') : tr('لا توجد Shorts بعد'),
           message: me
-              ? tr('شارك رابط Short من يوتيوب وسيظهر هنا في ملفك.')
+              ? tr('شارك رابط فيديو عمودي (Shorts أو TikTok أو Reels) وسيظهر هنا في ملفك.')
               : tr('ستظهر Shorts هذا الحساب هنا.'),
           action: me
               ? _CreateButton(
@@ -1926,7 +1926,7 @@ class _PostsTabState extends State<_PostsTab> {
           icon: Icons.videocam_outlined,
           title: me ? tr('ابدأ بأول فيديو') : tr('لا توجد فيديوهات بعد'),
           message: me
-              ? tr('شارك رابط فيديو من يوتيوب وسيظهر هنا في ملفك.')
+              ? tr('شارك رابط فيديو أو بث وسيظهر هنا في ملفك.')
               : tr('ستظهر فيديوهات هذا الحساب هنا.'),
           action: me
               ? _CreateButton(
@@ -2021,14 +2021,15 @@ class _PostGrid extends StatelessWidget {
                   _ when post.hasVideo => Stack(
                       fit: StackFit.expand,
                       children: [
-                        CachedNetworkImage(
-                          imageUrl: post.videoThumb!,
-                          fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) =>
-                              Container(color: Colors.black),
-                        ),
-                        const Center(
-                          child: Icon(Icons.play_circle_fill_rounded,
+                        if (post.video != null)
+                          VideoCover(source: post.video!)
+                        else
+                          Container(color: Colors.black),
+                        Align(
+                          alignment: post.video?.thumbUrl == null
+                              ? const Alignment(0, 0.6)
+                              : Alignment.center,
+                          child: const Icon(Icons.play_circle_fill_rounded,
                               color: Colors.white, size: 36),
                         ),
                       ],

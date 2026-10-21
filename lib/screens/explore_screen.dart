@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -9,6 +8,7 @@ import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
 import 'post_widgets.dart';
+import 'video_cover.dart';
 import '../route_state.dart';
 
 import '../l10n.dart';
@@ -46,11 +46,10 @@ Widget _postTile(BuildContext context, Post post, {bool root = false}) {
     child = Stack(
       fit: StackFit.expand,
       children: [
-        CachedNetworkImage(
-          imageUrl: post.videoThumb!,
-          fit: BoxFit.cover,
-          errorWidget: (_, __, ___) => Container(color: Colors.black),
-        ),
+        if (post.video != null)
+          VideoCover(source: post.video!)
+        else
+          Container(color: Colors.black),
         const Positioned(
           top: 6,
           right: 6,

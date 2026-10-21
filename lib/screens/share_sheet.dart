@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
@@ -13,6 +12,7 @@ import '../services/user_service.dart';
 import '../theme.dart';
 import 'common_widgets.dart';
 import 'post_widgets.dart' show PostImage;
+import 'video_cover.dart';
 
 import '../l10n.dart';
 import '../net_error.dart';
@@ -610,8 +610,10 @@ Future<void> showAddToStoryDialog(BuildContext rootContext, Post post,
                     children: [
                       const ColoredBox(color: Color(0xFF111111)),
                       if (post.hasVideo)
-                        CachedNetworkImage(
-                            imageUrl: post.videoThumb!, fit: BoxFit.contain)
+                        (post.video == null
+                            ? const SizedBox.shrink()
+                            : VideoCover(
+                                source: post.video!, fit: BoxFit.contain))
                       else
                         PostImage(post: post, fit: BoxFit.contain, height: h),
                       PositionedDirectional(

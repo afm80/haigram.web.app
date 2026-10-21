@@ -14,7 +14,9 @@ import 'common_widgets.dart';
 import 'explore_screen.dart' show ExploreSearchScreen;
 import 'share_sheet.dart';
 import 'translate_widgets.dart';
-import 'yt_embed_stub.dart' if (dart.library.html) 'yt_embed_web.dart';
+import '../video_source.dart';
+import 'video_cover.dart';
+import 'video_embed_stub.dart' if (dart.library.html) 'video_embed_web.dart';
 
 import '../l10n.dart';
 import '../net_error.dart';
@@ -223,12 +225,15 @@ class _PostCardState extends State<PostCard> {
     );
   }
 
-  /// فيديو يوتيوب يعمل داخل المنشور نفسه (صورة مصغّرة ثم تشغيل عند النقر).
-  Widget _videoBlock(Post p) => YoutubeInline(
-      key: ValueKey('yt-${p.id}'),
-      videoId: p.videoId!,
-      isShort: p.isShort,
-      autoPlay: widget.autoPlayVideo);
+  /// فيديو يعمل داخل المنشور نفسه (غلاف/صورة مصغّرة ثم تشغيل عند النقر).
+  Widget _videoBlock(Post p) {
+    final v = p.video;
+    if (v == null) return const SizedBox.shrink();
+    return VideoInline(
+        key: ValueKey('yt-${p.id}'),
+        source: v,
+        autoPlay: widget.autoPlayVideo);
+  }
 
   /// «أعاد @فلان نشره» فوق المنشور المُعاد نشره.
   Widget _repostLabel(Post p) {
@@ -721,20 +726,15 @@ class _LinkTextState extends State<LinkText> {
   }
 }
 
-/// مشغّل يوتيوب داخل التطبيق. نعرض الصورة المصغّرة أولاً (خفيف على الصفحة الرئيسية)
-/// وعند النقر يبدأ الفيديو في مكانه دون الخروج من التطبيق.
-class YoutubeInline extends StatefulWidget {
-  final String videoId;
+/// مشغّل الفيديو داخل التطبيق (يوتيوب وغيره). نعرض الغلاف أولاً (خفيف على الصفحة
+/// الرئيسية) وعند النقر يبدأ الفيديو في مكانه دون الخروج من التطبيق.
+class VideoInline extends StatefulWidget {
+  final VideoSource source;
   final bool autoPlay;
-  final bool isShort;
-  const YoutubeInline(
-      {super.key,
-      required this.videoId,
-      this.autoPlay = false,
-      this.isShort = false});
+  const VideoInline({super.key, required this.source, this.autoPlay = false});
 
   @override
-  State<YoutubeInline> createState() => _YoutubeInlineState();
+  State<VideoInline> createState() => _VideoInlineState();
 }
 
 /// المشغّل المضمّن النشط حالياً (تغييره يغلق أي مشغّل آخر).
@@ -743,10 +743,10 @@ final ValueNotifier<Object?> activeInlineVideo = ValueNotifier<Object?>(null);
 /// يغلق أي فيديو مضمّن يعمل الآن (يُستدعى قبل فتح نافذة شورتز).
 void stopInlineVideos() => activeInlineVideo.value = Object();
 
-class _YoutubeInlineState extends State<YoutubeInline> {
+class _VideoInlineState extends State<VideoInline> {
   /// المشغّل الوحيد النشط حالياً: تشغيل فيديو جديد يغلق السابق.
   static final ValueNotifier<Object?> _active = activeInlineVideo;
-  double get _aspect => widget.isShort ? 9 / 16 : 16 / 9;
+  double get _aspect => widget.source.aspect;
 
   late bool _playing = widget.autoPlay;
   Timer? _watch;
@@ -802,7 +802,7 @@ class _YoutubeInlineState extends State<YoutubeInline> {
   /// على الكمبيوتر ويبقى ما تحته قابلاً للتمرير.
   Widget _limit(BuildContext context, Widget child) {
     final maxH = MediaQuery.of(context).size.height *
-        (widget.isShort ? 0.7 : 0.55);
+        (widget.source.isShort ? 0.7 : 0.55);
     return Center(
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: maxH * _aspect),
@@ -813,11 +813,32 @@ class _YoutubeInlineState extends State<YoutubeInline> {
 
   @override
   Widget build(BuildContext context) {
-    if (_playing) {
-      return _limit(
-          context, buildYoutubeEmbed(widget.videoId, aspect: _aspect));
-    }
-    return _limit(context, _thumb(context));
+    final player = _limit(
+        context,
+        _playing
+            ? buildVideoEmbed(widget.source, aspect: _aspect)
+            : _thumb(context));
+    // المنصات الأخرى قد ترفض التضمين: رابط «فتح في ...» يبقى متاحاً دائماً.
+    if (widget.source.provider == VideoProvider.youtube) return player;
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      player,
+      Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: TextButton.icon(
+          style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              foregroundColor: context.appColors.textDim),
+          onPressed: () => launchUrl(Uri.parse(widget.source.url),
+              mode: LaunchMode.externalApplication),
+          icon: const Icon(Icons.open_in_new_rounded, size: 15),
+          label: Text(
+              widget.source.usesPlayerHtml
+                  ? tr('فتح الرابط')
+                  : trf('فتح في {0}', [widget.source.platformName]),
+              style: const TextStyle(fontSize: 12)),
+        ),
+      ),
+    ]);
   }
 
   Widget _thumb(BuildContext context) {
@@ -833,20 +854,20 @@ class _YoutubeInlineState extends State<YoutubeInline> {
           fit: StackFit.expand,
           children: [
             Container(color: Colors.black),
-            IgnorePointer(
-              child: CachedNetworkImage(
-                imageUrl:
-                    'https://img.youtube.com/vi/${widget.videoId}/hqdefault.jpg',
-                fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => const SizedBox.shrink(),
-              ),
-            ),
-            Center(
+            VideoCover(source: widget.source),
+            Align(
+              // مع الغلاف المرسوم يكون الاسم في الأعلى، فتنزل الأيقونة قليلاً.
+              alignment: widget.source.thumbUrl == null
+                  ? const Alignment(0, 0.45)
+                  : Alignment.center,
               child: Container(
                 width: 64,
                 height: 64,
-                decoration: const BoxDecoration(
-                    color: Color(0xCCFF0000), shape: BoxShape.circle),
+                decoration: BoxDecoration(
+                    color: widget.source.provider == VideoProvider.youtube
+                        ? const Color(0xCCFF0000)
+                        : const Color(0xB3000000),
+                    shape: BoxShape.circle),
                 child: const Icon(Icons.play_arrow_rounded,
                     color: Colors.white, size: 44),
               ),
@@ -1123,11 +1144,7 @@ class _ShortCard extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               Container(color: Colors.black),
-              CachedNetworkImage(
-                imageUrl: post.videoThumb!,
-                fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => const SizedBox.shrink(),
-              ),
+              if (post.video != null) VideoCover(source: post.video!),
               const DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -1379,14 +1396,12 @@ class _ShortsViewerState extends State<ShortsViewer> {
             height: vh,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: active
-                  ? buildYoutubeEmbed(post.videoId!,
-                      key: ValueKey('short-${post.videoId}'), aspect: 9 / 16)
-                  : CachedNetworkImage(
-                      imageUrl: post.videoThumb!,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) =>
-                          Container(color: Colors.black)),
+              child: post.video == null
+                  ? Container(color: Colors.black)
+                  : active
+                      ? buildVideoEmbed(post.video!,
+                          key: ValueKey('short-${post.videoId}'), aspect: 9 / 16)
+                      : VideoCover(source: post.video!),
             ),
           ),
           // المنطقة السفلية بعرض الشاشة كلها وخارج الـ iframe: الأزرار هنا
