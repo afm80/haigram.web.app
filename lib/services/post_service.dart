@@ -13,6 +13,8 @@ import 'social_service.dart';
 import 'user_service.dart';
 
 import '../l10n.dart';
+import '../video_source.dart';
+
 enum PostType { photo, text, story }
 
 class Post {
@@ -25,8 +27,10 @@ class Post {
   final String? mediaUrl;
   final String? mediaId; // وضع التجربة: الملف مخزّن في Firestore على قطع
   final List<String> albumUrls; // ألبوم: روابط كل الصور (الأولى = mediaUrl)
-  final String? videoId; // معرّف فيديو يوتيوب (11 حرفاً) إن وُجد
-  final bool isShort; // رابط شورتز (عمودي 9:16)
+  final String? videoId; // معرّف الفيديو على المنصة إن وُجد (يوتيوب: 11 حرفاً)
+  final String? videoProvider; // المنصة (youtube وغيرها)؛ فارغ = يوتيوب (منشورات قديمة)
+  final String? videoUrl; // الرابط الأصلي للمنصات غير يوتيوب
+  final bool isShort; // فيديو عمودي (شورتز، ريلز، تيك توك)
   final bool authorPrivate; // حساب صاحب المنشور خاص (تفرضه قواعد Firestore)
   final String? sharedFromUsername; // قصة مشاركة من منشور: صاحب الأصل
   final String? sharedFromUid;
@@ -52,6 +56,8 @@ class Post {
     this.mediaId,
     this.albumUrls = const [],
     this.videoId,
+    this.videoProvider,
+    this.videoUrl,
     this.isShort = false,
     this.authorPrivate = false,
     this.sharedFromUsername,
@@ -84,6 +90,8 @@ class Post {
           ? (m['albumUrls'] as List).whereType<String>().toList()
           : const <String>[],
       videoId: m['videoId'] as String?,
+      videoProvider: m['videoProvider'] as String?,
+      videoUrl: m['videoUrl'] as String?,
       isShort: m['isShort'] == true,
       authorPrivate: m['authorPrivate'] == true,
       sharedFromUsername: m['sharedFromUsername'] as String?,
@@ -118,9 +126,15 @@ class Post {
   List<String> get imageUrls =>
       isAlbum ? albumUrls : (mediaUrl != null ? [mediaUrl!] : const []);
 
-  /// صورة الفيديو المصغّرة من يوتيوب (لا تستهلك أي حصة من Firebase أو Cloudinary).
-  String? get videoThumb =>
-      hasVideo ? 'https://img.youtube.com/vi/$videoId/hqdefault.jpg' : null;
+  /// مصدر الفيديو (المنصة والمعرّف)، أو null إن لم يكن للمنشور فيديو صالح.
+  VideoSource? get video => hasVideo
+      ? VideoSource.fromStored(
+          provider: videoProvider, id: videoId, url: videoUrl, isShort: isShort)
+      : null;
+
+  /// صورة الفيديو المصغّرة إن وفّرتها المنصة (لا تستهلك أي حصة من Firebase أو
+  /// Cloudinary). null للمنصات التي ترسم غلافاً بدلها.
+  String? get videoThumb => video?.thumbUrl;
 
   List<String> get hashtags => RegExp(r'#[\p{L}\p{N}_]+', unicode: true)
       .allMatches(caption)
@@ -565,8 +579,12 @@ class PostService {
       'sharedFromPostId': p.id,
     };
     if (p.hasVideo) {
-      // الفيديو: تُنشر صورته المصغّرة من يوتيوب كقصة مع ذكر صاحبه.
-      return _create(PostType.story, '', p.videoThumb, mime: 'image/jpeg', extra: extra);
+      // الفيديو: تُنشر صورته المصغّرة كقصة مع ذكر صاحبه (إن وُجدت صورة للمنصة).
+      final thumb = p.videoThumb;
+      if (thumb == null) {
+        throw StateError(tr('لا يمكن إضافة هذا الفيديو إلى القصة'));
+      }
+      return _create(PostType.story, '', thumb, mime: 'image/jpeg', extra: extra);
     }
     if (p.type != PostType.photo) {
       throw StateError(tr('يمكن إضافة الصور والفيديو فقط إلى القصة'));
@@ -616,6 +634,9 @@ class PostService {
         mime: p.mime,
         extra: {
           if (p.hasVideo) 'videoId': p.videoId,
+          if (p.hasVideo && p.videoProvider != null)
+            'videoProvider': p.videoProvider,
+          if (p.hasVideo && p.videoUrl != null) 'videoUrl': p.videoUrl,
           if (p.hasVideo && p.isShort) 'isShort': true,
           if (p.isAlbum) 'albumUrls': p.albumUrls,
           'repostedFromUid': originalUid,
@@ -696,45 +717,29 @@ class PostService {
   /// watch?v= ، youtu.be ، shorts ، live ، embed ، /v/ ، m. ، music. ، youtube-nocookie.
   /// يعيد null إذا لم يكن الرابط يوتيوب صالحاً.
   static String? youtubeId(String input) {
-    var text = input.trim();
-    if (text.isEmpty) return null;
-    if (!text.contains('://')) text = 'https://$text';
-    final uri = Uri.tryParse(text);
-    if (uri == null) return null;
-    final host = uri.host.toLowerCase().replaceFirst(RegExp(r'^(www\.|m\.|music\.)'), '');
-    final idRe = RegExp(r'^[A-Za-z0-9_-]{11}$');
-    String? id;
-    if (host == 'youtu.be') {
-      if (uri.pathSegments.isNotEmpty) id = uri.pathSegments.first;
-    } else if (host == 'youtube.com' || host == 'youtube-nocookie.com') {
-      final seg = uri.pathSegments;
-      if (seg.isNotEmpty && seg.first == 'watch') {
-        id = uri.queryParameters['v'];
-      } else if (seg.length >= 2 &&
-          const {'shorts', 'live', 'embed', 'v'}.contains(seg.first)) {
-        id = seg[1];
-      }
-    }
-    return (id != null && idRe.hasMatch(id)) ? id : null;
+    final v = VideoSource.parse(input);
+    return v?.provider == VideoProvider.youtube ? v!.id : null;
   }
 
   /// هل الرابط رابط شورتز (youtube.com/shorts/ID)؟
   static bool isShortsLink(String input) {
-    var text = input.trim();
-    if (text.isEmpty) return false;
-    if (!text.contains('://')) text = 'https://$text';
-    final seg = Uri.tryParse(text)?.pathSegments ?? const <String>[];
-    return seg.isNotEmpty && seg.first == 'shorts';
+    final v = VideoSource.parse(input);
+    return v?.provider == VideoProvider.youtube && v!.isShort;
   }
 
-  static String youtubeWatchUrl(String id) => 'https://www.youtube.com/watch?v=$id';
+  static String youtubeWatchUrl(String id) => VideoSource.youtubeWatch(id);
 
   /// منشور نصي، وقد يرافقه (أو يحلّ محلّه) فيديو يوتيوب.
   static Future<void> publishText(String text,
-          {String? videoId, bool isShort = false}) =>
+          {VideoSource? video}) =>
       _create(PostType.text, text, null, extra: {
-        if (videoId != null) 'videoId': videoId,
-        if (videoId != null && isShort) 'isShort': true,
+        if (video != null) 'videoId': video.id,
+        // يوتيوب بلا حقلي المنصة والرابط (متوافق مع المنشورات والقواعد القديمة).
+        if (video != null && video.provider != VideoProvider.youtube) ...{
+          'videoProvider': video.provider.name,
+          'videoUrl': video.url,
+        },
+        if (video != null && video.isShort) 'isShort': true,
       });
 
   // ---- الإعجاب والحفظ والمتابعة ----
