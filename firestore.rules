@@ -205,8 +205,7 @@ service cloud.firestore {
                 && ((!('videoProvider' in request.resource.data)
                       && request.resource.data.videoId.matches('^[A-Za-z0-9_-]{11}$'))
                     || (request.resource.data.videoProvider in
-                          ['vimeo', 'dailymotion', 'twitch',
-                           'facebook', 'file', 'hls']
+                          ['facebook', 'file', 'hls']
                         && request.resource.data.videoUrl is string
                         && request.resource.data.videoUrl.size() <= 600
                         && request.resource.data.videoUrl.matches('^https://[^ ]+$')
