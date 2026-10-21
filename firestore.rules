@@ -201,7 +201,15 @@ service cloud.firestore {
         && request.resource.data.authorPrivate == (myProfile().get('isPrivate', false) == true)
         && (!('videoId' in request.resource.data)
             || (request.resource.data.videoId is string
-                && request.resource.data.videoId.matches('^[A-Za-z0-9_-]{11}$')));
+                && request.resource.data.videoId.matches('^[A-Za-z0-9_-]{1,80}$')
+                && ((!('videoProvider' in request.resource.data)
+                      && request.resource.data.videoId.matches('^[A-Za-z0-9_-]{11}$'))
+                    || (request.resource.data.videoProvider in
+                          ['vimeo', 'dailymotion', 'twitch', 'tiktok',
+                           'facebook', 'instagram', 'file', 'hls']
+                        && request.resource.data.videoUrl is string
+                        && request.resource.data.videoUrl.size() <= 600
+                        && request.resource.data.videoUrl.matches('^https://[^ ]+$')))));
       // المالك يعدّل نص المنشور فقط. أي مستخدم مسجّل يستطيع:
       //  - الإعجاب/إلغاؤه: العدّاد يتغيّر بمقدار 1 فقط وبالتزامن مع إنشاء/حذف مستند إعجابه هو.
       //  - زيادة/إنقاص عدّاد التعليقات بمقدار 1، وزيادة المشاركات بمقدار 1.
