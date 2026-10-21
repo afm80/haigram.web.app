@@ -28,6 +28,16 @@ Map<String, DateTime> _tsMap(Object? raw) {
   return out;
 }
 
+/// خريطة {uid: true/false} مثل pinned / muted.
+Map<String, bool> _boolMap(Object? raw) {
+  if (raw is! Map) return const {};
+  final out = <String, bool>{};
+  raw.forEach((key, value) {
+    if (key is String && value is bool) out[key] = value;
+  });
+  return out;
+}
+
 class Conversation {
   final String id;
   final List<String> participants;
@@ -41,6 +51,10 @@ class Conversation {
   final Map<String, DateTime> deliveredAt;
   final Map<String, DateTime> clearedAt;
 
+  /// من ثبّت المحادثة / كتمها (مفتاحها uid).
+  final Map<String, bool> pinned;
+  final Map<String, bool> muted;
+
   const Conversation({
     required this.id,
     required this.participants,
@@ -51,7 +65,12 @@ class Conversation {
     this.readAt = const {},
     this.deliveredAt = const {},
     this.clearedAt = const {},
+    this.pinned = const {},
+    this.muted = const {},
   });
+
+  bool pinnedFor(String uid) => pinned[uid] == true;
+  bool mutedFor(String uid) => muted[uid] == true;
 
   String otherParticipant(String uid) =>
       participants.firstWhere((participant) => participant != uid);
@@ -94,6 +113,8 @@ class Conversation {
         readAt: _tsMap(data['readAt']),
         deliveredAt: _tsMap(data['deliveredAt']),
         clearedAt: _tsMap(data['clearedAt']),
+        pinned: _boolMap(data['pinned']),
+        muted: _boolMap(data['muted']),
       );
     } catch (_) {
       return null;
@@ -530,7 +551,13 @@ class SocialService {
             .map(Conversation.tryFromDoc)
             .whereType<Conversation>()
             .toList()
-          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+          ..sort((a, b) {
+            // المحادثات المثبتة أولاً، ثم الأحدث.
+            final aPinned = a.pinnedFor(_uid);
+            final bPinned = b.pinnedFor(_uid);
+            if (aPinned != bPinned) return aPinned ? -1 : 1;
+            return b.updatedAt.compareTo(a.updatedAt);
+          });
         for (final conversation in items) {
           if (conversation.lastSenderUid != _uid &&
               conversation.lastMessageId.isNotEmpty) {
@@ -662,6 +689,11 @@ class SocialService {
     return _chats
         .doc(conversationId)
         .update({'clearedAt.$_uid': FieldValue.serverTimestamp()});
+  }
+
+  /// تثبيت المحادثة (أو إلغاء تثبيتها) لديّ فقط.
+  static Future<void> setChatPinned(String conversationId, bool pinned) {
+    return _chats.doc(conversationId).update({'pinned.$_uid': pinned});
   }
 
   static Future<bool> areMutualFriends(String otherUid) async {
