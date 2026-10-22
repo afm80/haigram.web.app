@@ -1333,12 +1333,54 @@ class PostService {
     return controller.stream;
   }
 
-  /// قصص الحسابات العامة، وقصصي أنا أيضاً إذا كان حسابي خاصاً
-  /// (لأن القصص العامة تستثني الحسابات الخاصة).
+  /// يبدّل إلى تدفّق جديد كلما وصلت قيمة جديدة من [source] (ويلغي القديم).
+  static Stream<R> _switchMap<T, R>(
+      Stream<T> source, Stream<R> Function(T) build) {
+    late final StreamController<R> controller;
+    StreamSubscription<T>? outer;
+    StreamSubscription<R>? inner;
+    controller = StreamController<R>(
+      onListen: () {
+        outer = source.listen((v) {
+          inner?.cancel();
+          inner = build(v).listen(controller.add, onError: controller.addError);
+        }, onError: controller.addError);
+      },
+      onCancel: () async {
+        await outer?.cancel();
+        await inner?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
+  /// قصص من أتابعهم (حسابات عامة)، على دفعات من 30 (حد whereIn).
+  /// تستخدم الفهرس الموجود authorPrivate + type + uid + createdAt.
+  static Stream<List<Post>> _followedStories(List<String> ids) {
+    if (ids.isEmpty) return Stream.value(const <Post>[]);
+    Stream<List<Post>>? merged;
+    for (var i = 0; i < ids.length && i < 300; i += 30) {
+      final chunk = ids.sublist(i, math.min(i + 30, ids.length));
+      final s = _byType(PostType.story)
+          .where('authorPrivate', isEqualTo: false)
+          .where('uid', whereIn: chunk)
+          .limit(60)
+          .snapshots()
+          .map((q) => _parse(q.docs));
+      merged = merged == null ? s : _mergeLists(merged, s);
+    }
+    return merged!;
+  }
+
+  /// قصص من أتابعهم أولاً (دون سقف الأحدث-100 العام)، وقصصي أنا دائماً،
+  /// وأحدث قصص الحسابات العامة للاكتشاف. القصص العامة تستثني الحسابات الخاصة.
   static Stream<List<Post>> _visibleStories() {
-    final public = stream(PostType.story, limit: 100);
-    if (UserService.me?.isPrivate != true) return public;
-    return _mergeLists(public, stream(PostType.story, uid: uidOrEmpty, limit: 30));
+    final discover = stream(PostType.story, limit: 50);
+    if (isGuest) return discover;
+    final mine = stream(PostType.story, uid: uidOrEmpty, limit: 30);
+    final followed =
+        _switchMap<List<String>, List<Post>>(followingIds(), _followedStories);
+    return _mergeLists(_mergeLists(discover, mine), followed);
   }
 
   static Stream<List<StoryGroup>> storyGroups() =>
