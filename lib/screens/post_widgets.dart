@@ -896,12 +896,17 @@ class PostImage extends StatelessWidget {
 
   /// رابط صورة محدد (لصفحات الألبوم)؛ وإلا تُعرض الصورة الأولى للمنشور.
   final String? urlOverride;
+
+  /// يُستدعى مرة بعد ظهور الصورة فعلاً (أو فشل تحميلها)؛ يستخدمه عارض القصص
+  /// ليبدأ عدّاد المدة بعد التحميل لا قبله.
+  final VoidCallback? onLoaded;
   const PostImage(
       {super.key,
       required this.post,
       this.fit = BoxFit.cover,
       this.height,
-      this.urlOverride});
+      this.urlOverride,
+      this.onLoaded});
 
   @override
   Widget build(BuildContext context) {
@@ -945,15 +950,35 @@ class PostImage extends StatelessWidget {
         fit: fit,
         memCacheWidth: decodeWidth,
         placeholder: (_, __) => loading,
-        errorWidget: (_, __, ___) => broken,
+        imageBuilder: onLoaded == null
+            ? null
+            : (_, provider) {
+                _notifyLoaded();
+                return Image(
+                    image: provider,
+                    width: double.infinity,
+                    height: height,
+                    fit: fit);
+              },
+        errorWidget: (_, __, ___) {
+          _notifyLoaded();
+          return broken;
+        },
       );
     }
-    if (post.mediaId == null) return broken;
+    if (post.mediaId == null) {
+      _notifyLoaded();
+      return broken;
+    }
     return FutureBuilder<Uint8List>(
       future: PostService.mediaBytes(post),
       builder: (_, s) {
-        if (s.hasError) return broken;
+        if (s.hasError) {
+          _notifyLoaded();
+          return broken;
+        }
         if (!s.hasData) return loading;
+        _notifyLoaded();
         return Image.memory(s.data!,
             width: double.infinity,
             height: height,
@@ -962,6 +987,12 @@ class PostImage extends StatelessWidget {
             gaplessPlayback: true);
       },
     );
+  }
+
+  void _notifyLoaded() {
+    final cb = onLoaded;
+    if (cb == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) => cb());
   }
 }
 

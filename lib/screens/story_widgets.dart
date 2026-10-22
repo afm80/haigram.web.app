@@ -61,8 +61,22 @@ class StoryViewed {
   static void markAndRecord(Post story) {
     if (_seen.add(story.id)) {
       _persist();
-      PostService.recordStoryView(story).catchError((_) {});
+      _record(story);
+    } else if (_failed.contains(story.id)) {
+      // فشل تسجيل المشاهدة سابقاً (انقطاع مثلاً): نعيد المحاولة عند فتحها ثانية.
+      _record(story);
     }
+  }
+
+  /// قصص فشل إرسال مشاهدتها للخادم (في الذاكرة فقط).
+  static final Set<String> _failed = {};
+
+  static void _record(Post story) {
+    PostService.recordStoryView(story).then((_) {
+      _failed.remove(story.id);
+    }).catchError((_) {
+      _failed.add(story.id);
+    });
   }
 
   static bool isSeen(String id) => _seen.contains(id);
@@ -494,8 +508,18 @@ class _StoryViewerState extends State<StoryViewer>
       ),
     );
     if (ok == true) {
-      await PostService.deletePost(_story);
-      if (mounted) Navigator.of(context).pop();
+      final st = _story;
+      await PostService.deletePost(st);
+      if (!mounted) return;
+      final list = _group.stories;
+      if (list.length > 1) {
+        // نبقى في العارض وننتقل لقصة صاحبها التالية بدل إغلاقه كله.
+        list.remove(st);
+        _go(_g, _s.clamp(0, list.length - 1).toInt());
+        _setPause('dialog', false);
+      } else {
+        Navigator.of(context).pop();
+      }
     } else {
       _setPause('dialog', false);
     }
@@ -712,7 +736,8 @@ class _StoryViewerState extends State<StoryViewer>
                       _StoryMedia(
                           key: ValueKey(story.id),
                           story: story,
-                          onReady: active ? _onReady : (_) {}),
+                          active: active,
+                          onReady: _onReady),
                       IgnorePointer(
                         child: DecoratedBox(
                           decoration: BoxDecoration(
@@ -1042,19 +1067,42 @@ class _StoryViewerState extends State<StoryViewer>
 
 class _StoryMedia extends StatefulWidget {
   final Post story;
+  final bool active;
   final void Function(Duration) onReady;
-  const _StoryMedia({super.key, required this.story, required this.onReady});
+  const _StoryMedia(
+      {super.key,
+      required this.story,
+      required this.active,
+      required this.onReady});
 
   @override
   State<_StoryMedia> createState() => _StoryMediaState();
 }
 
 class _StoryMediaState extends State<_StoryMedia> {
+  bool _loaded = false; // ظهرت الصورة (أو فشل تحميلها)
+  bool _notified = false; // أبلغنا العارض ليبدأ العدّاد
+
+  /// يبدأ العدّاد فقط بعد تحميل الصورة وعندما تكون هذه الصفحة هي النشطة.
+  void _maybeNotify() {
+    if (!mounted || !_loaded || !widget.active || _notified) return;
+    _notified = true;
+    widget.onReady(const Duration(seconds: 5));
+  }
+
+  void _onLoaded() {
+    _loaded = true;
+    _maybeNotify();
+  }
+
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback(
-        (_) => widget.onReady(const Duration(seconds: 5)));
+  void didUpdateWidget(covariant _StoryMedia old) {
+    super.didUpdateWidget(old);
+    // صارت الصفحة نشطة بعد أن حُمّلت صورتها وهي مخفية (سحب بين الأشخاص).
+    if (old.active && !widget.active) _notified = false;
+    if (!old.active && widget.active) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeNotify());
+    }
   }
 
   @override
@@ -1076,7 +1124,8 @@ class _StoryMediaState extends State<_StoryMedia> {
               child: PostImage(
                   post: widget.story,
                   fit: BoxFit.contain,
-                  height: c.maxHeight),
+                  height: c.maxHeight,
+                  onLoaded: _onLoaded),
             ),
           ],
         ),
