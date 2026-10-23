@@ -30,7 +30,7 @@ int get maxPhotoBytes =>
 String _kindTitle(CreateKind k) => switch (k) {
       CreateKind.post => tr('منشور جديد'),
       CreateKind.story => tr('قصة جديدة'),
-      CreateKind.video => tr('فيديو جديد'),
+      CreateKind.video => tr('رابط فيديو'),
     };
 
 /// يفتح شاشة الإنشاء (كاميرا أو ملفات الجهاز) للنوع المطلوب.
@@ -38,10 +38,13 @@ void startCreate(BuildContext context, CreateKind kind) {
   if (needsLogin(context)) return;
   Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
       fullscreenDialog: true,
-      builder: (_) => kind == CreateKind.video
-          ? ComposeScreen(kind: kind)
-          : CaptureScreen(kind: kind)));
+      builder: (_) => _createScreen(kind)));
 }
+
+/// المنشور ورابط الفيديو يبدآن بالنص مباشرة (الصورة اختيارية)، والقصة بالكاميرا.
+Widget _createScreen(CreateKind kind) => kind == CreateKind.story
+    ? CaptureScreen(kind: kind)
+    : ComposeScreen(kind: kind);
 
 /// الشريط السفلي الصغير: منشور / قصة (مثل إنستغرام).
 void showCreateSheet(BuildContext context) {
@@ -62,73 +65,42 @@ void showCreateSheet(BuildContext context) {
         navigator.push<void>(
           MaterialPageRoute(
             fullscreenDialog: true,
-            builder: (_) => kind == CreateKind.video
-                ? ComposeScreen(kind: kind)
-                : CaptureScreen(kind: kind),
+            builder: (_) => _createScreen(kind),
           ),
         );
       }
 
-      Widget option({
-        required String title,
-        required IconData icon,
-        required CreateKind kind,
-      }) =>
-          SizedBox(
-            width: 88,
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: () => open(kind),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 58,
-                        height: 58,
-                        decoration: BoxDecoration(
-                          color: colors.surfaceHigh,
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                        alignment: Alignment.center,
-                        child: Icon(icon, color: colors.text, size: 26),
+      // صف بسيط كما في إنستغرام: عنوان على جهة البداية وأيقونة على جهة النهاية.
+      Widget option(String title, IconData icon, CreateKind kind) => InkWell(
+            onTap: () => open(kind),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        color: colors.text,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
                       ),
-                      const SizedBox(height: 7),
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: colors.text,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
+                  Icon(icon, color: colors.text, size: 26),
+                ],
               ),
             ),
           );
 
+      Widget divider() =>
+          Divider(height: 1, color: colors.text.withOpacity(0.10));
+
       return SafeArea(
         top: false,
-        child: Container(
-          decoration: BoxDecoration(
-            color: colors.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.18),
-                blurRadius: 24,
-                offset: const Offset(0, -6),
-              ),
-            ],
-          ),
+        child: Material(
+          color: colors.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -141,60 +113,24 @@ void showCreateSheet(BuildContext context) {
                   borderRadius: BorderRadius.circular(3),
                 ),
               ),
-              SizedBox(
-                height: 56,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Text(
-                      tr('إنشاء'),
-                      style: TextStyle(
-                        color: colors.text,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    PositionedDirectional(
-                      end: 8,
-                      child: IconButton(
-                        tooltip: tr('إغلاق'),
-                        onPressed: () => Navigator.of(ctx).pop(),
-                        icon: Icon(Icons.close_rounded,
-                            color: colors.text, size: 22),
-                      ),
-                    ),
-                  ],
+              const SizedBox(height: 14),
+              Text(
+                tr('إنشاء'),
+                style: TextStyle(
+                  color: colors.text,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-              Divider(height: 1, color: colors.text.withOpacity(0.10)),
-              SizedBox(
-                height: 104,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Row(
-                    children: [
-                      option(
-                        title: tr('منشور'),
-                        icon: Icons.grid_on_outlined,
-                        kind: CreateKind.post,
-                      ),
-                      option(
-                        title: tr('قصة'),
-                        icon: Icons.add_circle_outline_rounded,
-                        kind: CreateKind.story,
-                      ),
-                      option(
-                        title: tr('فيديو'),
-                        icon: Icons.movie_creation_outlined,
-                        kind: CreateKind.video,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 10),
+              divider(),
+              option(tr('منشور'), Icons.grid_on_rounded, CreateKind.post),
+              divider(),
+              option(tr('قصة'), Icons.add_circle_outline_rounded,
+                  CreateKind.story),
+              divider(),
+              option(tr('رابط فيديو'), Icons.link_rounded, CreateKind.video),
+              const SizedBox(height: 8),
             ],
           ),
         ),
@@ -507,11 +443,43 @@ class _ComposeScreenState extends State<ComposeScreen> {
     ...widget.extraMedia,
   ];
 
-  bool get _textOnly => widget.media == null;
+  bool get _textOnly => _images.isEmpty;
 
   // الألبومات للمنشور فقط (لا للقصة) وتتطلب تخزيناً برابط مباشر.
   bool get _canAlbum =>
       widget.kind == CreateKind.post && PostService.useRemoteMedia;
+
+  /// إضافة الصورة الأولى للمنشور (اختيارية): من الكاميرا أو ملفات الجهاز.
+  Future<void> _addFirstPhoto(ImageSource source) async {
+    if (_busy) return;
+    try {
+      if (source == ImageSource.gallery && _canAlbum) {
+        final (picked, truncated) =
+            await pickAlbumMedia(_picker, max: PostService.maxAlbumImages);
+        if (!mounted || picked.isEmpty) return;
+        setState(() {
+          _images.addAll(picked);
+          _error = truncated
+              ? trf('الحد الأقصى {0} صور', [PostService.maxAlbumImages])
+              : null;
+        });
+      } else {
+        final m = await pickMedia(_picker, source: source);
+        if (!mounted || m == null) return;
+        setState(() {
+          _images.add(m);
+          _error = null;
+        });
+      }
+    } on MediaError catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error =
+            friendlyError(e, fallback: tr('تعذر فتح الكاميرا أو الملفات')));
+      }
+    }
+  }
 
   Future<void> _addMore() async {
     final room = PostService.maxAlbumImages - _images.length;
@@ -699,8 +667,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
   Future<void> _publish() async {
     final caption = _caption.text.trim();
-    if (_textOnly && !_isVideoKind) {
-      setState(() => _error = tr('أضف صورة أو رابط فيديو أولاً'));
+    if (_textOnly && widget.kind == CreateKind.story) {
+      setState(() => _error = tr('أضف صورة أولاً'));
       return;
     }
     final link = _allowVideo ? _videoLink.text.trim() : '';
@@ -725,7 +693,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
       return;
     }
     if (_textOnly && caption.isEmpty && video == null) {
-      setState(() => _error = tr('اكتب شيئاً أو أضف رابط فيديو أولاً'));
+      setState(() => _error = tr('اكتب شيئاً أو أضف صورة أولاً'));
       return;
     }
     setState(() {
@@ -868,6 +836,24 @@ class _ComposeScreenState extends State<ComposeScreen> {
                         children: [
                           Image.memory(_images.first.bytes,
                               fit: BoxFit.contain),
+                          if (widget.kind == CreateKind.post)
+                            PositionedDirectional(
+                              top: 6,
+                              end: 6,
+                              child: GestureDetector(
+                                onTap: _busy
+                                    ? null
+                                    : () => setState(() => _images.clear()),
+                                child: Container(
+                                  padding: const EdgeInsets.all(5),
+                                  decoration: const BoxDecoration(
+                                      color: Colors.black54,
+                                      shape: BoxShape.circle),
+                                  child: const Icon(Icons.close_rounded,
+                                      size: 18, color: Colors.white),
+                                ),
+                              ),
+                            ),
                           if (_canSticker)
                             Positioned.fill(
                               child: StickerLayer(
@@ -971,6 +957,24 @@ class _ComposeScreenState extends State<ComposeScreen> {
               maxLength: 500,
               decoration: InputDecoration(hintText: _hint),
             ),
+            if (widget.kind == CreateKind.post && _images.isEmpty)
+              Wrap(
+                spacing: 8,
+                children: [
+                  TextButton.icon(
+                    onPressed:
+                        _busy ? null : () => _addFirstPhoto(ImageSource.gallery),
+                    icon: const Icon(Icons.photo_library_outlined),
+                    label: Text(tr('ملفات الجهاز')),
+                  ),
+                  TextButton.icon(
+                    onPressed:
+                        _busy ? null : () => _addFirstPhoto(ImageSource.camera),
+                    icon: const Icon(Icons.photo_camera_outlined),
+                    label: Text(tr('التقاط صورة')),
+                  ),
+                ],
+              ),
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
