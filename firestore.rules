@@ -1094,6 +1094,105 @@ service cloud.firestore {
     }
 
     // قطع الملفات (وضع التجربة): كل قطعة تحمل uid صاحبها، لا تُعدَّل، ويحذفها صاحبها فقط
+    // قائمة الأصدقاء المقربين: لصاحبها وحده (حتى 100 معرّف).
+    match /closeFriends/{ownerUid} {
+      allow read: if isActiveUser() && request.auth.uid == ownerUid;
+      allow read, delete: if isAdmin();
+      allow create, update: if isActiveUser()
+        && request.auth.uid == ownerUid
+        && request.resource.data.keys().hasOnly(['uids', 'updatedAt'])
+        && request.resource.data.uids is list
+        && request.resource.data.uids.size() <= 100
+        && !request.resource.data.uids.hasAny([ownerUid])
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isActiveUser() && request.auth.uid == ownerUid;
+    }
+
+    // هل أستطيع رؤية قصة الأصدقاء المقربين؟ صاحبها، أو مدرَج في allowed.
+    function closeStoryReadable(storyId) {
+      let d = get(/databases/$(database)/documents/closeStories/$(storyId)).data;
+      return d.uid == request.auth.uid || request.auth.uid in d.allowed;
+    }
+
+    // قصص الأصدقاء المقربين (24 ساعة): تُقرأ فقط لصاحبها ولمن في allowed.
+    // الاستعلامات يجب أن تحمل where('allowed', arrayContains: uid) أو where('uid', ==, uid).
+    match /closeStories/{storyId} {
+      allow read: if isActiveUser()
+        && (isAdmin()
+            || resource.data.uid == request.auth.uid
+            || request.auth.uid in resource.data.allowed);
+      allow read, delete: if isAdmin();
+      allow create: if isActiveUser()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.type == 'story'
+        && request.resource.data.closeFriends == true
+        && storyId.matches('^cf_[A-Za-z0-9]{10,40}$')
+        && request.resource.data.caption is string
+        && request.resource.data.caption.size() <= 500
+        && (request.resource.data.get('mediaUrl', null) == null
+            || (request.resource.data.mediaUrl is string
+                && request.resource.data.mediaUrl.size() <= 1000
+                && request.resource.data.mediaUrl.matches('^https://[^ ]+$')))
+        && request.resource.data.likes == 0
+        && request.resource.data.get('comments', 0) == 0
+        && request.resource.data.get('views', 0) == 0
+        && request.resource.data.createdAt == request.time
+        && authorMatchesProfile()
+        // المستلمون: من قائمتي الحالية فقط (يمنع إرسال قصص لغير المقربين).
+        && request.resource.data.allowed is list
+        && request.resource.data.allowed.size() > 0
+        && request.resource.data.allowed.size() <= 100
+        && !request.resource.data.allowed.hasAny([request.auth.uid])
+        && request.resource.data.allowed.toSet().difference(
+            get(/databases/$(database)/documents/closeFriends/$(request.auth.uid)).data.uids.toSet()).size() == 0
+        && (!('poll' in request.resource.data)
+            || (request.resource.data.poll is map
+                && request.resource.data.poll.keys().hasOnly(['q', 'a', 'b'])
+                && request.resource.data.poll.q is string
+                && request.resource.data.poll.q.size() > 0
+                && request.resource.data.poll.q.size() <= 100
+                && request.resource.data.poll.a is string
+                && request.resource.data.poll.a.size() > 0
+                && request.resource.data.poll.a.size() <= 40
+                && request.resource.data.poll.b is string
+                && request.resource.data.poll.b.size() > 0
+                && request.resource.data.poll.b.size() <= 40))
+        && (!('mentions' in request.resource.data)
+            || (request.resource.data.mentions is list
+                && request.resource.data.mentions.size() <= 3));
+      allow update: if false;
+      allow delete: if isActiveUser() && resource.data.uid == request.auth.uid;
+
+      match /views/{viewerUid} {
+        allow read: if isActiveUser()
+          && get(/databases/$(database)/documents/closeStories/$(storyId)).data.uid == request.auth.uid;
+        allow create, update: if isActiveUser()
+          && request.auth.uid == viewerUid
+          && closeStoryReadable(storyId)
+          && get(/databases/$(database)/documents/closeStories/$(storyId)).data.uid != viewerUid
+          && request.resource.data.keys().hasOnly(['at'])
+          && request.resource.data.at == request.time;
+        allow read, delete: if isAdmin();
+        allow delete: if isActiveUser()
+          && get(/databases/$(database)/documents/closeStories/$(storyId)).data.uid == request.auth.uid;
+      }
+
+      match /votes/{voterUid} {
+        allow read: if isActiveUser() && (isAdmin() || closeStoryReadable(storyId));
+        allow create: if isActiveUser()
+          && request.auth.uid == voterUid
+          && closeStoryReadable(storyId)
+          && get(/databases/$(database)/documents/closeStories/$(storyId)).data.uid != voterUid
+          && get(/databases/$(database)/documents/closeStories/$(storyId)).data.get('poll', null) != null
+          && request.resource.data.keys().hasOnly(['choice', 'at'])
+          && request.resource.data.choice in [0, 1]
+          && request.resource.data.at == request.time;
+        allow delete: if isAdmin();
+        allow delete: if isActiveUser()
+          && get(/databases/$(database)/documents/closeStories/$(storyId)).data.uid == request.auth.uid;
+      }
+    }
+
     match /media/{chunkId} {
       allow read: if isActiveUser();
       allow create: if isActiveUser()
