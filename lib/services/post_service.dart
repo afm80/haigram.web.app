@@ -77,6 +77,7 @@ class Post {
   final StoryPoll? poll; // استطلاع داخل القصة (اختياري)
   final List<StoryMention> mentions; // مستخدمون مذكورون في القصة
   final bool authorPrivate; // حساب صاحب المنشور خاص (تفرضه قواعد Firestore)
+  final bool closeFriends; // قصة للأصدقاء المقربين فقط (مجموعة closeStories)
   final String? sharedFromUsername; // قصة مشاركة من منشور: صاحب الأصل
   final String? sharedFromUid;
   final String? repostedFromUid; // إعادة نشر: صاحب المنشور الأصلي
@@ -108,6 +109,7 @@ class Post {
     this.poll,
     this.mentions = const [],
     this.authorPrivate = false,
+    this.closeFriends = false,
     this.sharedFromUsername,
     this.sharedFromUid,
     this.repostedFromUid,
@@ -145,6 +147,7 @@ class Post {
       poll: StoryPoll.fromMap(m['poll']),
       mentions: StoryMention.listFrom(m['mentions']),
       authorPrivate: m['authorPrivate'] == true,
+      closeFriends: m['closeFriends'] == true,
       sharedFromUsername: m['sharedFromUsername'] as String?,
       sharedFromUid: m['sharedFromUid'] as String?,
       repostedFromUid: m['repostedFromUid'] as String?,
@@ -581,6 +584,7 @@ class PostService {
       {String? mediaId,
       int chunks = 0,
       String? mime,
+      bool closeFriends = false,
       Map<String, dynamic> extra = const {}}) async {
     final data = <String, dynamic>{
       'type': type.name,
@@ -599,6 +603,19 @@ class PostService {
       'createdAt': FieldValue.serverTimestamp(),
     };
     data.addAll(extra);
+    if (closeFriends) {
+      // قصة للأصدقاء المقربين: مجموعة منفصلة، وقائمة من يحق له رؤيتها وقت النشر.
+      final allowed = await closeFriendIds();
+      if (allowed.isEmpty) {
+        throw StateError(tr('أضف أصدقاء مقربين أولاً'));
+      }
+      data['closeFriends'] = true;
+      data['allowed'] = allowed;
+      final id = '$_closeIdPrefix${_db.collection('closeStories').doc().id}';
+      await _db.collection('closeStories').doc(id).set(data);
+      notifyStatsChanged();
+      return;
+    }
     await _db.collection('posts').add(data);
     notifyStatsChanged();
   }
@@ -714,23 +731,27 @@ class PostService {
     required String caption,
     required void Function(double) onProgress,
     Map<String, dynamic> extra = const {},
+    bool closeFriends = false,
   }) async {
     if (useCloudinary) {
       onProgress(0);
       final url = await _uploadCloudinary(bytes, mime, ext);
       onProgress(1);
-      await _create(type, caption, url, mime: mime, extra: extra);
+      await _create(type, caption, url,
+          mime: mime, extra: extra, closeFriends: closeFriends);
     } else if (useStorage) {
       final url = await _upload(
           bytes, 'photos/${_user.uid}/${_stamp()}.$ext', mime, onProgress);
-      await _create(type, caption, url, mime: mime, extra: extra);
+      await _create(type, caption, url,
+          mime: mime, extra: extra, closeFriends: closeFriends);
     } else {
       final id = await _storeInFirestore(bytes, onProgress);
       await _create(type, caption, null,
           mediaId: id,
           chunks: (bytes.length / _chunkSize).ceil(),
           mime: mime,
-          extra: extra);
+          extra: extra,
+          closeFriends: closeFriends);
     }
   }
 
@@ -803,8 +824,10 @@ class PostService {
 
   /// قصة نصية بخلفية ملونة (بدون صورة). [bg] رقم الخلفية من story_backgrounds.dart.
   static Future<void> publishTextStory(String text, int bg,
-          {StoryPoll? poll, List<StoryMention> mentions = const []}) =>
-      _create(PostType.story, text, null, extra: {
+          {StoryPoll? poll,
+          List<StoryMention> mentions = const [],
+          bool closeFriends = false}) =>
+      _create(PostType.story, text, null, closeFriends: closeFriends, extra: {
         'bg': bg,
         if (poll != null) 'poll': poll.toMap(),
         if (mentions.isNotEmpty)
@@ -833,7 +856,7 @@ class PostService {
   static Future<void> recordStoryView(Post story) async {
     if (isGuest || story.uid == _user.uid) return;
     await _db
-        .collection('posts')
+        .collection(_colOf(story.id))
         .doc(story.id)
         .collection('views')
         .doc(_user.uid)
@@ -843,7 +866,7 @@ class PostService {
   // ---- استطلاع القصة ----
   /// يسجّل تصويتي (0 أو 1). مرة واحدة فقط؛ القواعد ترفض التعديل.
   static Future<void> votePoll(String postId, int choice) => _db
-      .collection('posts')
+      .collection(_colOf(postId))
       .doc(postId)
       .collection('votes')
       .doc(_user.uid)
@@ -853,7 +876,7 @@ class PostService {
   static Future<int?> myPollVote(String postId) async {
     if (isGuest) return null;
     final d = await _db
-        .collection('posts')
+        .collection(_colOf(postId))
         .doc(postId)
         .collection('votes')
         .doc(_user.uid)
@@ -865,7 +888,7 @@ class PostService {
   /// عدد أصوات الخيارين [الأول، الثاني] (استعلام عدّ: قراءة واحدة لكل 1000 صوت).
   static Future<List<int>> pollCounts(String postId) async {
     final votes =
-        _db.collection('posts').doc(postId).collection('votes');
+        _db.collection(_colOf(postId)).doc(postId).collection('votes');
     final r = await Future.wait([
       votes.where('choice', isEqualTo: 0).count().get(),
       votes.where('choice', isEqualTo: 1).count().get(),
@@ -875,7 +898,7 @@ class PostService {
 
   /// من شاهدوا قصتي (الأحدث أولاً). يقرؤها صاحب القصة فقط.
   static Stream<List<StoryViewEntry>> storyViewers(String postId) => _db
-      .collection('posts')
+      .collection(_colOf(postId))
       .doc(postId)
       .collection('views')
       .orderBy('at', descending: true)
@@ -888,6 +911,9 @@ class PostService {
           ]);
 
   static Future<void> toggleLike(String postId, bool liked) async {
+    if (isCloseId(postId)) {
+      throw StateError(tr('الإعجاب غير متاح لقصص الأصدقاء المقربين'));
+    }
     final batch = _db.batch();
     final post = _db.collection('posts').doc(postId);
     DocumentSnapshot<Map<String, dynamic>> postSnapshot;
@@ -1250,6 +1276,12 @@ class PostService {
     if (p.type == PostType.story) {
       await _deleteStoryExtras(p.id);
     }
+    if (isCloseId(p.id)) {
+      // قصة أصدقاء مقربين: مجموعة منفصلة ولا ملفات مشتركة.
+      await _db.collection('closeStories').doc(p.id).delete();
+      notifyStatsChanged();
+      return;
+    }
     if (p.mediaId != null &&
         p.repostedFromPostId == null &&
         !sharesOriginalFile) {
@@ -1274,8 +1306,9 @@ class PostService {
   static Future<void> _deleteStoryExtras(String storyId) async {
     for (final sub in const ['views', 'votes', 'likes']) {
       try {
+        if (sub == 'likes' && isCloseId(storyId)) continue;
         final snap = await _db
-            .collection('posts')
+            .collection(_colOf(storyId))
             .doc(storyId)
             .collection(sub)
             .limit(500)
@@ -1426,6 +1459,57 @@ class PostService {
   // ---- القصص (تختفي بعد 24 ساعة) ----
   static const storyLifetime = Duration(hours: 24);
 
+  // ---- الأصدقاء المقربون ----
+  // قائمتي: مستند واحد closeFriends/{uid} فيه uids. قصص المقربين في مجموعة
+  // closeStories منفصلة (معرّفها يبدأ بـ cf_) وفيها allowed: من يحق له رؤيتها.
+  static const maxCloseFriends = 100;
+  static const _closeIdPrefix = 'cf_';
+  static bool isCloseId(String id) => id.startsWith(_closeIdPrefix);
+  static String _colOf(String id) => isCloseId(id) ? 'closeStories' : 'posts';
+
+  static DocumentReference<Map<String, dynamic>> get _closeListRef =>
+      _db.collection('closeFriends').doc(_user.uid);
+
+  static Future<List<String>> closeFriendIds() async {
+    if (isGuest) return const <String>[];
+    final s = await _closeListRef.get();
+    final l = s.data()?['uids'];
+    return l is List ? l.whereType<String>().toList() : <String>[];
+  }
+
+  static Future<void> saveCloseFriends(Iterable<String> ids) {
+    final clean = ids
+        .where((e) => e.isNotEmpty && e != _user.uid)
+        .toSet()
+        .take(maxCloseFriends)
+        .toList();
+    return _closeListRef.set({
+      'uids': clean,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// قصص الأصدقاء المقربين: التي أُدرجتُ فيها + قصصي أنا. تحتاج فهرساً مركّباً
+  /// (allowed + createdAt)؛ وإن لم يُنشأ بعد يبقى الشريط يعمل بدونها.
+  static Stream<List<Post>> _closeStoriesForMe() {
+    final since = Timestamp.fromDate(_storyCutoff());
+    final forMe = _db
+        .collection('closeStories')
+        .where('allowed', arrayContains: _user.uid)
+        .where('createdAt', isGreaterThan: since)
+        .orderBy('createdAt', descending: true)
+        .limit(50)
+        .snapshots()
+        .map((q) => _parse(q.docs));
+    final mine = _db
+        .collection('closeStories')
+        .where('uid', isEqualTo: _user.uid)
+        .limit(30)
+        .snapshots()
+        .map((q) => _parse(q.docs));
+    return _mergeLists(_safeList(forMe), _safeList(mine));
+  }
+
   /// يدمج قائمتي منشورات في قائمة واحدة بلا تكرار، مرتبة بالأحدث.
   static Stream<List<Post>> _mergeLists(
       Stream<List<Post>> a, Stream<List<Post>> b) {
@@ -1556,7 +1640,9 @@ class PostService {
         followingIds(),
         (ids) => _mergeLists(
             _followedStories(ids), _safeList(_followedPrivateStories(ids))));
-    return _mergeLists(_mergeLists(discover, mine), followed);
+    return _mergeLists(
+        _mergeLists(_mergeLists(discover, mine), followed),
+        _closeStoriesForMe());
   }
 
   static Stream<List<StoryGroup>> storyGroups() =>
@@ -1587,6 +1673,17 @@ class PostService {
       final p = Post.fromDoc(d);
       if (p.createdAt.isBefore(cutoff)) await deletePost(p);
     }
+    // قصص الأصدقاء المقربين المنتهية.
+    try {
+      final close = await _db
+          .collection('closeStories')
+          .where('uid', isEqualTo: _user.uid)
+          .get();
+      for (final d in close.docs) {
+        final p = Post.fromDoc(d);
+        if (p.createdAt.isBefore(cutoff)) await deletePost(p);
+      }
+    } catch (_) {}
   }
 
   // ---- قوائم المتابعين / المتابَعين ----
@@ -1662,4 +1759,7 @@ class StoryGroup {
   final List<Post> stories;
   StoryGroup(
       {required this.uid, required this.username, required this.stories});
+
+  /// هل فيها قصة للأصدقاء المقربين؟
+  bool get hasClose => stories.any((s) => s.closeFriends);
 }
