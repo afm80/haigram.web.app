@@ -603,6 +603,11 @@ class PostService {
       'createdAt': FieldValue.serverTimestamp(),
     };
     data.addAll(extra);
+    if (type == PostType.story) {
+      // وقت انتهاء القصة: سياسة TTL في Firestore تحذف المستند بعده تلقائياً
+      // حتى لو لم يفتح صاحبها التطبيق (فعّلها من وحدة التحكم على الحقل expireAt).
+      data['expireAt'] = Timestamp.fromDate(DateTime.now().add(storyLifetime));
+    }
     if (closeFriends) {
       // قصة للأصدقاء المقربين: مجموعة منفصلة، وقائمة من يحق له رؤيتها وقت النشر.
       final allowed = await closeFriendIds();
