@@ -286,16 +286,24 @@ class PostService {
 
   /// بلا [uid]: منشورات الحسابات العامة فقط (القواعد ترفض الاستعلام بدون هذا الفلتر).
   /// مع [uid]: منشورات ذلك المستخدم إن كان لي حق رؤيتها.
-  static Stream<List<Post>> stream(PostType t, {String? uid, int limit = 40}) {
+  /// [since]: يعيد المنشورات الأحدث من هذا الوقت فقط (تستخدمه القصص كي لا
+  /// تزاحم القصصُ المنتهية القصصَ الحيّة داخل حد [limit]). نفس الفهرس الحالي.
+  static Stream<List<Post>> stream(PostType t,
+      {String? uid, int limit = 40, DateTime? since}) {
+    Query<Map<String, dynamic>> sinceOf(Query<Map<String, dynamic>> q) =>
+        since == null
+            ? q
+            : q.where('createdAt', isGreaterThan: Timestamp.fromDate(since));
     if (uid == null) {
-      final q = _byType(t).where('authorPrivate', isEqualTo: false).limit(limit);
+      final q = sinceOf(_byType(t).where('authorPrivate', isEqualTo: false))
+          .limit(limit);
       if (isGuest) {
         return Stream.fromFuture(q.get().then((s) => _parse(s.docs)));
       }
       return q.snapshots().map((s) => _parse(s.docs));
     }
     return Stream.fromFuture(_scopeToAuthor(_byType(t), uid)).asyncExpand(
-        (q) => q.limit(limit).snapshots().map((s) => _parse(s.docs)));
+        (q) => sinceOf(q).limit(limit).snapshots().map((s) => _parse(s.docs)));
   }
 
   /// دفعة واحدة من منشورات الحسابات العامة بالأحدث، للتحميل عند التمرير.
@@ -1237,7 +1245,14 @@ class PostService {
 
   static Future<void> deletePost(Post p) async {
     // إعادة النشر تشير إلى ملف الأصل، فلا نحذف ملفاته مع النسخة.
-    if (p.mediaId != null && p.repostedFromPostId == null) {
+    // القصة المشاركة من منشور تشير إلى ملف المنشور الأصلي نفسه، فلا نحذفه معها.
+    final sharesOriginalFile = p.sharedFromUid != null;
+    if (p.type == PostType.story) {
+      await _deleteStoryExtras(p.id);
+    }
+    if (p.mediaId != null &&
+        p.repostedFromPostId == null &&
+        !sharesOriginalFile) {
       for (var i = 0; i < p.chunks; i++) {
         try {
           await _db.collection('media').doc('${p.mediaId}_$i').delete();
@@ -1252,6 +1267,27 @@ class PostService {
       });
     } catch (_) {}
     notifyStatsChanged();
+  }
+
+  /// يحذف مشاهدات القصة وأصواتها وإعجاباتها قبل حذف القصة نفسها (القواعد تتحقق
+  /// من صاحب القصة، فلا بد أن تسبق حذف المستند). أي فشل لا يوقف حذف القصة.
+  static Future<void> _deleteStoryExtras(String storyId) async {
+    for (final sub in const ['views', 'votes', 'likes']) {
+      try {
+        final snap = await _db
+            .collection('posts')
+            .doc(storyId)
+            .collection(sub)
+            .limit(500)
+            .get();
+        for (var i = 0; i < snap.docs.length; i += 25) {
+          await Future.wait([
+            for (final d in snap.docs.skip(i).take(25))
+              d.reference.delete().catchError((_) {}),
+          ]);
+        }
+      } catch (_) {}
+    }
   }
 
   // ---- المحفوظات ----
@@ -1458,6 +1494,7 @@ class PostService {
       final s = _byType(PostType.story)
           .where('authorPrivate', isEqualTo: false)
           .where('uid', whereIn: chunk)
+          .where('createdAt', isGreaterThan: Timestamp.fromDate(_storyCutoff()))
           .limit(60)
           .snapshots()
           .map((q) => _parse(q.docs));
@@ -1466,14 +1503,59 @@ class PostService {
     return merged!;
   }
 
+  static DateTime _storyCutoff() => DateTime.now().subtract(storyLifetime);
+
+  /// يمنع أي خطأ في تدفّق فرعي (قواعد/فهرس) من إسقاط شريط القصص كله.
+  static Stream<List<Post>> _safeList(Stream<List<Post>> s) => s.transform(
+      StreamTransformer<List<Post>, List<Post>>.fromHandlers(
+          handleError: (e, st, sink) => sink.add(const <Post>[])));
+
+  /// من بين من أتابعهم، أيّهم حسابه خاص (يُقرأ ملفه مرة واحدة ويُخزَّن في الذاكرة).
+  static Future<List<String>> _privateAmong(List<String> ids) async {
+    final res = await Future.wait([
+      for (final id in ids.take(60))
+        UserService.profileOf(id)
+            .then<String?>((u) => u?.isPrivate == true ? id : null)
+            .catchError((_) => null),
+    ]);
+    return [
+      for (final r in res)
+        if (r != null) r,
+    ];
+  }
+
+  /// قصص الحسابات الخاصة التي أتابعها. القواعد لا تسمح باستعلام متعدد الحسابات
+  /// عليها، فنستعلم عن كل حساب خاص وحده (يسمح به كوني متابعاً له).
+  static Stream<List<Post>> _followedPrivateStories(List<String> ids) async* {
+    yield const <Post>[];
+    final priv = await _privateAmong(ids);
+    if (priv.isEmpty) return;
+    final since = Timestamp.fromDate(_storyCutoff());
+    Stream<List<Post>>? merged;
+    for (final uid in priv.take(30)) {
+      final s = _safeList(_byType(PostType.story)
+          .where('uid', isEqualTo: uid)
+          .where('createdAt', isGreaterThan: since)
+          .limit(10)
+          .snapshots()
+          .map((q) => _parse(q.docs)));
+      merged = merged == null ? s : _mergeLists(merged, s);
+    }
+    yield* merged!;
+  }
+
   /// قصص من أتابعهم أولاً (دون سقف الأحدث-100 العام)، وقصصي أنا دائماً،
   /// وأحدث قصص الحسابات العامة للاكتشاف. القصص العامة تستثني الحسابات الخاصة.
   static Stream<List<Post>> _visibleStories() {
-    final discover = stream(PostType.story, limit: 50);
+    final cutoff = _storyCutoff();
+    final discover = stream(PostType.story, limit: 50, since: cutoff);
     if (isGuest) return discover;
-    final mine = stream(PostType.story, uid: uidOrEmpty, limit: 30);
-    final followed =
-        _switchMap<List<String>, List<Post>>(followingIds(), _followedStories);
+    final mine =
+        stream(PostType.story, uid: uidOrEmpty, limit: 30, since: cutoff);
+    final followed = _switchMap<List<String>, List<Post>>(
+        followingIds(),
+        (ids) => _mergeLists(
+            _followedStories(ids), _safeList(_followedPrivateStories(ids))));
     return _mergeLists(_mergeLists(discover, mine), followed);
   }
 
