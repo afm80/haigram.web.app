@@ -70,23 +70,31 @@ void showCreateSheet(BuildContext context) {
         );
       }
 
-      Widget item(String title, IconData icon, CreateKind kind) => InkWell(
-            onTap: () => open(kind),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-              child: Row(
-                children: [
-                  Icon(icon, color: colors.text, size: 26),
-                  const SizedBox(width: 16),
-                  Text(
-                    title,
-                    style: TextStyle(
-                      color: colors.text,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+      // عنصر أفقي الشكل: أيقونة فوق والاسم تحتها، ويتوزع الثلاثة بالتساوي.
+      Widget item(String title, IconData icon, CreateKind kind) => Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () => open(kind),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 14),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, color: colors.text, size: 30),
+                    const SizedBox(height: 8),
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: colors.text,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           );
@@ -119,10 +127,18 @@ void showCreateSheet(BuildContext context) {
                   ),
                 ),
                 const SizedBox(height: 14),
-                item(tr('منشور'), Icons.grid_on_rounded, CreateKind.post),
-                item(tr('قصة'), Icons.add_circle_outline_rounded,
-                    CreateKind.story),
-                item(tr('رابط فيديو'), Icons.link_rounded, CreateKind.video),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    children: [
+                      item(tr('منشور'), Icons.grid_on_rounded, CreateKind.post),
+                      item(tr('قصة'), Icons.add_circle_outline_rounded,
+                          CreateKind.story),
+                      item(tr('رابط فيديو'), Icons.videocam_outlined,
+                          CreateKind.video),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
