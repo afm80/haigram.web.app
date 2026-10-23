@@ -483,6 +483,22 @@ class PostService {
     }
   }
 
+  /// يجلب قصة بمعرّفها (عامة أو أصدقاء مقرّبين) إن كانت ما زالت ضمن 24 ساعة
+  /// ومسموحاً لي برؤيتها؛ وإلا يعيد null (منتهية/محذوفة/غير مسموحة).
+  static Future<Post?> storyById(String storyId) async {
+    try {
+      final snapshot = await _db.collection(_colOf(storyId)).doc(storyId).get();
+      if (!snapshot.exists) return null;
+      final p = Post.fromDoc(snapshot);
+      if (p.type != PostType.story) return null;
+      if (p.createdAt.isBefore(_storyCutoff())) return null;
+      return p;
+    } on FirebaseException catch (e) {
+      if (_isDenied(e)) return null;
+      rethrow;
+    }
+  }
+
   static String postLink(Post post) =>
       Uri.base.replace(path: '/', queryParameters: {'p': post.id}).toString();
 

@@ -1313,7 +1313,7 @@ class SocialService {
     String? image,
     String? link,
   }) async {
-    if (type != 'post' && type != 'profile') {
+    if (type != 'post' && type != 'profile' && type != 'story') {
       throw ArgumentError.value(type, 'type', tr('نوع مشاركة غير صالح'));
     }
     final cleanTitle = title.trim();
@@ -1334,6 +1334,32 @@ class SocialService {
       shareSubtitle: clean(subtitle, 1000),
       shareImage: clean(image, 1000),
       shareLink: clean(link, 1000),
+    );
+  }
+
+  /// ردّ أو تفاعل على قصة، يصل كبطاقة مرتبطة بالقصة (صورة مصغّرة + فتحها بالنقر)
+  /// بدل نص عادي. النص الأطول من 200 حرف يُرسل كرسالة نصية عادية.
+  static Future<void> sendStoryReply(
+    String conversationId,
+    Post story,
+    String text,
+  ) async {
+    final clean = text.trim();
+    if (clean.isEmpty) return;
+    if (clean.length > 200) {
+      await sendMessage(conversationId, trf('ردّ على القصة: {0}', [clean]));
+      return;
+    }
+    final caption = story.caption.trim();
+    await sendShare(
+      conversationId,
+      type: 'story',
+      id: story.id,
+      title: clean,
+      subtitle: caption.isEmpty
+          ? null
+          : (caption.length > 100 ? caption.substring(0, 100) : caption),
+      image: story.mediaUrl,
     );
   }
 
