@@ -264,7 +264,26 @@ service cloud.firestore {
                         && request.resource.data.videoUrl.size() <= 600
                         && request.resource.data.videoUrl.matches('^https://[^ ]+$')
                         && !(request.resource.data.videoProvider == 'facebook'
-                             && request.resource.data.videoUrl.matches('^https://www\\.facebook\\.com/reel/.*'))))));
+                             && request.resource.data.videoUrl.matches('^https://www\\.facebook\\.com/reel/.*'))))))
+        // استطلاع القصة: سؤال وخياران (نص قصير)، للقصص فقط.
+        && (!('poll' in request.resource.data)
+            || (request.resource.data.type == 'story'
+                && request.resource.data.poll is map
+                && request.resource.data.poll.keys().hasOnly(['q', 'a', 'b'])
+                && request.resource.data.poll.q is string
+                && request.resource.data.poll.q.size() > 0
+                && request.resource.data.poll.q.size() <= 100
+                && request.resource.data.poll.a is string
+                && request.resource.data.poll.a.size() > 0
+                && request.resource.data.poll.a.size() <= 40
+                && request.resource.data.poll.b is string
+                && request.resource.data.poll.b.size() > 0
+                && request.resource.data.poll.b.size() <= 40))
+        // ذكر المستخدمين في القصة: حتى 3، للقصص فقط.
+        && (!('mentions' in request.resource.data)
+            || (request.resource.data.type == 'story'
+                && request.resource.data.mentions is list
+                && request.resource.data.mentions.size() <= 3));
       // المالك يعدّل نص المنشور فقط. أي مستخدم مسجّل يستطيع:
       //  - الإعجاب/إلغاؤه: العدّاد يتغيّر بمقدار 1 فقط وبالتزامن مع إنشاء/حذف مستند إعجابه هو.
       //  - زيادة/إنقاص عدّاد التعليقات بمقدار 1، وزيادة المشاركات بمقدار 1.
@@ -335,6 +354,23 @@ service cloud.firestore {
           && request.resource.data.at == request.time;
         // لوحة التحكم: قراءة/حذف المشاهدات عند حذف منشور (قصة).
         allow read: if isAdmin();
+        allow delete: if isAdmin();
+      }
+
+      // أصوات استطلاع القصة: كل مستخدم يصوّت مرة واحدة لنفسه فقط (بلا تعديل)،
+      // ولا يصوّت صاحب القصة. القراءة لمن يستطيع قراءة القصة (لعدّ النتائج).
+      match /votes/{voterUid} {
+        allow read: if isActiveUser()
+          && (isAdmin() || parentPostReadable(postId));
+        allow create: if isActiveUser()
+          && request.auth.uid == voterUid
+          && parentPostReadable(postId)
+          && get(/databases/$(database)/documents/posts/$(postId)).data.uid != voterUid
+          && get(/databases/$(database)/documents/posts/$(postId)).data.get('poll', null) != null
+          && request.resource.data.keys().hasOnly(['choice', 'at'])
+          && request.resource.data.choice in [0, 1]
+          && request.resource.data.at == request.time;
+        // لوحة التحكم: حذف الأصوات عند حذف منشور.
         allow delete: if isAdmin();
       }
 
