@@ -23,6 +23,11 @@ String trf(String ar, List<Object?> args) {
 }
 
 const Map<String, String> _en = {
+  // ملصقات القصة
+  'ملصق': "Sticker",
+  'حرّك الملصق بإصبعك، وبإصبعين للتكبير، واسحبه إلى السلة لحذفه':
+      "Drag the sticker to move it, pinch to resize, drag it to the bin to delete",
+  'تعذر دمج الملصقات، حاول مرة أخرى': "Couldn't add the stickers, try again",
   // قصة نصية بخلفية ملونة
   'نص': "Text",
   'اكتب قصتك...': "Write your story...",
