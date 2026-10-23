@@ -15,6 +15,7 @@ import 'create_flow.dart';
 import 'post_widgets.dart';
 import 'profile_screen.dart';
 import 'story_backgrounds.dart';
+import 'story_poll.dart';
 import '../route_state.dart';
 
 import '../l10n.dart';
@@ -764,6 +765,16 @@ class _StoryViewerState extends State<StoryViewer>
                             _progress(group, si, active),
                             _header(group, story, mine),
                             const Spacer(),
+                            if (story.poll != null)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                                child: StoryPollCard(
+                                    key: ValueKey('poll-${story.id}'),
+                                    story: story,
+                                    poll: story.poll!,
+                                    mine: mine),
+                              ),
                             if (story.sharedFromUsername != null)
                               _sharedFrom(story),
                             if (story.caption.isNotEmpty && story.bg == null)

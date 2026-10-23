@@ -12,6 +12,7 @@ import '../l10n.dart';
 import '../net_error.dart';
 import '../video_source.dart';
 import 'sticker_sheet.dart' show StickerPanel;
+import 'story_poll.dart';
 import 'story_stickers.dart';
 import 'text_story_screen.dart';
 import 'video_cover.dart';
@@ -485,6 +486,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
   final _captureKey = GlobalKey(); // يلتقط الصورة مع ملصقاتها عند النشر
   final List<StoryStickerItem> _stickers = [];
   bool _lockScroll = false; // نوقف التمرير أثناء تحريك ملصق
+  StoryPoll? _poll; // استطلاع القصة (اختياري)
   Timer? _linkDebounce;
   VideoSource? _preview; // الفيديو المعروض في المعاينة (رابط صالح)
   String? _linkError; // سبب رفض الرابط، أو فشل تشغيل المعاينة
@@ -662,6 +664,11 @@ class _ComposeScreenState extends State<ComposeScreen> {
     setState(() => _stickers.add(StoryStickerItem(emoji)));
   }
 
+  Future<void> _editPoll() async {
+    final p = await showPollDialog(context, initial: _poll);
+    if (p != null && mounted) setState(() => _poll = p);
+  }
+
   /// الصورة التي ستُرفع: الأصلية، أو بعد دمج الملصقات فيها.
   Future<PickedMedia?> _mediaToPublish() async {
     if (_images.isEmpty) return null;
@@ -749,7 +756,10 @@ class _ComposeScreenState extends State<ComposeScreen> {
               mime: m.mime,
               ext: m.ext,
               caption: caption,
-              onProgress: onProgress);
+              onProgress: onProgress,
+              extra: (_poll != null && type == PostType.story)
+                  ? {'poll': _poll!.toMap()}
+                  : const <String, dynamic>{});
         }
       }
       nav.popUntil((r) => r.isFirst);
@@ -862,12 +872,30 @@ class _ComposeScreenState extends State<ComposeScreen> {
                 ),
               ),
             if (_canSticker)
+              Wrap(
+                spacing: 8,
+                children: [
+                  TextButton.icon(
+                    onPressed: _busy ? null : _addSticker,
+                    icon: const Icon(Icons.emoji_emotions_outlined),
+                    label: Text(tr('ملصق')),
+                  ),
+                  TextButton.icon(
+                    onPressed: _busy ? null : _editPoll,
+                    icon: const Icon(Icons.poll_outlined),
+                    label: Text(tr('استطلاع')),
+                  ),
+                ],
+              ),
+            if (_canSticker && _poll != null)
               Align(
                 alignment: AlignmentDirectional.centerStart,
-                child: TextButton.icon(
-                  onPressed: _busy ? null : _addSticker,
-                  icon: const Icon(Icons.emoji_emotions_outlined),
-                  label: Text(tr('ملصق')),
+                child: InputChip(
+                  avatar: const Icon(Icons.poll_outlined, size: 18),
+                  label: Text(_poll!.q,
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  onPressed: _busy ? null : _editPoll,
+                  onDeleted: _busy ? null : () => setState(() => _poll = null),
                 ),
               ),
             if (_canSticker && _stickers.isNotEmpty)

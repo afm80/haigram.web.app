@@ -4,6 +4,7 @@ import '../l10n.dart';
 import '../net_error.dart';
 import '../services/post_service.dart';
 import 'story_backgrounds.dart';
+import 'story_poll.dart';
 
 /// قصة نصية بخلفية ملونة (مثل إنستغرام): اكتب نصاً واختر لون الخلفية.
 class TextStoryScreen extends StatefulWidget {
@@ -17,6 +18,7 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
   static const _maxChars = 250;
   final _text = TextEditingController();
   int _bg = 0;
+  StoryPoll? _poll;
   bool _busy = false;
   String? _error;
 
@@ -24,6 +26,11 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
   void dispose() {
     _text.dispose();
     super.dispose();
+  }
+
+  Future<void> _editPoll() async {
+    final p = await showPollDialog(context, initial: _poll);
+    if (p != null && mounted) setState(() => _poll = p);
   }
 
   Future<void> _publish() async {
@@ -39,7 +46,7 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
     final nav = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await PostService.publishTextStory(text, _bg);
+      await PostService.publishTextStory(text, _bg, poll: _poll);
       nav.popUntil((r) => r.isFirst);
       messenger.showSnackBar(SnackBar(content: Text(tr('تمت إضافة القصة'))));
     } catch (e) {
@@ -71,6 +78,12 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
                           size: 28, color: Colors.white),
                     ),
                     const Spacer(),
+                    IconButton(
+                      onPressed: _busy ? null : _editPoll,
+                      tooltip: tr('استطلاع'),
+                      icon: const Icon(Icons.poll_outlined,
+                          size: 26, color: Colors.white),
+                    ),
                     TextButton(
                       onPressed: _busy ? null : _publish,
                       child: _busy
@@ -133,6 +146,18 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
                   child: Text(_error!,
                       textAlign: TextAlign.center,
                       style: const TextStyle(color: Colors.white)),
+                ),
+              if (_poll != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: InputChip(
+                    avatar: const Icon(Icons.poll_outlined, size: 18),
+                    label: Text(_poll!.q,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    onPressed: _busy ? null : _editPoll,
+                    onDeleted:
+                        _busy ? null : () => setState(() => _poll = null),
+                  ),
                 ),
               SizedBox(
                 height: 46,
