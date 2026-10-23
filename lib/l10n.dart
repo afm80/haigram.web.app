@@ -284,7 +284,6 @@ const Map<String, String> _en = {
   'اكتب شيئاً أو أضف صورة أولاً': "Write something or add a photo first",
   'إنشاء': "Create",
   'منشور': "Post",
-  'قصة': "Story",
   'فيديو': "Video",
   'الصورة كبيرة جداً': "The photo is too large",
   'إحدى الصور كبيرة جداً': "One of the photos is too large",
