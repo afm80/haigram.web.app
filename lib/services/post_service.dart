@@ -17,6 +17,27 @@ import '../video_source.dart';
 
 enum PostType { photo, text, story }
 
+/// مستخدم مذكور داخل القصة.
+class StoryMention {
+  final String uid;
+  final String username;
+  const StoryMention({required this.uid, required this.username});
+
+  Map<String, dynamic> toMap() => {'uid': uid, 'username': username};
+
+  static List<StoryMention> listFrom(Object? v) {
+    if (v is! List) return const [];
+    final out = <StoryMention>[];
+    for (final e in v) {
+      if (e is Map && e['uid'] is String && e['username'] is String) {
+        out.add(StoryMention(
+            uid: e['uid'] as String, username: e['username'] as String));
+      }
+    }
+    return out;
+  }
+}
+
 /// استطلاع داخل القصة: سؤال وخياران.
 class StoryPoll {
   final String q;
@@ -54,6 +75,7 @@ class Post {
   final bool isShort; // فيديو عمودي (شورتز، ريلز، تيك توك)
   final int? bg; // قصة نصية: رقم الخلفية الملونة (فارغ = قصة صورة)
   final StoryPoll? poll; // استطلاع داخل القصة (اختياري)
+  final List<StoryMention> mentions; // مستخدمون مذكورون في القصة
   final bool authorPrivate; // حساب صاحب المنشور خاص (تفرضه قواعد Firestore)
   final String? sharedFromUsername; // قصة مشاركة من منشور: صاحب الأصل
   final String? sharedFromUid;
@@ -84,6 +106,7 @@ class Post {
     this.isShort = false,
     this.bg,
     this.poll,
+    this.mentions = const [],
     this.authorPrivate = false,
     this.sharedFromUsername,
     this.sharedFromUid,
@@ -120,6 +143,7 @@ class Post {
       isShort: m['isShort'] == true,
       bg: (m['bg'] as num?)?.toInt(),
       poll: StoryPoll.fromMap(m['poll']),
+      mentions: StoryMention.listFrom(m['mentions']),
       authorPrivate: m['authorPrivate'] == true,
       sharedFromUsername: m['sharedFromUsername'] as String?,
       sharedFromUid: m['sharedFromUid'] as String?,
@@ -771,10 +795,12 @@ class PostService {
 
   /// قصة نصية بخلفية ملونة (بدون صورة). [bg] رقم الخلفية من story_backgrounds.dart.
   static Future<void> publishTextStory(String text, int bg,
-          {StoryPoll? poll}) =>
+          {StoryPoll? poll, List<StoryMention> mentions = const []}) =>
       _create(PostType.story, text, null, extra: {
         'bg': bg,
         if (poll != null) 'poll': poll.toMap(),
+        if (mentions.isNotEmpty)
+          'mentions': [for (final m in mentions) m.toMap()],
       });
 
   // ---- الإعجاب والحفظ والمتابعة ----
