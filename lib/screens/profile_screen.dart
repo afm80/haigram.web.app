@@ -1845,7 +1845,8 @@ class _PostsTabState extends State<_PostsTab> {
     if (_isRepost(p)) return widget.kind == _ProfileTabKind.reposts;
     switch (widget.kind) {
       case _ProfileTabKind.grid:
-        return p.type == PostType.photo;
+        return p.type == PostType.photo ||
+            (p.type == PostType.text && !p.hasVideo);
       case _ProfileTabKind.shorts:
         return p.hasVideo && p.isShort;
       case _ProfileTabKind.videos:
