@@ -23,6 +23,10 @@ String trf(String ar, List<Object?> args) {
 }
 
 const Map<String, String> _en = {
+  // قصة نصية بخلفية ملونة
+  'نص': "Text",
+  'اكتب قصتك...': "Write your story...",
+  'اكتب شيئاً أولاً': "Write something first",
   // روابط الفيديو والبث من عدة منصات
   'شارك رابط YouTube Short وسيظهر هنا في ملفك.':
       "Share a YouTube Short link and it will appear here on your profile.",
