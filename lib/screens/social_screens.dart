@@ -2715,7 +2715,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
     final targetContext = key.currentContext;
     if (!mounted) return;
-    if (targetContext == null) {
+    if (targetContext == null || !targetContext.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(tr('الرسالة الأصلية غير متاحة'))),
       );
