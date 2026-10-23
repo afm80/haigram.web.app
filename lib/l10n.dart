@@ -23,6 +23,10 @@ String trf(String ar, List<Object?> args) {
 }
 
 const Map<String, String> _en = {
+  // ذكر مستخدم في القصة
+  'ذكر': "Mention",
+  'ابحث عن مستخدم': "Search for a user",
+  'ذكرك @{0} في قصته': "@{0} mentioned you in their story",
   // استطلاع القصة
   'استطلاع': "Poll",
   'السؤال': "Question",
