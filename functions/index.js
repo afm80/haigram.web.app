@@ -5,7 +5,10 @@ const { getMessaging } = require('firebase-admin/messaging');
 const { getStorage } = require('firebase-admin/storage');
 const { defineSecret } = require('firebase-functions/params');
 const { HttpsError, onCall } = require('firebase-functions/v2/https');
-const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const {
+  onDocumentCreated,
+  onDocumentDeleted,
+} = require('firebase-functions/v2/firestore');
 
 initializeApp();
 
@@ -567,4 +570,26 @@ exports.notifyActivity = onDocumentCreated(
       await batch.commit();
     }
   },
+);
+
+// عند حذف قصة (يدوياً أو بسياسة TTL عند انتهائها) تُحذف مجموعاتها الفرعية
+// (views / votes / likes) كي لا تبقى يتيمة وتستهلك الحصة المجانية.
+async function purgeStoryChildren(event) {
+  const snap = event.data;
+  if (!snap || snap.data()?.type !== 'story') return;
+  try {
+    await getFirestore().recursiveDelete(snap.ref);
+  } catch (err) {
+    console.error('purgeStoryChildren failed', snap.ref.path, err);
+  }
+}
+
+exports.cleanupStoryChildren = onDocumentDeleted(
+  { document: 'posts/{postId}', region: 'us-central1' },
+  purgeStoryChildren,
+);
+
+exports.cleanupCloseStoryChildren = onDocumentDeleted(
+  { document: 'closeStories/{storyId}', region: 'us-central1' },
+  purgeStoryChildren,
 );
