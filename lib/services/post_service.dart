@@ -17,6 +17,27 @@ import '../video_source.dart';
 
 enum PostType { photo, text, story }
 
+/// استطلاع داخل القصة: سؤال وخياران.
+class StoryPoll {
+  final String q;
+  final String a;
+  final String b;
+  const StoryPoll({required this.q, required this.a, required this.b});
+
+  Map<String, dynamic> toMap() => {'q': q, 'a': a, 'b': b};
+
+  static StoryPoll? fromMap(Object? m) {
+    if (m is! Map) return null;
+    final q = m['q'];
+    final a = m['a'];
+    final b = m['b'];
+    if (q is String && a is String && b is String && q.isNotEmpty) {
+      return StoryPoll(q: q, a: a, b: b);
+    }
+    return null;
+  }
+}
+
 class Post {
   final String id;
   final PostType type;
@@ -32,6 +53,7 @@ class Post {
   final String? videoUrl; // الرابط الأصلي للمنصات غير يوتيوب
   final bool isShort; // فيديو عمودي (شورتز، ريلز، تيك توك)
   final int? bg; // قصة نصية: رقم الخلفية الملونة (فارغ = قصة صورة)
+  final StoryPoll? poll; // استطلاع داخل القصة (اختياري)
   final bool authorPrivate; // حساب صاحب المنشور خاص (تفرضه قواعد Firestore)
   final String? sharedFromUsername; // قصة مشاركة من منشور: صاحب الأصل
   final String? sharedFromUid;
@@ -61,6 +83,7 @@ class Post {
     this.videoUrl,
     this.isShort = false,
     this.bg,
+    this.poll,
     this.authorPrivate = false,
     this.sharedFromUsername,
     this.sharedFromUid,
@@ -96,6 +119,7 @@ class Post {
       videoUrl: m['videoUrl'] as String?,
       isShort: m['isShort'] == true,
       bg: (m['bg'] as num?)?.toInt(),
+      poll: StoryPoll.fromMap(m['poll']),
       authorPrivate: m['authorPrivate'] == true,
       sharedFromUsername: m['sharedFromUsername'] as String?,
       sharedFromUid: m['sharedFromUid'] as String?,
@@ -746,8 +770,12 @@ class PostService {
       });
 
   /// قصة نصية بخلفية ملونة (بدون صورة). [bg] رقم الخلفية من story_backgrounds.dart.
-  static Future<void> publishTextStory(String text, int bg) =>
-      _create(PostType.story, text, null, extra: {'bg': bg});
+  static Future<void> publishTextStory(String text, int bg,
+          {StoryPoll? poll}) =>
+      _create(PostType.story, text, null, extra: {
+        'bg': bg,
+        if (poll != null) 'poll': poll.toMap(),
+      });
 
   // ---- الإعجاب والحفظ والمتابعة ----
   static DocumentReference<Map<String, dynamic>> _likeRef(String postId) =>
@@ -776,6 +804,39 @@ class PostService {
         .collection('views')
         .doc(_user.uid)
         .set({'at': FieldValue.serverTimestamp()});
+  }
+
+  // ---- استطلاع القصة ----
+  /// يسجّل تصويتي (0 أو 1). مرة واحدة فقط؛ القواعد ترفض التعديل.
+  static Future<void> votePoll(String postId, int choice) => _db
+      .collection('posts')
+      .doc(postId)
+      .collection('votes')
+      .doc(_user.uid)
+      .set({'choice': choice, 'at': FieldValue.serverTimestamp()});
+
+  /// تصويتي في استطلاع القصة، أو null إن لم أصوّت.
+  static Future<int?> myPollVote(String postId) async {
+    if (isGuest) return null;
+    final d = await _db
+        .collection('posts')
+        .doc(postId)
+        .collection('votes')
+        .doc(_user.uid)
+        .get();
+    final c = d.data()?['choice'];
+    return c is num ? c.toInt() : null;
+  }
+
+  /// عدد أصوات الخيارين [الأول، الثاني] (استعلام عدّ: قراءة واحدة لكل 1000 صوت).
+  static Future<List<int>> pollCounts(String postId) async {
+    final votes =
+        _db.collection('posts').doc(postId).collection('votes');
+    final r = await Future.wait([
+      votes.where('choice', isEqualTo: 0).count().get(),
+      votes.where('choice', isEqualTo: 1).count().get(),
+    ]);
+    return [r[0].count ?? 0, r[1].count ?? 0];
   }
 
   /// من شاهدوا قصتي (الأحدث أولاً). يقرؤها صاحب القصة فقط.
