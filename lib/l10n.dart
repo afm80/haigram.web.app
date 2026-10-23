@@ -278,7 +278,12 @@ const Map<String, String> _en = {
   'إغلاق': "Close",
   'منشور جديد': "New post",
   'قصة جديدة': "New story",
-  'فيديو جديد': "New video",
+  'نص وصور حتى {0} مع هاشتاكات وروابط':
+      "Text and up to {0} photos with hashtags and links",
+  'صورة أو نص مع ملصقات واستطلاع': "A photo or text with stickers and a poll",
+  'نص اختياري مع رابط الفيديو': "Video link with optional text",
+  'الموقع لا يرفع فيديو، لكنه يقبل روابط الفيديو فقط':
+      "Videos can't be uploaded here, only video links are allowed",
   'رابط فيديو': "Video link",
   'أضف صورة أولاً': "Add a photo first",
   'اكتب شيئاً أو أضف صورة أولاً': "Write something or add a photo first",
