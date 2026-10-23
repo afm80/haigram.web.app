@@ -635,14 +635,15 @@ class _StoryViewerState extends State<StoryViewer>
 
   Future<void> _sendReply() async {
     if (needsLogin(context)) return;
+    final story = _story; // القصة وقت الإرسال (قد تتغير أثناء الانتظار)
     final text = _reply.text.trim();
     if (text.isEmpty) return;
     final messenger = ScaffoldMessenger.of(context);
     _reply.clear();
     _replyFocus.unfocus();
     try {
-      final id = await SocialService.startConversation(_group.uid);
-      await SocialService.sendMessage(id, trf('ردّ على القصة: {0}', [text]));
+      final id = await SocialService.startConversation(story.uid);
+      await SocialService.sendStoryReply(id, story, text);
       messenger.showSnackBar(SnackBar(
           content: Text(tr('تم إرسال ردّك')), duration: Duration(seconds: 2)));
     } catch (_) {
@@ -656,11 +657,11 @@ class _StoryViewerState extends State<StoryViewer>
 
   Future<void> _sendReaction(String emoji) async {
     if (needsLogin(context)) return;
+    final story = _story;
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final id = await SocialService.startConversation(_group.uid);
-      await SocialService.sendMessage(
-          id, trf('تفاعل على القصة: {0}', [emoji]));
+      final id = await SocialService.startConversation(story.uid);
+      await SocialService.sendStoryReply(id, story, emoji);
       messenger.showSnackBar(SnackBar(
           content: Text(emoji, style: const TextStyle(fontSize: 22)),
           duration: const Duration(seconds: 1)));

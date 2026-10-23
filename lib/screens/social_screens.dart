@@ -24,6 +24,7 @@ import 'photo_tools.dart' show fitImageUnderLimit;
 import 'post_widgets.dart' show PostDetailScreen, PostImage, timeAgo;
 import 'profile_screen.dart' show FollowActionButton, openChatWith;
 import 'sticker_sheet.dart';
+import 'story_backgrounds.dart' show storyGradient;
 import 'story_widgets.dart' show StoryViewed, StoryViewer;
 import '../route_state.dart';
 
@@ -3778,6 +3779,37 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ));
       return;
     }
+    if (type == 'story' && id != null && id.isNotEmpty) {
+      Post? story;
+      try {
+        story = await PostService.storyById(id);
+      } catch (error) {
+        messenger.showSnackBar(SnackBar(
+            content:
+                Text(friendlyError(error, fallback: tr('تعذر فتح القصة')))));
+        return;
+      }
+      if (!mounted) return;
+      if (story == null) {
+        messenger.showSnackBar(
+            SnackBar(content: Text(tr('هذه القصة لم تعد متاحة'))));
+        return;
+      }
+      final opened = story;
+      await rootNavigatorOf(context).push<void>(PageRouteBuilder<void>(
+        opaque: true,
+        pageBuilder: (_, __, ___) => StoryViewer(
+          groups: [
+            StoryGroup(
+                uid: opened.uid, username: opened.username, stories: [opened])
+          ],
+          initial: 0,
+        ),
+        transitionsBuilder: (_, a, __, child) =>
+            FadeTransition(opacity: a, child: child),
+      ));
+      return;
+    }
     final link = message.shareLink;
     final uri = link == null ? null : Uri.tryParse(link);
     if (uri != null) {
@@ -7170,12 +7202,105 @@ class _ShareCard extends StatelessWidget {
     required this.onTap,
   });
 
+  /// بطاقة ردّ/تفاعل على قصة: معاينة القصة (صورة أو مقتطف نص) ثم نص الردّ.
+  Widget _storyReplyCard(BuildContext context, String? image, String caption) {
+    final colors = context.appColors;
+    final text = message.text.trim();
+    final isReaction = text.runes.length <= 4 &&
+        !RegExp(r'[\p{L}\p{N}]', unicode: true).hasMatch(text);
+    final label = isReaction
+        ? (mine ? tr('تفاعلك على القصة') : tr('تفاعل على قصتك'))
+        : (mine ? tr('ردّك على القصة') : tr('ردّ على قصتك'));
+    final hasImage = image != null && image.isNotEmpty;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: width,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: mine ? colors.surface : colors.surfaceHigh,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: mine
+                ? AppColors.brandPurple.withOpacity(0.7)
+                : colors.surfaceHigh,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Row(
+                children: [
+                  Icon(Icons.auto_stories_rounded,
+                      size: 15, color: colors.textDim),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: colors.textDim,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ),
+            ),
+            if (hasImage)
+              Image.network(
+                PostService.optimizedImageUrl(image, 400),
+                width: double.infinity,
+                height: 150,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              )
+            else
+              Container(
+                width: double.infinity,
+                height: 90,
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(gradient: storyGradient(null)),
+                child: Text(
+                  caption.isEmpty ? tr('قصة') : caption,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Text(
+                text,
+                textDirection: SocialService.inferTextDirection(text),
+                style: TextStyle(
+                  color: colors.text,
+                  fontSize: isReaction ? 30 : 15,
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.appColors;
     final image = message.shareImage;
     final subtitle = (message.shareSubtitle ?? '').trim();
     final isProfile = message.shareType == 'profile';
+    if (message.shareType == 'story') {
+      return _storyReplyCard(context, image, subtitle);
+    }
     return GestureDetector(
       onTap: onTap,
       child: Container(
