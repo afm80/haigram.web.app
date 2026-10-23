@@ -12,6 +12,7 @@ import '../l10n.dart';
 import '../net_error.dart';
 import '../video_source.dart';
 import 'sticker_sheet.dart' show StickerPanel;
+import 'close_friends_screen.dart';
 import 'story_mentions.dart';
 import 'story_poll.dart';
 import 'story_stickers.dart';
@@ -489,6 +490,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
   bool _lockScroll = false; // نوقف التمرير أثناء تحريك ملصق
   StoryPoll? _poll; // استطلاع القصة (اختياري)
   final List<StoryMention> _mentions = []; // مذكورون في القصة (حتى 3)
+  bool _closeFriends = false; // القصة للأصدقاء المقربين فقط
   Timer? _linkDebounce;
   VideoSource? _preview; // الفيديو المعروض في المعاينة (رابط صالح)
   String? _linkError; // سبب رفض الرابط، أو فشل تشغيل المعاينة
@@ -759,6 +761,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
               ext: m.ext,
               caption: caption,
               onProgress: onProgress,
+              closeFriends: type == PostType.story && _closeFriends,
               extra: type == PostType.story
                   ? <String, dynamic>{
                       if (_poll != null) 'poll': _poll!.toMap(),
@@ -879,6 +882,16 @@ class _ComposeScreenState extends State<ComposeScreen> {
                     ),
                   ),
                 ),
+              ),
+            if (widget.kind == CreateKind.story)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: StoryAudienceSelector(
+                    close: _closeFriends,
+                    enabled: !_busy,
+                    onChanged: (v) {
+                      if (mounted) setState(() => _closeFriends = v);
+                    }),
               ),
             if (_canSticker)
               Wrap(

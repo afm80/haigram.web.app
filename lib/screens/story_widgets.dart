@@ -20,6 +20,7 @@ import 'story_poll.dart';
 import '../route_state.dart';
 
 import '../l10n.dart';
+import 'close_friends_screen.dart';
 import 'install_stub.dart' if (dart.library.html) 'install_web.dart';
 /// يتذكر القصص التي شوهدت خلال الجلسة (لتحويل الحلقة إلى رمادية).
 class StoryViewed {
@@ -85,6 +86,10 @@ class StoryViewed {
   static bool isSeen(String id) => _seen.contains(id);
   static bool allSeen(StoryGroup g) =>
       g.stories.every((s) => _seen.contains(s.id));
+
+  /// هل في المجموعة قصة أصدقاء مقربين لم تُشاهد بعد؟ (حلقة خضراء)
+  static bool hasUnseenClose(StoryGroup g) =>
+      g.stories.any((s) => s.closeFriends && !_seen.contains(s.id));
 }
 
 /// شريط القصص أعلى صفحة المنشورات (مثل إنستغرام).
@@ -153,6 +158,7 @@ class _StoriesBarState extends State<StoriesBar> {
                       uid: rest[i].uid,
                       label: rest[i].username,
                       seen: StoryViewed.allSeen(rest[i]),
+                      close: StoryViewed.hasUnseenClose(rest[i]),
                       onTap: () => _open(ordered, mine.length + i),
                     ),
                 ],
@@ -264,6 +270,7 @@ class _StoriesBarState extends State<StoriesBar> {
               Center(
                   child: _ring(me, PostService.username,
                       seen: mine != null && StoryViewed.allSeen(mine),
+                      close: mine != null && StoryViewed.hasUnseenClose(mine),
                       active: mine != null)),
               PositionedDirectional(
                 end: 0,
@@ -293,11 +300,13 @@ class _StoriesBarState extends State<StoriesBar> {
       {required String uid,
       required String label,
       required bool seen,
+      bool close = false,
       required VoidCallback onTap}) {
     return _cell(
       label: label,
       child: GestureDetector(
-          onTap: onTap, child: _ring(uid, label, seen: seen, active: true)),
+          onTap: onTap,
+          child: _ring(uid, label, seen: seen, active: true, close: close)),
     );
   }
 
@@ -321,7 +330,7 @@ class _StoriesBarState extends State<StoriesBar> {
   }
 
   Widget _ring(String uid, String name,
-      {required bool seen, required bool active}) {
+      {required bool seen, required bool active, bool close = false}) {
     return Container(
       width: 66,
       height: 66,
@@ -329,7 +338,7 @@ class _StoriesBarState extends State<StoriesBar> {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         gradient: active && !seen
-            ? AppColors.storyGradient
+            ? (close ? closeFriendsGradient : AppColors.storyGradient)
             : null,
         color: active && !seen
             ? null
@@ -862,6 +871,20 @@ class _StoryViewerState extends State<StoryViewer>
                 Text(timeAgo(story.createdAt),
                     style:
                         const TextStyle(color: Colors.white70, fontSize: 12)),
+                if (story.closeFriends) ...[
+                  const SizedBox(width: 8),
+                  Tooltip(
+                    message: tr('الأصدقاء المقربون'),
+                    child: Container(
+                      width: 22,
+                      height: 22,
+                      decoration: const BoxDecoration(
+                          shape: BoxShape.circle, color: kCloseFriendsGreen),
+                      child: const Icon(Icons.star_rounded,
+                          size: 15, color: Colors.white),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -980,6 +1003,7 @@ class _StoryViewerState extends State<StoryViewer>
                 Text('${snap.data?.length ?? 0}',
                     style: const TextStyle(color: Colors.white, fontSize: 15)),
                 const Spacer(),
+                if (!story.closeFriends)
                 StreamBuilder<int>(
                   stream: PostService.likeCount(story.id),
                   builder: (_, ls) => Row(
@@ -1050,32 +1074,34 @@ class _StoryViewerState extends State<StoryViewer>
             ),
           ),
           const SizedBox(width: 8),
-          StreamBuilder<bool>(
-            stream: PostService.isLiked(story.id),
-            builder: (_, snap) {
-              final liked = snap.data ?? false;
-              return GestureDetector(
-                onTap: () {
-                  if (needsLogin(context)) return;
-                  PostService.toggleLike(story.id, liked).catchError((_) {});
-                },
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  transitionBuilder: (c, a) =>
-                      ScaleTransition(scale: a, child: c),
-                  child: Icon(
-                    liked
-                        ? Icons.favorite_rounded
-                        : Icons.favorite_border_rounded,
-                    key: ValueKey(liked),
-                    color: liked ? const Color(0xFFFF3B5C) : Colors.white,
-                    size: 30,
+          if (!story.closeFriends) ...[
+            StreamBuilder<bool>(
+              stream: PostService.isLiked(story.id),
+              builder: (_, snap) {
+                final liked = snap.data ?? false;
+                return GestureDetector(
+                  onTap: () {
+                    if (needsLogin(context)) return;
+                    PostService.toggleLike(story.id, liked).catchError((_) {});
+                  },
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    transitionBuilder: (c, a) =>
+                        ScaleTransition(scale: a, child: c),
+                    child: Icon(
+                      liked
+                          ? Icons.favorite_rounded
+                          : Icons.favorite_border_rounded,
+                      key: ValueKey(liked),
+                      color: liked ? const Color(0xFFFF3B5C) : Colors.white,
+                      size: 30,
+                    ),
                   ),
-                ),
-              );
-            },
-          ),
-          const SizedBox(width: 8),
+                );
+              },
+            ),
+            const SizedBox(width: 8),
+          ],
           GestureDetector(
             onTap: _sendReply,
             child: Container(

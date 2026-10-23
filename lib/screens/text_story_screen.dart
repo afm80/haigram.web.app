@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../l10n.dart';
 import '../net_error.dart';
 import '../services/post_service.dart';
+import 'close_friends_screen.dart';
 import 'story_backgrounds.dart';
 import 'story_mentions.dart';
 import 'story_poll.dart';
@@ -23,6 +24,7 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
   int _bg = 0;
   StoryPoll? _poll;
   final List<StoryMention> _mentions = [];
+  bool _closeFriends = false; // القصة للأصدقاء المقربين فقط
   bool _busy = false;
   String? _error;
 
@@ -51,7 +53,9 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await PostService.publishTextStory(text, _bg,
-          poll: _poll, mentions: List.of(_mentions));
+          poll: _poll,
+          mentions: List.of(_mentions),
+          closeFriends: _closeFriends);
       if (_mentions.isNotEmpty) {
         unawaited(notifyStoryMentions(List.of(_mentions)));
       }
@@ -155,6 +159,16 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
                       textAlign: TextAlign.center,
                       style: const TextStyle(color: Colors.white)),
                 ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: StoryAudienceSelector(
+                    close: _closeFriends,
+                    enabled: !_busy,
+                    color: Colors.white,
+                    onChanged: (v) {
+                      if (mounted) setState(() => _closeFriends = v);
+                    }),
+              ),
               Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: MentionEditor(
