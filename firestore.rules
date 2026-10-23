@@ -874,7 +874,7 @@ service cloud.firestore {
           && (!('expiresAt' in request.resource.data)
             || request.resource.data.expiresAt is timestamp)
           && (!('shareType' in request.resource.data)
-            || request.resource.data.shareType in ['post', 'profile'])
+            || request.resource.data.shareType in ['post', 'profile', 'story'])
           && (!('shareId' in request.resource.data)
             || (request.resource.data.shareId is string
               && request.resource.data.shareId.size() <= 128))
