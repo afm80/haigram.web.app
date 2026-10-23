@@ -23,6 +23,14 @@ String trf(String ar, List<Object?> args) {
 }
 
 const Map<String, String> _en = {
+  // ردود القصص كبطاقات في المحادثة
+  'ردّ على قصتك': "Replied to your story",
+  'ردّك على القصة': "Your reply to the story",
+  'تفاعل على قصتك': "Reacted to your story",
+  'تفاعلك على القصة': "Your reaction to the story",
+  'تعذر فتح القصة': "Couldn't open the story",
+  'هذه القصة لم تعد متاحة': "This story is no longer available",
+  'قصة': "Story",
   // الأصدقاء المقربون
   'الجميع': "Everyone",
   'الأصدقاء المقربون': "Close friends",
