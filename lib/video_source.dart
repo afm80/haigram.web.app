@@ -256,7 +256,7 @@ color:#fff;font:15px sans-serif;text-align:center;padding:16px;background:#000}
 </style>
 ${isHls ? '<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>' : ''}
 </head><body>
-<video id="v" controls autoplay playsinline></video><div id="e"></div>
+<video id="v" controls autoplay playsinline preload="auto"></video><div id="e"></div>
 <script>
 var src=$src, isHls=$isHls, v=document.getElementById('v'), done=false;
 function notify(s){
@@ -267,7 +267,12 @@ function fail(){ if(done) return; done=true;
   var e=document.getElementById('e'); e.textContent=$failText; e.style.display='flex';
   notify('error'); }
 v.addEventListener('error',fail);
-v.addEventListener('loadeddata',function(){ if(!done){done=true;notify('ok');} });
+function ok(){ if(!done){done=true;notify('ok');} }
+// على الموبايل (خصوصاً آيفون) قد لا يُحمَّل أي بيانات قبل الضغط على تشغيل،
+// فيكفي نجاح قراءة معلومات الملف (loadedmetadata) لاعتبار الفيديو صالحاً.
+v.addEventListener('loadedmetadata',ok);
+v.addEventListener('loadeddata',ok);
+v.addEventListener('canplay',ok);
 if(isHls && !v.canPlayType('application/vnd.apple.mpegurl')){
   if(window.Hls && Hls.isSupported()){
     var h=new Hls(); h.loadSource(src); h.attachMedia(v);
