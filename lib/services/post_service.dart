@@ -31,6 +31,7 @@ class Post {
   final String? videoProvider; // المنصة (youtube وغيرها)؛ فارغ = يوتيوب (منشورات قديمة)
   final String? videoUrl; // الرابط الأصلي للمنصات غير يوتيوب
   final bool isShort; // فيديو عمودي (شورتز، ريلز، تيك توك)
+  final int? bg; // قصة نصية: رقم الخلفية الملونة (فارغ = قصة صورة)
   final bool authorPrivate; // حساب صاحب المنشور خاص (تفرضه قواعد Firestore)
   final String? sharedFromUsername; // قصة مشاركة من منشور: صاحب الأصل
   final String? sharedFromUid;
@@ -59,6 +60,7 @@ class Post {
     this.videoProvider,
     this.videoUrl,
     this.isShort = false,
+    this.bg,
     this.authorPrivate = false,
     this.sharedFromUsername,
     this.sharedFromUid,
@@ -93,6 +95,7 @@ class Post {
       videoProvider: m['videoProvider'] as String?,
       videoUrl: m['videoUrl'] as String?,
       isShort: m['isShort'] == true,
+      bg: (m['bg'] as num?)?.toInt(),
       authorPrivate: m['authorPrivate'] == true,
       sharedFromUsername: m['sharedFromUsername'] as String?,
       sharedFromUid: m['sharedFromUid'] as String?,
@@ -741,6 +744,10 @@ class PostService {
         },
         if (video != null && video.isShort) 'isShort': true,
       });
+
+  /// قصة نصية بخلفية ملونة (بدون صورة). [bg] رقم الخلفية من story_backgrounds.dart.
+  static Future<void> publishTextStory(String text, int bg) =>
+      _create(PostType.story, text, null, extra: {'bg': bg});
 
   // ---- الإعجاب والحفظ والمتابعة ----
   static DocumentReference<Map<String, dynamic>> _likeRef(String postId) =>
