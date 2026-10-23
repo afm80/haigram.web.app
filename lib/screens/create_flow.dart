@@ -46,7 +46,7 @@ Widget _createScreen(CreateKind kind) => kind == CreateKind.story
     ? CaptureScreen(kind: kind)
     : ComposeScreen(kind: kind);
 
-/// الشريط السفلي الصغير: منشور / قصة (مثل إنستغرام).
+/// ورقة زر الإضافة: ثلاث بطاقات أفقية (منشور / قصة / رابط فيديو) مع وصف مختصر لكل واحدة.
 void showCreateSheet(BuildContext context) {
   if (needsLogin(context)) return;
   showModalBottomSheet(
@@ -70,68 +70,132 @@ void showCreateSheet(BuildContext context) {
         );
       }
 
-      // صف بسيط كما في إنستغرام: عنوان على جهة البداية وأيقونة على جهة النهاية.
-      Widget option(String title, IconData icon, CreateKind kind) => InkWell(
-            onTap: () => open(kind),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: TextStyle(
-                        color: colors.text,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
+      Widget card(
+              String title, String subtitle, IconData icon, CreateKind kind) =>
+          Expanded(
+            child: Material(
+              color: colors.surfaceHigh,
+              borderRadius: BorderRadius.circular(18),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: () => open(kind),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 52,
+                        height: 52,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                              colors: [AppColors.accent, AppColors.accent2]),
+                        ),
+                        child: Icon(icon, color: Colors.white, size: 26),
                       ),
-                    ),
+                      const SizedBox(height: 10),
+                      Text(
+                        title,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: colors.text,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: colors.textDim,
+                          fontSize: 11.5,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
                   ),
-                  Icon(icon, color: colors.text, size: 26),
-                ],
+                ),
               ),
             ),
           );
-
-      Widget divider() =>
-          Divider(height: 1, color: colors.text.withOpacity(0.10));
 
       return SafeArea(
         top: false,
         child: Material(
           color: colors.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 9),
-              Container(
-                width: 38,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: colors.textDim.withOpacity(0.55),
-                  borderRadius: BorderRadius.circular(3),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 9, 14, 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 38,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: colors.textDim.withOpacity(0.55),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                tr('إنشاء'),
-                style: TextStyle(
-                  color: colors.text,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
+                const SizedBox(height: 14),
+                Text(
+                  tr('إنشاء'),
+                  style: TextStyle(
+                    color: colors.text,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              divider(),
-              option(tr('منشور'), Icons.grid_on_rounded, CreateKind.post),
-              divider(),
-              option(tr('قصة'), Icons.add_circle_outline_rounded,
-                  CreateKind.story),
-              divider(),
-              option(tr('رابط فيديو'), Icons.link_rounded, CreateKind.video),
-              const SizedBox(height: 8),
-            ],
+                const SizedBox(height: 14),
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      card(
+                        tr('منشور'),
+                        trf('نص وصور حتى {0} مع هاشتاكات وروابط',
+                            [PostService.maxAlbumImages]),
+                        Icons.grid_on_rounded,
+                        CreateKind.post,
+                      ),
+                      const SizedBox(width: 10),
+                      card(
+                        tr('قصة'),
+                        tr('صورة أو نص مع ملصقات واستطلاع'),
+                        Icons.add_circle_outline_rounded,
+                        CreateKind.story,
+                      ),
+                      const SizedBox(width: 10),
+                      card(
+                        tr('رابط فيديو'),
+                        tr('نص اختياري مع رابط الفيديو'),
+                        Icons.link_rounded,
+                        CreateKind.video,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.info_outline_rounded,
+                        size: 15, color: colors.textDim),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        tr('الموقع لا يرفع فيديو، لكنه يقبل روابط الفيديو فقط'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: colors.textDim, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       );
