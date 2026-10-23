@@ -122,7 +122,7 @@ void showCreateSheet(BuildContext context) {
                 item(tr('منشور'), Icons.grid_on_rounded, CreateKind.post),
                 item(tr('قصة'), Icons.add_circle_outline_rounded,
                     CreateKind.story),
-                item(tr('فيديو'), Icons.videocam_outlined, CreateKind.video),
+                item(tr('رابط فيديو'), Icons.link_rounded, CreateKind.video),
               ],
             ),
           ),
