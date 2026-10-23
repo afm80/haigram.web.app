@@ -338,6 +338,9 @@ service cloud.firestore {
         allow read: if isActiveUser()
           && (request.auth.uid == uid || parentPostReadable(postId));
         allow write: if isActiveUser() && request.auth.uid == uid;
+        // صاحب المنشور (القصة) يحذف إعجاباتها عند حذفها.
+        allow delete: if isActiveUser()
+          && get(/databases/$(database)/documents/posts/$(postId)).data.uid == request.auth.uid;
         // لوحة التحكم: قراءة/حذف الإعجابات عند حذف منشور أو حساب.
         allow read: if isAdmin();
         allow delete: if isAdmin();
@@ -355,6 +358,9 @@ service cloud.firestore {
         // لوحة التحكم: قراءة/حذف المشاهدات عند حذف منشور (قصة).
         allow read: if isAdmin();
         allow delete: if isAdmin();
+        // صاحب القصة يحذف مشاهداتها عند حذفها (قبل حذف القصة نفسها).
+        allow delete: if isActiveUser()
+          && get(/databases/$(database)/documents/posts/$(postId)).data.uid == request.auth.uid;
       }
 
       // أصوات استطلاع القصة: كل مستخدم يصوّت مرة واحدة لنفسه فقط (بلا تعديل)،
@@ -372,6 +378,9 @@ service cloud.firestore {
           && request.resource.data.at == request.time;
         // لوحة التحكم: حذف الأصوات عند حذف منشور.
         allow delete: if isAdmin();
+        // صاحب القصة يحذف أصواتها عند حذفها.
+        allow delete: if isActiveUser()
+          && get(/databases/$(database)/documents/posts/$(postId)).data.uid == request.auth.uid;
       }
 
       // التعليقات: يكتبها أي مستخدم مسجّل، ويحذفها صاحبها أو صاحب المنشور
