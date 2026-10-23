@@ -11,6 +11,7 @@ import '../theme.dart';
 import '../l10n.dart';
 import '../net_error.dart';
 import '../video_source.dart';
+import 'text_story_screen.dart';
 import 'video_cover.dart';
 import 'video_embed_stub.dart' if (dart.library.html) 'video_embed_web.dart';
 
@@ -268,6 +269,13 @@ class _CaptureScreenState extends State<CaptureScreen> {
   bool _busy = false;
   String? _error;
 
+  /// قصة نصية بخلفية ملونة (بدون صورة).
+  void _openTextStory() {
+    if (_busy) return;
+    Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const TextStoryScreen()));
+  }
+
   Future<void> _pick(ImageSource source) async {
     if (_busy) return;
     setState(() {
@@ -413,7 +421,10 @@ class _CaptureScreenState extends State<CaptureScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 72),
+                  widget.kind == CreateKind.story
+                      ? _sideButton(Icons.text_fields_rounded, tr('نص'),
+                          _openTextStory)
+                      : const SizedBox(width: 72),
                 ],
               ),
             ),

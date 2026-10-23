@@ -14,6 +14,7 @@ import 'common_widgets.dart';
 import 'create_flow.dart';
 import 'post_widgets.dart';
 import 'profile_screen.dart';
+import 'story_backgrounds.dart';
 import '../route_state.dart';
 
 import '../l10n.dart';
@@ -765,7 +766,8 @@ class _StoryViewerState extends State<StoryViewer>
                             const Spacer(),
                             if (story.sharedFromUsername != null)
                               _sharedFrom(story),
-                            if (story.caption.isNotEmpty) _caption(story),
+                            if (story.caption.isNotEmpty && story.bg == null)
+                              _caption(story),
                           ],
                         ),
                       ),
@@ -1083,6 +1085,16 @@ class _StoryMediaState extends State<_StoryMedia> {
   bool _loaded = false; // ظهرت الصورة (أو فشل تحميلها)
   bool _notified = false; // أبلغنا العارض ليبدأ العدّاد
 
+  @override
+  void initState() {
+    super.initState();
+    // قصة نصية: لا صورة لتحميلها، فيبدأ العدّاد مباشرة.
+    if (widget.story.bg != null) {
+      _loaded = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeNotify());
+    }
+  }
+
   /// يبدأ العدّاد فقط بعد تحميل الصورة وعندما تكون هذه الصفحة هي النشطة.
   void _maybeNotify() {
     if (!mounted || !_loaded || !widget.active || _notified) return;
@@ -1105,8 +1117,31 @@ class _StoryMediaState extends State<_StoryMedia> {
     }
   }
 
+  /// القصة النصية: نص في الوسط فوق تدرج لوني.
+  Widget _textStory(int bg) => DecoratedBox(
+        decoration: BoxDecoration(gradient: storyGradient(bg)),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 90),
+            child: Text(
+              widget.story.caption,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                height: 1.4,
+                shadows: [Shadow(blurRadius: 6, color: Color(0x55000000))],
+              ),
+            ),
+          ),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
+    final bg = widget.story.bg;
+    if (bg != null) return _textStory(bg);
     // الصورة كاملة بدون قص (contain) مع خلفية مموّهة من الصورة نفسها.
     return LayoutBuilder(
       builder: (_, c) => ColoredBox(
