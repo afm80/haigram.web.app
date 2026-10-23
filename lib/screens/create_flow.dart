@@ -12,6 +12,7 @@ import '../l10n.dart';
 import '../net_error.dart';
 import '../video_source.dart';
 import 'sticker_sheet.dart' show StickerPanel;
+import 'story_mentions.dart';
 import 'story_poll.dart';
 import 'story_stickers.dart';
 import 'text_story_screen.dart';
@@ -487,6 +488,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
   final List<StoryStickerItem> _stickers = [];
   bool _lockScroll = false; // نوقف التمرير أثناء تحريك ملصق
   StoryPoll? _poll; // استطلاع القصة (اختياري)
+  final List<StoryMention> _mentions = []; // مذكورون في القصة (حتى 3)
   Timer? _linkDebounce;
   VideoSource? _preview; // الفيديو المعروض في المعاينة (رابط صالح)
   String? _linkError; // سبب رفض الرابط، أو فشل تشغيل المعاينة
@@ -757,9 +759,16 @@ class _ComposeScreenState extends State<ComposeScreen> {
               ext: m.ext,
               caption: caption,
               onProgress: onProgress,
-              extra: (_poll != null && type == PostType.story)
-                  ? {'poll': _poll!.toMap()}
+              extra: type == PostType.story
+                  ? <String, dynamic>{
+                      if (_poll != null) 'poll': _poll!.toMap(),
+                      if (_mentions.isNotEmpty)
+                        'mentions': [for (final u in _mentions) u.toMap()],
+                    }
                   : const <String, dynamic>{});
+          if (type == PostType.story && _mentions.isNotEmpty) {
+            unawaited(notifyStoryMentions(List.of(_mentions)));
+          }
         }
       }
       nav.popUntil((r) => r.isFirst);
@@ -887,6 +896,13 @@ class _ComposeScreenState extends State<ComposeScreen> {
                   ),
                 ],
               ),
+            if (_canSticker)
+              MentionEditor(
+                  mentions: _mentions,
+                  enabled: !_busy,
+                  onChanged: () {
+                    if (mounted) setState(() {});
+                  }),
             if (_canSticker && _poll != null)
               Align(
                 alignment: AlignmentDirectional.centerStart,

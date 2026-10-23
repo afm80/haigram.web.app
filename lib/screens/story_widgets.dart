@@ -15,6 +15,7 @@ import 'create_flow.dart';
 import 'post_widgets.dart';
 import 'profile_screen.dart';
 import 'story_backgrounds.dart';
+import 'story_mentions.dart';
 import 'story_poll.dart';
 import '../route_state.dart';
 
@@ -493,6 +494,13 @@ class _StoryViewerState extends State<StoryViewer>
     _setPause('nav', false);
   }
 
+  Future<void> _openUser(String uid) async {
+    _setPause('nav', true);
+    await Navigator.of(context).push(
+        appRoute('user', {'uid': uid}, (_) => UserProfileScreen(uid: uid)));
+    _setPause('nav', false);
+  }
+
   Future<void> _delete() async {
     _setPause('dialog', true);
     final ok = await showDialog<bool>(
@@ -765,6 +773,14 @@ class _StoryViewerState extends State<StoryViewer>
                             _progress(group, si, active),
                             _header(group, story, mine),
                             const Spacer(),
+                            if (story.mentions.isNotEmpty)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                                child: StoryMentionsRow(
+                                    mentions: story.mentions,
+                                    onOpen: _openUser),
+                              ),
                             if (story.poll != null)
                               Padding(
                                 padding:

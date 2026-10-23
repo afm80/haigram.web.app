@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../l10n.dart';
 import '../net_error.dart';
 import '../services/post_service.dart';
 import 'story_backgrounds.dart';
+import 'story_mentions.dart';
 import 'story_poll.dart';
 
 /// قصة نصية بخلفية ملونة (مثل إنستغرام): اكتب نصاً واختر لون الخلفية.
@@ -19,6 +22,7 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
   final _text = TextEditingController();
   int _bg = 0;
   StoryPoll? _poll;
+  final List<StoryMention> _mentions = [];
   bool _busy = false;
   String? _error;
 
@@ -46,7 +50,11 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
     final nav = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await PostService.publishTextStory(text, _bg, poll: _poll);
+      await PostService.publishTextStory(text, _bg,
+          poll: _poll, mentions: List.of(_mentions));
+      if (_mentions.isNotEmpty) {
+        unawaited(notifyStoryMentions(List.of(_mentions)));
+      }
       nav.popUntil((r) => r.isFirst);
       messenger.showSnackBar(SnackBar(content: Text(tr('تمت إضافة القصة'))));
     } catch (e) {
@@ -147,6 +155,16 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
                       textAlign: TextAlign.center,
                       style: const TextStyle(color: Colors.white)),
                 ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: MentionEditor(
+                    mentions: _mentions,
+                    enabled: !_busy,
+                    color: Colors.white,
+                    onChanged: () {
+                      if (mounted) setState(() {});
+                    }),
+              ),
               if (_poll != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
