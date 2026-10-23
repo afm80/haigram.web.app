@@ -11,6 +11,8 @@ import '../theme.dart';
 import '../l10n.dart';
 import '../net_error.dart';
 import '../video_source.dart';
+import 'sticker_sheet.dart' show StickerPanel;
+import 'story_stickers.dart';
 import 'text_story_screen.dart';
 import 'video_cover.dart';
 import 'video_embed_stub.dart' if (dart.library.html) 'video_embed_web.dart';
@@ -479,6 +481,10 @@ class ComposeScreen extends StatefulWidget {
 class _ComposeScreenState extends State<ComposeScreen> {
   final _caption = TextEditingController();
   final _videoLink = TextEditingController();
+  final _scroll = ScrollController();
+  final _captureKey = GlobalKey(); // يلتقط الصورة مع ملصقاتها عند النشر
+  final List<StoryStickerItem> _stickers = [];
+  bool _lockScroll = false; // نوقف التمرير أثناء تحريك ملصق
   Timer? _linkDebounce;
   VideoSource? _preview; // الفيديو المعروض في المعاينة (رابط صالح)
   String? _linkError; // سبب رفض الرابط، أو فشل تشغيل المعاينة
@@ -538,6 +544,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
     _linkDebounce?.cancel();
     _caption.dispose();
     _videoLink.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -641,6 +648,44 @@ class _ComposeScreenState extends State<ComposeScreen> {
         CreateKind.video => tr('أضف وصفاً للفيديو (اختياري)'),
       };
 
+  // الملصقات للقصة المصوّرة (صورة واحدة) فقط.
+  bool get _canSticker => widget.kind == CreateKind.story && _images.length == 1;
+
+  Future<void> _addSticker() async {
+    final emoji = await showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      builder: (ctx) =>
+          StickerPanel(onPick: (s) => Navigator.of(ctx).pop(s), height: 320),
+    );
+    if (emoji == null || !mounted) return;
+    setState(() => _stickers.add(StoryStickerItem(emoji)));
+  }
+
+  /// الصورة التي ستُرفع: الأصلية، أو بعد دمج الملصقات فيها.
+  Future<PickedMedia?> _mediaToPublish() async {
+    if (_images.isEmpty) return null;
+    final first = _images.first;
+    if (!_canSticker || _stickers.isEmpty) return first;
+    if (_scroll.hasClients && _scroll.offset > 0) {
+      await _scroll.animateTo(0,
+          duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+    }
+    await WidgetsBinding.instance.endOfFrame;
+    Uint8List? bytes;
+    try {
+      bytes = await bakeStickers(_captureKey, first.bytes,
+          maxBytes: maxPhotoBytes);
+    } catch (_) {
+      bytes = null;
+    }
+    if (bytes == null) {
+      throw StateError(tr('تعذر دمج الملصقات، حاول مرة أخرى'));
+    }
+    return PickedMedia(
+        bytes: bytes, ext: 'jpg', mime: 'image/jpeg', name: first.name);
+  }
+
   Future<void> _publish() async {
     final caption = _caption.text.trim();
     if (_textOnly && !_isVideoKind) {
@@ -684,7 +729,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
         if (mounted) setState(() => _progress = p);
       }
 
-      final m = _images.isEmpty ? null : _images.first;
+      final m = await _mediaToPublish();
       if (m == null) {
         await PostService.publishText(caption, video: video);
       } else {
@@ -783,6 +828,9 @@ class _ComposeScreenState extends State<ComposeScreen> {
       ),
       body: SafeArea(
         child: ListView(
+          controller: _scroll,
+          cacheExtent: 2000,
+          physics: _lockScroll ? const NeverScrollableScrollPhysics() : null,
           padding: const EdgeInsets.all(16),
           children: [
             if (_images.length == 1)
@@ -792,11 +840,41 @@ class _ComposeScreenState extends State<ComposeScreen> {
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
                         maxHeight: MediaQuery.of(context).size.height * 0.5),
-                    child:
-                        Image.memory(_images.first.bytes, fit: BoxFit.contain),
+                    child: RepaintBoundary(
+                      key: _captureKey,
+                      child: Stack(
+                        children: [
+                          Image.memory(_images.first.bytes,
+                              fit: BoxFit.contain),
+                          if (_canSticker)
+                            Positioned.fill(
+                              child: StickerLayer(
+                                  items: _stickers,
+                                  enabled: !_busy,
+                                  onChanged: () => setState(() {}),
+                                  onTouching: (v) =>
+                                      setState(() => _lockScroll = v)),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
+            if (_canSticker)
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton.icon(
+                  onPressed: _busy ? null : _addSticker,
+                  icon: const Icon(Icons.emoji_emotions_outlined),
+                  label: Text(tr('ملصق')),
+                ),
+              ),
+            if (_canSticker && _stickers.isNotEmpty)
+              Text(
+                  tr('حرّك الملصق بإصبعك، وبإصبعين للتكبير، واسحبه إلى السلة لحذفه'),
+                  style: TextStyle(
+                      color: context.appColors.textDim, fontSize: 12.5)),
             if (_images.length > 1) _albumStrip(),
             if (_images.isNotEmpty &&
                 _canAlbum &&
