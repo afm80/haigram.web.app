@@ -70,8 +70,7 @@ void showCreateSheet(BuildContext context) {
         );
       }
 
-      Widget card(
-              String title, String subtitle, IconData icon, CreateKind kind) =>
+      Widget card(String title, IconData icon, CreateKind kind) =>
           Expanded(
             child: Material(
               color: colors.surfaceHigh,
@@ -81,7 +80,7 @@ void showCreateSheet(BuildContext context) {
                 onTap: () => open(kind),
                 child: Padding(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -103,16 +102,6 @@ void showCreateSheet(BuildContext context) {
                           color: colors.text,
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        subtitle,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: colors.textDim,
-                          fontSize: 11.5,
-                          height: 1.35,
                         ),
                       ),
                     ],
@@ -154,45 +143,15 @@ void showCreateSheet(BuildContext context) {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      card(
-                        tr('منشور'),
-                        trf('نص وصور حتى {0} مع هاشتاكات وروابط',
-                            [PostService.maxAlbumImages]),
-                        Icons.grid_on_rounded,
-                        CreateKind.post,
-                      ),
+                      card(tr('منشور'), Icons.grid_on_rounded, CreateKind.post),
                       const SizedBox(width: 10),
-                      card(
-                        tr('قصة'),
-                        tr('صورة أو نص مع ملصقات واستطلاع'),
-                        Icons.add_circle_outline_rounded,
-                        CreateKind.story,
-                      ),
+                      card(tr('قصة'), Icons.add_circle_outline_rounded,
+                          CreateKind.story),
                       const SizedBox(width: 10),
-                      card(
-                        tr('رابط فيديو'),
-                        tr('نص اختياري مع رابط الفيديو'),
-                        Icons.link_rounded,
-                        CreateKind.video,
-                      ),
+                      card(tr('فيديو'), Icons.videocam_rounded,
+                          CreateKind.video),
                     ],
                   ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.info_outline_rounded,
-                        size: 15, color: colors.textDim),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        tr('الموقع لا يرفع فيديو، لكنه يقبل روابط الفيديو فقط'),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: colors.textDim, fontSize: 12),
-                      ),
-                    ),
-                  ],
                 ),
               ],
             ),
