@@ -444,6 +444,7 @@ const Map<String, String> _en = {
       "They won't be able to message you. You can unblock from the button above.",
   'هذا الحساب غير متاح': "This account isn't available",
   'منشورات': "Posts",
+  'إعجابات': "Likes",
   'متابعين': "Followers",
   'أتابعه': "Following",
   'تعديل الملف الشخصي': "Edit profile",
