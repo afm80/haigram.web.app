@@ -23,6 +23,17 @@ String trf(String ar, List<Object?> args) {
 }
 
 const Map<String, String> _en = {
+  // الأصدقاء المقربون
+  'الجميع': "Everyone",
+  'الأصدقاء المقربون': "Close friends",
+  'تعديل القائمة': "Edit list",
+  'أضف أصدقاء مقربين أولاً': "Add close friends first",
+  'الإعجاب غير متاح لقصص الأصدقاء المقربين': "Likes aren't available on close friends stories",
+  'الحد الأقصى {0} صديقاً مقرباً': "Maximum {0} close friends",
+  '{0} من {1} — قصصك المقربة يراها هؤلاء فقط': "{0} of {1} — only they can see your close friends stories",
+  'ابحث عن مستخدم لإضافته إلى أصدقائك المقربين': "Search for a user to add to your close friends",
+  'تعذّر تحميل القائمة': "Couldn't load the list",
+  'تعذّر الحفظ': "Couldn't save",
   // ذكر مستخدم في القصة
   'ذكر': "Mention",
   'ابحث عن مستخدم': "Search for a user",
