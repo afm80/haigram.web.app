@@ -23,6 +23,16 @@ String trf(String ar, List<Object?> args) {
 }
 
 const Map<String, String> _en = {
+  // استطلاع القصة
+  'استطلاع': "Poll",
+  'السؤال': "Question",
+  'الخيار الأول': "First option",
+  'الخيار الثاني': "Second option",
+  'نعم': "Yes",
+  'لا': "No",
+  'املأ السؤال والخيارين': "Fill in the question and both options",
+  'تعذر التصويت': "Couldn't vote",
+  '{0} صوت': "{0} votes",
   // ملصقات القصة
   'ملصق': "Sticker",
   'حرّك الملصق بإصبعك، وبإصبعين للتكبير، واسحبه إلى السلة لحذفه':
