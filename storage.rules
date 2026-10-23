@@ -12,7 +12,9 @@ service firebase.storage {
       allow read: if isActiveAccount();
       allow write: if isActiveAccount() && request.auth.uid == uid
         && request.resource.size < 5 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+        && request.resource.contentType.matches('image/.*')
+        // SVG قد يحمل سكربتات؛ نمنعه ونكتفي بالصور النقطية.
+        && !request.resource.contentType.matches('image/svg.*');
       // لوحة التحكم (بدون Cloud Functions): الأدمن يحذف ملفات حساب أو منشور محذوف.
       allow delete: if request.auth != null
         && request.auth.uid == '7M8bvw0UUiR8Ouxx28nq4i4spQF3';

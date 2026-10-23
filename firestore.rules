@@ -235,7 +235,17 @@ service cloud.firestore {
         && resource.data.get('authorPrivate', false) == false;
       allow create: if isActiveUser()
         && request.resource.data.uid == request.auth.uid
+        && request.resource.data.caption is string
         && request.resource.data.caption.size() <= 500
+        // رابط الوسائط: فارغ (وضع التجربة) أو https وبطول معقول فقط.
+        && (request.resource.data.get('mediaUrl', null) == null
+            || (request.resource.data.mediaUrl is string
+                && request.resource.data.mediaUrl.size() <= 1000
+                && request.resource.data.mediaUrl.matches('^https://[^ ]+$')))
+        // الألبوم: قائمة بحد أقصى 10 روابط (يطابق PostService.maxAlbumImages).
+        && (!('albumUrls' in request.resource.data)
+            || (request.resource.data.albumUrls is list
+                && request.resource.data.albumUrls.size() <= 10))
         && request.resource.data.likes == 0
         && request.resource.data.get('comments', 0) == 0
         && request.resource.data.get('views', 0) == 0
@@ -1042,7 +1052,9 @@ service cloud.firestore {
     match /media/{chunkId} {
       allow read: if isActiveUser();
       allow create: if isActiveUser()
+        && request.resource.data.keys().hasOnly(['uid', 'i', 'data'])
         && request.resource.data.uid == request.auth.uid
+        && request.resource.data.data is bytes
         && request.resource.data.data.size() < 950000;
       allow update: if false;
       allow delete: if isAdmin()
@@ -1053,6 +1065,7 @@ service cloud.firestore {
     match /usernames/{name} {
       allow get: if true;
       allow create: if isActiveUser()
+        && request.resource.data.keys().hasOnly(['uid'])
         && request.resource.data.uid == request.auth.uid
         && name.matches('^[a-z0-9._]{3,24}$');
       allow update: if false;
@@ -1079,8 +1092,13 @@ service cloud.firestore {
             && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.username)).data.uid
               == request.auth.uid)
         )
+        && request.resource.data.name is string
         && request.resource.data.name.size() <= 50
+        && request.resource.data.bio is string
         && request.resource.data.bio.size() <= 150
+        && request.resource.data.get('isPrivate', false) is bool
+        && request.resource.data.get('hideLikes', false) is bool
+        && request.resource.data.get('pinnedPostIds', []) is list
         && request.resource.data.get('website', '') is string
         && request.resource.data.get('website', '').size() <= 100
         && (request.resource.data.get('website', '') == ''
@@ -1125,8 +1143,11 @@ service cloud.firestore {
         (request.auth.uid == uid && sub == 'savedMessages'
           && validSavedMessageCreate()) ||
         // المالك: saved / liked ... لكن ليس followers ولا followRequests ولا الإشعارات.
+        // المالك يكتب فقط المجموعات المعروفة (محفوظات/إعجابات/مخفيّات)، كل مستند حقل at فقط:
+        // يمنع إنشاء مجموعات عشوائية أو تخزين بيانات كبيرة مجاناً في حسابه.
         (request.auth.uid == uid
-          && !(sub in ['notifications', 'followers', 'followRequests', 'following', 'pushTokens', 'savedMessages'])) ||
+          && sub in ['saved', 'liked', 'hiddenPosts']
+          && request.resource.data.keys().hasOnly(['at'])) ||
         // متابعة مباشرة: فقط إذا كان الحساب الهدف عاماً.
         (sub == 'following' && request.auth.uid == uid
           && doc != uid && !isPrivateUser(doc)
@@ -1164,7 +1185,8 @@ service cloud.firestore {
         (request.auth.uid == uid && sub == 'savedMessages'
           && validSavedMessageCreate()) ||
         (request.auth.uid == uid
-          && !(sub in ['notifications', 'followers', 'followRequests', 'following', 'pushTokens', 'savedMessages'])) ||
+          && sub in ['saved', 'liked', 'hiddenPosts']
+          && request.resource.data.keys().hasOnly(['at'])) ||
         (sub == 'following' && request.auth.uid == uid
           && request.resource.data.keys().hasOnly(['at'])) ||
         (sub == 'followers' && doc == request.auth.uid
