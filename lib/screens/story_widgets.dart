@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -370,7 +371,7 @@ class StoryViewer extends StatefulWidget {
 }
 
 class _StoryViewerState extends State<StoryViewer>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late int _g = widget.initial;
   late int _s;
   bool _ready = false;
@@ -381,10 +382,12 @@ class _StoryViewerState extends State<StoryViewer>
   late final PageController _pc = PageController(initialPage: widget.initial);
   final TextEditingController _reply = TextEditingController();
   final FocusNode _replyFocus = FocusNode();
+  final FocusNode _keyFocus = FocusNode(debugLabel: 'storyKeys');
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _s = _firstUnseen(widget.groups[_g]);
     StoryViewed.load();
     _t = AnimationController(vsync: this, duration: const Duration(seconds: 5))
@@ -398,11 +401,41 @@ class _StoryViewerState extends State<StoryViewer>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _t.dispose();
     _pc.dispose();
     _reply.dispose();
     _replyFocus.dispose();
+    _keyFocus.dispose();
     super.dispose();
+  }
+
+  /// يوقف القصة عند خروج التطبيق من الواجهة (أو إخفاء تبويب المتصفح).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _setPause('background', state != AppLifecycleState.resumed);
+  }
+
+  /// اختصارات لوحة المفاتيح (سطح المكتب): الأسهم للتنقل، Esc للإغلاق،
+  /// المسافة للإيقاف/المتابعة. تُتجاهل أثناء الكتابة في خانة الردّ.
+  KeyEventResult _onKey(FocusNode node, KeyEvent e) {
+    if (e is! KeyDownEvent || _replyFocus.hasFocus) {
+      return KeyEventResult.ignored;
+    }
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    final k = e.logicalKey;
+    if (k == LogicalKeyboardKey.arrowRight) {
+      rtl ? _prev() : _next();
+    } else if (k == LogicalKeyboardKey.arrowLeft) {
+      rtl ? _next() : _prev();
+    } else if (k == LogicalKeyboardKey.escape) {
+      Navigator.of(context).pop();
+    } else if (k == LogicalKeyboardKey.space) {
+      _setPause('key', !_pauseReasons.contains('key'));
+    } else {
+      return KeyEventResult.ignored;
+    }
+    return KeyEventResult.handled;
   }
 
   int _firstUnseen(StoryGroup g) {
@@ -419,6 +452,11 @@ class _StoryViewerState extends State<StoryViewer>
     if (!mounted) return;
     final before = _paused;
     on ? _pauseReasons.add(reason) : _pauseReasons.remove(reason);
+    if (!on && reason != 'key' && !_replyFocus.hasFocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_replyFocus.hasFocus) _keyFocus.requestFocus();
+      });
+    }
     if (before == _paused) return;
     if (_paused) {
       _t.stop();
@@ -683,11 +721,16 @@ class _StoryViewerState extends State<StoryViewer>
     return Scaffold(
       backgroundColor: Colors.black,
       resizeToAvoidBottomInset: false,
-      body: GestureDetector(
+      body: Focus(
+        focusNode: _keyFocus,
+        autofocus: true,
+        onKeyEvent: _onKey,
+        child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTapUp: (d) {
           if (_replyFocus.hasFocus) {
             _replyFocus.unfocus();
+            _keyFocus.requestFocus();
             return;
           }
           final w = MediaQuery.of(context).size.width;
@@ -729,6 +772,7 @@ class _StoryViewerState extends State<StoryViewer>
             ),
           ),
         ),
+      ),
       ),
     );
   }
@@ -1148,11 +1192,19 @@ class _StoryMediaState extends State<_StoryMedia> {
     }
   }
 
+  /// مدة العرض: 5 ثوانٍ للصورة، وللقصة النصية تزيد مع طول النص (حتى 14 ثانية).
+  Duration _duration() {
+    if (widget.story.bg == null) return const Duration(seconds: 5);
+    final chars = widget.story.caption.trim().length;
+    final ms = (4000 + chars * 60).clamp(5000, 14000).toInt();
+    return Duration(milliseconds: ms);
+  }
+
   /// يبدأ العدّاد فقط بعد تحميل الصورة وعندما تكون هذه الصفحة هي النشطة.
   void _maybeNotify() {
     if (!mounted || !_loaded || !widget.active || _notified) return;
     _notified = true;
-    widget.onReady(const Duration(seconds: 5));
+    widget.onReady(_duration());
   }
 
   void _onLoaded() {
