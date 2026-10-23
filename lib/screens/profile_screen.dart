@@ -1,5 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/foundation.dart' show ValueListenable, listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -116,6 +117,17 @@ class _ProfileViewState extends State<ProfileView> {
   late final Stream<bool>? _followingStream =
       widget.isMe ? null : PostService.isFollowing(widget.uid);
   bool _visitRecorded = false;
+
+  /// استعلام منشورات واحد تتشاركه كل التبويبات (بدل استعلام لكل تبويب).
+  /// يُنشأ عند أول طلب فقط، أي عندما يكون الوصول للمحتوى مسموحاً.
+  _PostsFeed? _feedInstance;
+  _PostsFeed get _feed => _feedInstance ??= _PostsFeed(widget.uid);
+
+  @override
+  void dispose() {
+    _feedInstance?.dispose();
+    super.dispose();
+  }
 
   /// يسجّل زيارتي لهذا الملف مرة واحدة (إن فعّل الطرفان الميزة ولا يوجد حظر).
   void _recordVisit(AppUser user, _Access access) {
@@ -255,6 +267,7 @@ class _ProfileViewState extends State<ProfileView> {
                   kind: kind,
                   pinned: pinned,
                   pinnedIds: pinnedIds,
+                  feed: _feed.value,
                 ),
               if (widget.isMe) const _SavedGrid(),
             ],
@@ -262,6 +275,28 @@ class _ProfileViewState extends State<ProfileView> {
         ),
       ),
     );
+  }
+}
+
+/// اشتراك واحد في منشورات الملف يحتفظ بآخر قيمة، فيقرأ منه كل تبويب
+/// (حتى لو فُتح لاحقاً) دون استعلام Firestore إضافي.
+class _PostsFeed {
+  final value = ValueNotifier<AsyncSnapshot<List<Post>>>(
+      const AsyncSnapshot<List<Post>>.waiting());
+  late final StreamSubscription<List<Post>> _sub;
+
+  _PostsFeed(String uid) {
+    _sub = PostService.profilePosts(uid).listen(
+      (data) => value.value =
+          AsyncSnapshot<List<Post>>.withData(ConnectionState.active, data),
+      onError: (Object e, StackTrace st) => value.value =
+          AsyncSnapshot<List<Post>>.withError(ConnectionState.active, e, st),
+    );
+  }
+
+  void dispose() {
+    _sub.cancel();
+    value.dispose();
   }
 }
 
@@ -453,6 +488,13 @@ class _Header extends StatelessWidget {
                             : null,
                       ),
                     ),
+                    if (isMe || !u.hideLikes)
+                      Expanded(
+                        child: _LiveStat(
+                          label: tr('إعجابات'),
+                          load: () => PostService.totalLikes(uid),
+                        ),
+                      ),
                     Expanded(
                       child: _LiveStat(
                         label: tr('أتابعه'),
@@ -480,6 +522,7 @@ class _Header extends StatelessWidget {
             alignment: AlignmentDirectional.centerStart,
             child: Text(
               '@${u.username}',
+              textDirection: TextDirection.ltr,
               style:
                   TextStyle(fontSize: 14, color: context.appColors.textDim),
             ),
@@ -557,81 +600,10 @@ class _Header extends StatelessWidget {
     );
   }
 
-  Widget _avatar(AppUser u) {
-    final image = u.avatarImage;
-    return StreamBuilder<List<StoryGroup>>(
-      stream: PostService.storyGroups(),
-      builder: (context, stories) {
-        final hasStory =
-            stories.data?.any((group) => group.uid == u.uid) ?? false;
-        final avatar = CircleAvatar(
-          radius: hasStory ? 43 : 46,
-          backgroundColor: AppColors.accent,
-          backgroundImage: image,
-          child: image == null
-              ? Text(u.initial,
-                  style: const TextStyle(
-                      fontSize: 36,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white))
-              : null,
-        );
-        return StreamBuilder<bool>(
-          stream: PresenceService.isOnline(u.uid),
-          builder: (context, presence) => GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            // الضغط على الصورة: إن كان لصاحب الملف قصة فتُفتح (له ولغيره).
-            onTap: hasStory
-                ? () => _openStory(context, stories.data!, u.uid)
-                : null,
-            onLongPress: () => showProfilePhoto(context, u),
-            child: SizedBox(
-            width: 96,
-            height: 96,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                if (hasStory)
-                  Container(
-                    width: 96,
-                    height: 96,
-                    padding: const EdgeInsets.all(3),
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: AppColors.storyGradient,
-                    ),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: context.appColors.bg),
-                      child: Center(child: avatar),
-                    ),
-                  )
-                else
-                  avatar,
-                if (presence.data == true)
-                  Positioned(
-                    right: 2,
-                    bottom: 2,
-                    child: Container(
-                      width: 16,
-                      height: 16,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF31C75A),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                            color: context.appColors.bg, width: 2),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          ),
-        );
-      },
-    );
-  }
+  Widget _avatar(AppUser u) => _HeaderAvatar(
+        user: u,
+        onOpenStory: (context, groups) => _openStory(context, groups, u.uid),
+      );
 
   Widget _myButtons(BuildContext context, AppUser u) {
     return Row(
@@ -721,6 +693,102 @@ class _Header extends StatelessWidget {
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) =>
           _FollowSheet(uid: uid, initialTab: initialTab, outerContext: context),
+    );
+  }
+}
+
+/// صورة الملف الشخصي مع حلقة القصة ومؤشر الاتصال.
+/// الستريمات تُنشأ مرة واحدة هنا بدل إعادة الاشتراك عند كل إعادة بناء للهيدر.
+class _HeaderAvatar extends StatefulWidget {
+  final AppUser user;
+  final void Function(BuildContext context, List<StoryGroup> groups)
+      onOpenStory;
+  const _HeaderAvatar({required this.user, required this.onOpenStory});
+
+  @override
+  State<_HeaderAvatar> createState() => _HeaderAvatarState();
+}
+
+class _HeaderAvatarState extends State<_HeaderAvatar> {
+  late final Stream<List<StoryGroup>> _stories = PostService.storyGroups();
+  late final Stream<bool> _presence =
+      PresenceService.isOnline(widget.user.uid);
+
+  @override
+  Widget build(BuildContext context) {
+    final u = widget.user;
+    final image = u.avatarImage;
+    return StreamBuilder<List<StoryGroup>>(
+      stream: _stories,
+      builder: (context, stories) {
+        final hasStory =
+            stories.data?.any((group) => group.uid == u.uid) ?? false;
+        final avatar = CircleAvatar(
+          radius: hasStory ? 43 : 46,
+          backgroundColor: AppColors.accent,
+          backgroundImage: image,
+          child: image == null
+              ? Text(u.initial,
+                  style: const TextStyle(
+                      fontSize: 36,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white))
+              : null,
+        );
+        return StreamBuilder<bool>(
+          stream: _presence,
+          builder: (context, presence) => GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            // الضغط على الصورة: إن كان لصاحب الملف قصة فتُفتح (له ولغيره).
+            onTap: hasStory
+                ? () => widget.onOpenStory(context, stories.data!)
+                : null,
+            onLongPress: () => showProfilePhoto(context, u),
+            child: SizedBox(
+            width: 96,
+            height: 96,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                if (hasStory)
+                  Container(
+                    width: 96,
+                    height: 96,
+                    padding: const EdgeInsets.all(3),
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: AppColors.storyGradient,
+                    ),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: context.appColors.bg),
+                      child: Center(child: avatar),
+                    ),
+                  )
+                else
+                  avatar,
+                if (presence.data == true)
+                  Positioned(
+                    right: 2,
+                    bottom: 2,
+                    child: Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF31C75A),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                            color: context.appColors.bg, width: 2),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          ),
+        );
+      },
     );
   }
 }
@@ -1079,6 +1147,7 @@ class _ProfileShareSheetState extends State<_ProfileShareSheet> {
                             style:
                                 const TextStyle(fontWeight: FontWeight.w700)),
                         Text('@${widget.user.username}',
+                            textDirection: TextDirection.ltr,
                             style: TextStyle(color: colors.textDim)),
                       ],
                     ),
@@ -1176,6 +1245,7 @@ class _ProfileShareSheetState extends State<_ProfileShareSheet> {
                           title: Text(friend.displayName,
                               maxLines: 1, overflow: TextOverflow.ellipsis),
                           subtitle: Text('@${friend.username}',
+                              textDirection: TextDirection.ltr,
                               style: TextStyle(color: colors.textDim)),
                           trailing: _sharingUid == friend.uid
                               ? const SizedBox(
@@ -1823,10 +1893,12 @@ class _PostsTab extends StatefulWidget {
   final _ProfileTabKind kind;
   final List<Post> pinned;
   final Set<String> pinnedIds;
+  final ValueListenable<AsyncSnapshot<List<Post>>> feed;
   const _PostsTab({
     required this.uid,
     required this.isMe,
     required this.kind,
+    required this.feed,
     this.pinned = const [],
     this.pinnedIds = const <String>{},
   });
@@ -1836,8 +1908,6 @@ class _PostsTab extends StatefulWidget {
 }
 
 class _PostsTabState extends State<_PostsTab> {
-  late final Stream<List<Post>> _stream = PostService.profilePosts(widget.uid);
-
   static bool _isRepost(Post p) => p.repostedFromPostId != null;
 
   bool _keep(Post p) {
@@ -1858,9 +1928,9 @@ class _PostsTabState extends State<_PostsTab> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<Post>>(
-      stream: _stream,
-      builder: (context, snap) {
+    return ValueListenableBuilder<AsyncSnapshot<List<Post>>>(
+      valueListenable: widget.feed,
+      builder: (context, snap, _) {
         if (snap.hasError) {
           return ErrorState(error: snap.error, title: tr('تعذر التحميل'));
         }
