@@ -279,6 +279,14 @@ service cloud.firestore {
                 && request.resource.data.poll.b is string
                 && request.resource.data.poll.b.size() > 0
                 && request.resource.data.poll.b.size() <= 40))
+        // صندوق أسئلة القصة: عبارة قصيرة، للقصص فقط.
+        && (!('question' in request.resource.data)
+            || (request.resource.data.type == 'story'
+                && request.resource.data.question is map
+                && request.resource.data.question.keys().hasOnly(['q'])
+                && request.resource.data.question.q is string
+                && request.resource.data.question.q.size() > 0
+                && request.resource.data.question.q.size() <= 100))
         // ذكر المستخدمين في القصة: حتى 3، للقصص فقط.
         && (!('mentions' in request.resource.data)
             || (request.resource.data.type == 'story'
@@ -407,6 +415,34 @@ service cloud.firestore {
         // لوحة التحكم: حذف الأصوات عند حذف منشور.
         allow delete: if isAdmin();
         // صاحب القصة يحذف أصواتها عند حذفها.
+        allow delete: if isActiveUser()
+          && get(/databases/$(database)/documents/posts/$(postId)).data.uid == request.auth.uid;
+      }
+
+      // إجابات صندوق أسئلة القصة: كل مستخدم يجيب مرة واحدة لنفسه فقط (بلا تعديل)،
+      // ولا يجيب صاحب القصة. يقرؤها صاحب القصة، ويقرأ المجيب إجابته فقط.
+      match /answers/{responderUid} {
+        allow read: if isActiveUser()
+          && (isAdmin()
+              || request.auth.uid == responderUid
+              || get(/databases/$(database)/documents/posts/$(postId)).data.uid == request.auth.uid);
+        allow create: if isActiveUser()
+          && request.auth.uid == responderUid
+          && parentPostReadable(postId)
+          && get(/databases/$(database)/documents/posts/$(postId)).data.uid != responderUid
+          && get(/databases/$(database)/documents/posts/$(postId)).data.get('question', null) != null
+          && request.resource.data.keys().hasOnly(['username', 'name', 'text', 'at'])
+          && request.resource.data.username is string
+          && request.resource.data.username == myProfile().username
+          && request.resource.data.name is string
+          && (request.resource.data.name == myProfile().name
+              || request.resource.data.name == myProfile().username)
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 200
+          && request.resource.data.at == request.time;
+        allow delete: if isAdmin();
+        // صاحب القصة يحذف الإجابات عند حذفها.
         allow delete: if isActiveUser()
           && get(/databases/$(database)/documents/posts/$(postId)).data.uid == request.auth.uid;
       }
@@ -1185,6 +1221,12 @@ service cloud.firestore {
                 && request.resource.data.poll.b is string
                 && request.resource.data.poll.b.size() > 0
                 && request.resource.data.poll.b.size() <= 40))
+        && (!('question' in request.resource.data)
+            || (request.resource.data.question is map
+                && request.resource.data.question.keys().hasOnly(['q'])
+                && request.resource.data.question.q is string
+                && request.resource.data.question.q.size() > 0
+                && request.resource.data.question.q.size() <= 100))
         && (!('mentions' in request.resource.data)
             || (request.resource.data.mentions is list
                 && request.resource.data.mentions.size() <= 3));
@@ -1214,6 +1256,31 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/closeStories/$(storyId)).data.get('poll', null) != null
           && request.resource.data.keys().hasOnly(['choice', 'at'])
           && request.resource.data.choice in [0, 1]
+          && request.resource.data.at == request.time;
+        allow delete: if isAdmin();
+        allow delete: if isActiveUser()
+          && get(/databases/$(database)/documents/closeStories/$(storyId)).data.uid == request.auth.uid;
+      }
+
+      match /answers/{responderUid} {
+        allow read: if isActiveUser()
+          && (isAdmin()
+              || request.auth.uid == responderUid
+              || get(/databases/$(database)/documents/closeStories/$(storyId)).data.uid == request.auth.uid);
+        allow create: if isActiveUser()
+          && request.auth.uid == responderUid
+          && closeStoryReadable(storyId)
+          && get(/databases/$(database)/documents/closeStories/$(storyId)).data.uid != responderUid
+          && get(/databases/$(database)/documents/closeStories/$(storyId)).data.get('question', null) != null
+          && request.resource.data.keys().hasOnly(['username', 'name', 'text', 'at'])
+          && request.resource.data.username is string
+          && request.resource.data.username == myProfile().username
+          && request.resource.data.name is string
+          && (request.resource.data.name == myProfile().name
+              || request.resource.data.name == myProfile().username)
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 200
           && request.resource.data.at == request.time;
         allow delete: if isAdmin();
         allow delete: if isActiveUser()
