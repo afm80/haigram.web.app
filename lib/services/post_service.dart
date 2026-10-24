@@ -39,6 +39,36 @@ class StoryMention {
   }
 }
 
+/// صندوق أسئلة داخل القصة: عبارة (مثل «اسألني شيئاً») يجيب عنها المشاهدون.
+class StoryQuestion {
+  final String q;
+  const StoryQuestion({required this.q});
+
+  Map<String, dynamic> toMap() => {'q': q};
+
+  static StoryQuestion? fromMap(Object? m) {
+    if (m is! Map) return null;
+    final q = m['q'];
+    if (q is String && q.isNotEmpty) return StoryQuestion(q: q);
+    return null;
+  }
+}
+
+/// إجابة مشاهد على صندوق أسئلة القصة (يقرؤها صاحب القصة).
+class StoryAnswer {
+  final String uid;
+  final String username;
+  final String name;
+  final String text;
+  final DateTime at;
+  const StoryAnswer(
+      {required this.uid,
+      required this.username,
+      required this.name,
+      required this.text,
+      required this.at});
+}
+
 /// استطلاع داخل القصة: سؤال وخياران.
 class StoryPoll {
   final String q;
@@ -78,6 +108,7 @@ class Post {
   final int? tbg; // منشور نصي: رقم الخلفية الملونة (فارغ = بلا خلفية)
   final int? tc; // منشور نصي: رقم لون النص (فارغ = اللون الافتراضي)
   final StoryPoll? poll; // استطلاع داخل القصة (اختياري)
+  final StoryQuestion? question; // صندوق أسئلة داخل القصة (اختياري)
   final List<StoryMention> mentions; // مستخدمون مذكورون في القصة
   final bool authorPrivate; // حساب صاحب المنشور خاص (تفرضه قواعد Firestore)
   final bool closeFriends; // قصة للأصدقاء المقربين فقط (مجموعة closeStories)
@@ -112,6 +143,7 @@ class Post {
     this.tbg,
     this.tc,
     this.poll,
+    this.question,
     this.mentions = const [],
     this.authorPrivate = false,
     this.closeFriends = false,
@@ -152,6 +184,7 @@ class Post {
       tbg: (m['tbg'] as num?)?.toInt(),
       tc: (m['tc'] as num?)?.toInt(),
       poll: StoryPoll.fromMap(m['poll']),
+      question: StoryQuestion.fromMap(m['question']),
       mentions: StoryMention.listFrom(m['mentions']),
       authorPrivate: m['authorPrivate'] == true,
       closeFriends: m['closeFriends'] == true,
@@ -854,11 +887,13 @@ class PostService {
   /// قصة نصية بخلفية ملونة (بدون صورة). [bg] رقم الخلفية من story_backgrounds.dart.
   static Future<void> publishTextStory(String text, int bg,
           {StoryPoll? poll,
+          StoryQuestion? question,
           List<StoryMention> mentions = const [],
           bool closeFriends = false}) =>
       _create(PostType.story, text, null, closeFriends: closeFriends, extra: {
         'bg': bg,
         if (poll != null) 'poll': poll.toMap(),
+        if (question != null) 'question': question.toMap(),
         if (mentions.isNotEmpty)
           'mentions': [for (final m in mentions) m.toMap()],
       });
@@ -924,6 +959,71 @@ class PostService {
     ]);
     return [r[0].count ?? 0, r[1].count ?? 0];
   }
+
+  // ---- صندوق أسئلة القصة ----
+  static const maxAnswerLength = 200;
+
+  /// يرسل إجابتي على صندوق الأسئلة. مرة واحدة فقط؛ القواعد ترفض التعديل.
+  static Future<void> answerQuestion(String storyId, String text) {
+    final clean = text.trim();
+    if (clean.isEmpty) throw StateError(tr('اكتب إجابتك أولاً'));
+    if (clean.length > maxAnswerLength) {
+      throw StateError(tr('الإجابة طويلة جداً'));
+    }
+    return _db
+        .collection(_colOf(storyId))
+        .doc(storyId)
+        .collection('answers')
+        .doc(_user.uid)
+        .set({
+      'username': username,
+      'name': displayName,
+      'text': clean,
+      'at': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// هل أجبت سابقاً على صندوق أسئلة هذه القصة؟
+  static Future<bool> hasAnswered(String storyId) async {
+    if (isGuest) return false;
+    final d = await _db
+        .collection(_colOf(storyId))
+        .doc(storyId)
+        .collection('answers')
+        .doc(_user.uid)
+        .get();
+    return d.exists;
+  }
+
+  /// عدد الإجابات (استعلام عدّ). يقرأه صاحب القصة.
+  static Future<int> answerCount(String storyId) async {
+    final r = await _db
+        .collection(_colOf(storyId))
+        .doc(storyId)
+        .collection('answers')
+        .count()
+        .get();
+    return r.count ?? 0;
+  }
+
+  /// إجابات قصتي (الأحدث أولاً). يقرؤها صاحب القصة فقط.
+  static Stream<List<StoryAnswer>> storyAnswers(String storyId) => _db
+      .collection(_colOf(storyId))
+      .doc(storyId)
+      .collection('answers')
+      .orderBy('at', descending: true)
+      .limit(200)
+      .snapshots()
+      .map((s) => [
+            for (final d in s.docs)
+              if (d.data()['at'] is Timestamp && d.data()['text'] is String)
+                StoryAnswer(
+                    uid: d.id,
+                    username: (d.data()['username'] ?? '') as String,
+                    name: (d.data()['name'] ?? '') as String,
+                    text: d.data()['text'] as String,
+                    at: (d.data()['at'] as Timestamp).toDate()),
+          ]);
 
   /// من شاهدوا قصتي (الأحدث أولاً). يقرؤها صاحب القصة فقط.
   static Stream<List<StoryViewEntry>> storyViewers(String postId) => _db
@@ -1387,7 +1487,7 @@ class PostService {
   /// يحذف مشاهدات القصة وأصواتها وإعجاباتها قبل حذف القصة نفسها (القواعد تتحقق
   /// من صاحب القصة، فلا بد أن تسبق حذف المستند). أي فشل لا يوقف حذف القصة.
   static Future<void> _deleteStoryExtras(String storyId) async {
-    for (final sub in const ['views', 'votes', 'likes']) {
+    for (final sub in const ['views', 'votes', 'answers', 'likes']) {
       try {
         if (sub == 'likes' && isCloseId(storyId)) continue;
         final snap = await _db
