@@ -20,7 +20,9 @@ import '../services/presence_service.dart';
 import '../services/social_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
+import '../services/gif_service.dart';
 import 'common_widgets.dart';
+import 'gif_picker.dart';
 import 'note_widgets.dart';
 import 'photo_tools.dart' show fitImageUnderLimit;
 import 'post_widgets.dart' show PostDetailScreen, PostImage, timeAgo;
@@ -3062,6 +3064,32 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _sending || _firstMessageToStranger || _editTarget != null;
 
   /// قائمة «+»: الخيارات غير الظاهرة في الشريط (مرة واحدة، الموقع).
+  /// يفتح ورقة GIF ويرسل المختار (مع الرد الحالي ووضع الاختفاء إن وُجدا).
+  Future<void> _pickGif() async {
+    final gif = await showModalBottomSheet<GifItem>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => const GifPickerSheet(),
+    );
+    if (gif == null || !mounted) return;
+    final replyTarget = _replyTarget;
+    final expiresAt = _vanish ? DateTime.now().add(_vanishDuration) : null;
+    try {
+      await SocialService.sendGif(
+        widget.conversationId,
+        gif,
+        replyToMessageId: replyTarget?.id,
+        replyToText: replyTarget?.text,
+        replyToSenderUid: replyTarget?.senderUid,
+        expiresAt: expiresAt,
+      );
+      if (mounted) setState(() => _replyTarget = null);
+    } catch (e) {
+      _showError(tr('تعذر إرسال الـ GIF'), e);
+    }
+  }
+
   Future<void> _showPlusMenu() async {
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -3258,6 +3286,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           if (!hasContent && !holding)
             small(Icons.image_outlined, tr('إرسال صورة'),
                 blocked ? null : () => _pickImage(ImageSource.gallery)),
+          if (!hasContent && !holding && GifService.enabled)
+            small(Icons.gif_box_outlined, tr('GIF'),
+                blocked || _firstMessageToStranger ? null : _pickGif),
           if (!holding)
             small(
                 _showStickers
@@ -3901,6 +3932,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     StreamBuilder<Set<String>>(
                       stream: SocialService.savedMessageIds(),
                       builder: (context, savedSnapshot) {
+                        // المحفوظات لا تدعم GIF.
+                        if (message.kind == 'gif') {
+                          return const SizedBox.shrink();
+                        }
                         final saved =
                             savedSnapshot.data?.contains(message.id) ?? false;
                         return ListTile(
@@ -4163,6 +4198,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _canForward(ChatMessage message) =>
       message.kind == 'text' ||
       message.kind == 'sticker' ||
+      (message.kind == 'gif' && message.gifUrl != null) ||
       (message.kind == 'image' &&
           (message.imageUrl != null || message.imageBytes != null)) ||
       (message.kind == 'audio' &&
@@ -4789,6 +4825,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             final mine =
                                 message.senderUid == SocialService.currentUid;
                             final sticker = message.kind == 'sticker';
+                            final isGif = message.kind == 'gif' &&
+                                message.gifUrl != null &&
+                                !message.deleted;
                             // مقروءة/مسلَّمة: إيصال المحادثة (readAt/deliveredAt)
                             // أو الحقول القديمة في الرسالة نفسها (رسائل سابقة).
                             final isRead =
@@ -4887,7 +4926,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             // حتى تندمج مع فقاعة النص بنفس العرض تماماً.
                             final fullMax = MediaQuery.sizeOf(context).width *
                                 (mine ? 0.78 : 0.70);
-                            final maxW = (hasImage || isShare || isLocation) &&
+                            final maxW = (hasImage || isShare || isLocation || isGif) &&
                                     fullMax > 340.0
                                 ? 340.0
                                 : fullMax;
@@ -4909,11 +4948,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                         ? const EdgeInsetsDirectional.fromSTEB(
                                             6, 6, 6, 0)
                                         : EdgeInsets.zero)
-                                    : (sticker || isShare || isLocation || isDeleted
+                                    : (sticker || isGif || isShare || isLocation || isDeleted
                                         ? EdgeInsets.zero
                                         : const EdgeInsets.symmetric(
                                             horizontal: 13, vertical: 9)),
                                 decoration: (sticker ||
+                                        isGif ||
                                         hasImage ||
                                         isShare ||
                                         isLocation ||
@@ -5120,6 +5160,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                       )
                                     else if (sticker)
                                       StickerMessage(message.text)
+                                    else if (isGif)
+                                      _GifBubble(
+                                        url: message.gifUrl!,
+                                        width: message.gifW ?? 200,
+                                        height: message.gifH ?? 200,
+                                        maxWidth: maxW > 260.0 ? 260.0 : maxW,
+                                      )
                                     else if (isAudio)
                                       _VoiceBubble(
                                         key: ValueKey('voice-${message.id}'),
@@ -7511,6 +7558,51 @@ class _FollowRequestActionsState extends State<_FollowRequestActions> {
           ],
         );
       },
+    );
+  }
+}
+
+/// فقاعة GIF: تُحجز مساحتها من الأبعاد المحفوظة فلا يقفز التمرير أثناء التحميل.
+class _GifBubble extends StatelessWidget {
+  final String url;
+  final int width;
+  final int height;
+  final double maxWidth;
+
+  const _GifBubble({
+    required this.url,
+    required this.width,
+    required this.height,
+    required this.maxWidth,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final w = width < 1 ? 200 : width;
+    final h = height < 1 ? 200 : height;
+    // أقصى ارتفاع 300 حتى لا تملأ الصور الطويلة الشاشة.
+    var boxW = maxWidth;
+    var boxH = boxW * h / w;
+    if (boxH > 300) {
+      boxH = 300;
+      boxW = boxH * w / h;
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        width: boxW,
+        height: boxH,
+        color: colors.surfaceHigh,
+        child: Image.network(
+          url,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) => Center(
+            child: Icon(Icons.gif_box_outlined, color: colors.textDim),
+          ),
+        ),
+      ),
     );
   }
 }
