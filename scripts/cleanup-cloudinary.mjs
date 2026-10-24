@@ -136,6 +136,18 @@ async function main() {
     .select('imageUrl')
     .get();
   for (const d of chatImages.docs) addReference(d.get('imageUrl'));
+  // أرشيف القصص والقصص المميزة تحتفظ بصورها بعد انتهاء القصة، فتُحسب مشاراً إليها
+  // وإلا حُذفت صورها كأنها يتيمة. لا تحتاج فهرساً (بلا فلاتر).
+  const archived = await db.collectionGroup('stories').select('mediaUrl').get();
+  for (const d of archived.docs) {
+    if (d.ref.path.startsWith('storyArchive/')) addReference(d.get('mediaUrl'));
+  }
+  const highlights = await db.collectionGroup('highlights').select('items').get();
+  for (const d of highlights.docs) {
+    if (!d.ref.path.startsWith('storyHighlights/')) continue;
+    const items = d.get('items');
+    if (Array.isArray(items)) items.forEach((it) => addReference(it && it.mediaUrl));
+  }
   console.log(`ملفات مشار إليها: ${referenced.size}`);
 
   // ---- Cloudinary ----
