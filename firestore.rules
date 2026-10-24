@@ -1008,7 +1008,7 @@ service cloud.firestore {
             'replyToSenderUid', 'forwarded', 'shareType', 'shareId',
             'shareSubtitle', 'shareImage', 'shareLink', 'lat', 'lng',
             'viewOnce', 'expiresAt', 'audioUrl', 'audioSecs', 'audioWave',
-            'gifUrl', 'gifW', 'gifH'
+            'gifUrl', 'gifW', 'gifH', 'mentions'
           ])
           && request.resource.data.keys().hasAll([
             'senderUid', 'text', 'kind', 'deliveredTo', 'readBy', 'createdAt'
@@ -1022,6 +1022,14 @@ service cloud.firestore {
           && (!('viewOnce' in request.resource.data)
             || (request.resource.data.viewOnce == true
               && request.resource.data.kind == 'image'))
+          // الإشارة بـ @: رسائل نصية في المجموعات فقط، وأعضاؤها حصراً (حتى 10).
+          && (!('mentions' in request.resource.data)
+            || (request.resource.data.kind == 'text'
+              && chatNow().get('isGroup', false) == true
+              && request.resource.data.mentions is list
+              && request.resource.data.mentions.size() >= 1
+              && request.resource.data.mentions.size() <= 10
+              && request.resource.data.mentions.hasOnly(chatNow().participants)))
           // وضع الاختفاء: وقت انتهاء صلاحية الرسالة.
           && (!('expiresAt' in request.resource.data)
             || request.resource.data.expiresAt is timestamp)
@@ -1074,7 +1082,7 @@ service cloud.firestore {
               && request.resource.data.keys().hasOnly([
                 'senderUid', 'text', 'kind', 'deliveredTo', 'readBy',
                 'createdAt', 'replyToMessageId', 'replyToText',
-                'replyToSenderUid', 'forwarded', 'expiresAt'
+                'replyToSenderUid', 'forwarded', 'expiresAt', 'mentions'
               ])
               && request.resource.data.text.size() <= 2000)
             ||
