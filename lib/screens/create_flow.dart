@@ -14,6 +14,7 @@ import '../video_source.dart';
 import 'sticker_sheet.dart' show StickerPanel;
 import 'close_friends_screen.dart';
 import 'story_mentions.dart';
+import 'story_photo_editor.dart';
 import 'story_poll.dart';
 import 'story_stickers.dart';
 import 'story_text_editor.dart';
@@ -723,6 +724,23 @@ class _ComposeScreenState extends State<ComposeScreen> {
     });
   }
 
+  /// قص الصورة الحالية وتدويرها/قلبها. تبقى ملصقاتها (مواضعها نسبية).
+  Future<void> _editPhoto() async {
+    if (_busy || _images.isEmpty) return;
+    final old = _curImage;
+    final out = await editStoryPhoto(context, old.bytes, maxBytes: maxPhotoBytes);
+    if (out == null || !mounted) return;
+    final fresh =
+        PickedMedia(bytes: out, ext: 'jpg', mime: 'image/jpeg', name: old.name);
+    setState(() {
+      final i = _images.indexOf(old);
+      if (i < 0) return;
+      _images[i] = fresh;
+      final st = _stickerMap.remove(old);
+      if (st != null) _stickerMap[fresh] = st;
+    });
+  }
+
   Future<void> _editPoll() async {
     final p = await showPollDialog(context, initial: _poll);
     if (p != null && mounted) setState(() => _poll = p);
@@ -1019,6 +1037,11 @@ class _ComposeScreenState extends State<ComposeScreen> {
               Wrap(
                 spacing: 8,
                 children: [
+                  TextButton.icon(
+                    onPressed: _busy ? null : _editPhoto,
+                    icon: const Icon(Icons.crop_rotate_rounded),
+                    label: Text(tr('قص وتدوير')),
+                  ),
                   TextButton.icon(
                     onPressed: _busy ? null : _addText,
                     icon: const Icon(Icons.text_fields_rounded),
