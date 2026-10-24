@@ -285,6 +285,13 @@ async function deleteUserAccount(uid) {
       }
 
       await bucket.deleteFiles({ prefix: `photos/${uid}/` });
+      // أرشيف القصص والمميزة ومشاهداتها: بيانات الحساب تُحذف معه
+      // (ملفات Cloudinary اليتيمة ينظفها السكربت الأسبوعي).
+      for (const col of ['storyArchive', 'storyHighlights', 'storySeen']) {
+        await db.recursiveDelete(db.collection(col).doc(uid)).catch((error) => {
+          console.error('Story data deletion skipped:', col, uid, error);
+        });
+      }
       if (typeof username === 'string' && username) {
         const usernameRef = db.collection('usernames').doc(username);
         const usernameSnapshot = await usernameRef.get();
