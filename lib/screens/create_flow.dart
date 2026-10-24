@@ -17,6 +17,7 @@ import 'story_mentions.dart';
 import 'story_poll.dart';
 import 'story_stickers.dart';
 import 'text_story_screen.dart';
+import 'post_style.dart';
 import 'video_cover.dart';
 import 'video_embed_stub.dart' if (dart.library.html) 'video_embed_web.dart';
 
@@ -454,6 +455,12 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
   bool get _textOnly => _images.isEmpty;
 
+  // خلفية ولون النص للمنشور النصي فقط (على طريقة فيسبوك).
+  int? _tbg;
+  int? _tc;
+  bool get _canStyle => widget.kind == CreateKind.post && _textOnly;
+  bool get _styled => _canStyle && postBgGradient(_tbg) != null;
+
   // الألبومات للمنشور فقط (لا للقصة) وتتطلب تخزيناً برابط مباشر.
   bool get _canAlbum =>
       widget.kind == CreateKind.post && PostService.useRemoteMedia;
@@ -719,7 +726,10 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
       final m = await _mediaToPublish();
       if (m == null) {
-        await PostService.publishText(caption, video: video);
+        await PostService.publishText(caption,
+            video: video,
+            tbg: _canStyle ? _tbg : null,
+            tc: _canStyle ? _tc : null);
       } else {
         final type = switch (widget.kind) {
           CreateKind.post => PostType.photo,
@@ -959,13 +969,45 @@ class _ComposeScreenState extends State<ComposeScreen> {
               ),
               const SizedBox(height: 12),
             ],
-            TextField(
-              controller: _caption,
-              minLines: _textOnly ? 6 : 3,
-              maxLines: _textOnly ? 12 : 5,
-              maxLength: 500,
-              decoration: InputDecoration(hintText: _hint),
+            Container(
+              decoration: _styled
+                  ? BoxDecoration(
+                      gradient: postBgGradient(_tbg),
+                      borderRadius: BorderRadius.circular(14))
+                  : null,
+              child: TextField(
+                controller: _caption,
+                minLines: _textOnly ? 6 : 3,
+                maxLines: _textOnly ? 12 : 5,
+                maxLength: 500,
+                textAlign: _styled ? TextAlign.center : TextAlign.start,
+                style: _canStyle && (_styled || postTextColor(_tc) != null)
+                    ? TextStyle(
+                        color: postTextColor(_tc) ??
+                            (_styled ? Colors.white : null),
+                        fontSize: _styled ? 22 : null,
+                        fontWeight: _styled ? FontWeight.w800 : null)
+                    : null,
+                decoration: InputDecoration(
+                  hintText: _hint,
+                  hintStyle:
+                      _styled ? const TextStyle(color: Colors.white70) : null,
+                  filled: _styled ? false : null,
+                  counterStyle:
+                      _styled ? const TextStyle(color: Colors.white70) : null,
+                  border: _styled ? InputBorder.none : null,
+                  enabledBorder: _styled ? InputBorder.none : null,
+                  focusedBorder: _styled ? InputBorder.none : null,
+                ),
+              ),
             ),
+            if (_canStyle)
+              PostStylePicker(
+                bg: _tbg,
+                textColor: _tc,
+                onBg: (v) => setState(() => _tbg = v),
+                onTextColor: (v) => setState(() => _tc = v),
+              ),
             if (widget.kind == CreateKind.post && _images.isEmpty)
               Wrap(
                 spacing: 8,

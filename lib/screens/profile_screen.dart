@@ -15,6 +15,7 @@ import '../theme.dart';
 import 'common_widgets.dart';
 import 'create_flow.dart' show CreateKind, startCreate;
 import 'photo_tools.dart';
+import 'post_style.dart';
 import 'post_widgets.dart';
 import 'video_cover.dart';
 import 'settings_screen.dart';
@@ -2111,12 +2112,19 @@ class _PostGrid extends StatelessWidget {
                       ],
                     ),
                   _ => Container(
-                      color: context.appColors.surfaceHigh,
-                      padding: const EdgeInsets.all(8),
+                      decoration:
+                          BoxDecoration(gradient: postGridGradient(post)),
+                      padding: const EdgeInsets.all(10),
+                      alignment: Alignment.center,
                       child: Text(post.caption,
                           maxLines: 5,
+                          textAlign: TextAlign.center,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 12)),
+                          style: TextStyle(
+                              fontSize: 14,
+                              height: 1.3,
+                              fontWeight: FontWeight.w800,
+                              color: postGridTextColor(post))),
                     ),
                 },
                 if (post.isAlbum)

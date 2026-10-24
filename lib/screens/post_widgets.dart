@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/post_service.dart';
@@ -12,6 +13,8 @@ import '../theme.dart';
 import '../route_state.dart';
 import 'common_widgets.dart';
 import 'explore_screen.dart' show ExploreSearchScreen;
+import 'create_flow.dart' show PickedMedia, MediaError, pickAlbumMedia;
+import 'post_style.dart';
 import 'share_sheet.dart';
 import 'translate_widgets.dart';
 import '../video_source.dart';
@@ -113,17 +116,21 @@ class _PostCardState extends State<PostCard> {
                   else if (isText)
                     Container(
                       width: double.infinity,
-                      constraints: const BoxConstraints(minHeight: 160),
+                      constraints: BoxConstraints(
+                          minHeight: postBgGradient(p.tbg) != null ? 280 : 160),
                       padding: const EdgeInsets.all(24),
                       alignment: Alignment.center,
-                      // الخلفية تتبع الوضع: داكنة في الداكن وفاتحة في الفاتح.
-                      decoration: BoxDecoration(
-                        color: colors.surface,
-                        border: Border.symmetric(
-                          horizontal: BorderSide(
-                              color: colors.text.withOpacity(0.08)),
-                        ),
-                      ),
+                      // الخلفية الملونة إن اختارها صاحب المنشور، وإلا تتبع الوضع:
+                      // داكنة في الداكن وفاتحة في الفاتح.
+                      decoration: postBgGradient(p.tbg) != null
+                          ? BoxDecoration(gradient: postBgGradient(p.tbg))
+                          : BoxDecoration(
+                              color: colors.surface,
+                              border: Border.symmetric(
+                                horizontal: BorderSide(
+                                    color: colors.text.withOpacity(0.08)),
+                              ),
+                            ),
                       child: TranslatableText(
                         text: p.caption,
                         centered: true,
@@ -132,10 +139,14 @@ class _PostCardState extends State<PostCard> {
                           collapsedLines: widget.expandText ? null : 6,
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                              color: textPostForeground,
-                              fontSize: 20,
+                              color: postBgGradient(p.tbg) != null
+                                  ? (postTextColor(p.tc) ?? Colors.white)
+                                  : (postTextColor(p.tc) ?? textPostForeground),
+                              fontSize: postBgGradient(p.tbg) != null ? 24 : 20,
                               height: 1.5,
-                              fontWeight: FontWeight.w600),
+                              fontWeight: postBgGradient(p.tbg) != null
+                                  ? FontWeight.w800
+                                  : FontWeight.w600),
                         ),
                       ),
                     )
@@ -1651,22 +1662,48 @@ Future<void> editPostCaption(BuildContext context, Post post) async {
   final isText = post.type == PostType.text;
   await _releaseVideosForDialog();
   if (!rootCtx.mounted) return;
-  final result = await showDialog<String>(
+  final result = await showDialog<_EditResult>(
     context: rootCtx,
     barrierDismissible: false,
-    builder: (_) => _EditCaptionDialog(initial: post.caption, isText: isText),
+    builder: (_) => _EditCaptionDialog(
+        initial: post.caption,
+        isText: isText,
+        canStyle: isText && !post.hasVideo,
+        tbg: post.tbg,
+        tc: post.tc),
   );
-  if (result == null || result == post.caption) return;
-  if (isText && !post.hasVideo && result.isEmpty) {
+  if (result == null) return;
+  final caption = result.caption;
+  final styleChanged = result.tbg != post.tbg || result.tc != post.tc;
+  if (caption == post.caption && !styleChanged && result.images.isEmpty) {
+    return;
+  }
+  if (isText && !post.hasVideo && caption.isEmpty && result.images.isEmpty) {
     messenger.showSnackBar(
         SnackBar(content: Text(tr('لا يمكن ترك المنشور فارغاً'))));
     return;
   }
   try {
-    await PostService.updateCaption(post, result);
+    if (result.images.isNotEmpty) {
+      messenger.showSnackBar(SnackBar(
+          duration: const Duration(minutes: 2),
+          content: Text(tr('جارٍ رفع الصور...'))));
+      await PostService.convertTextToPhotoPost(post,
+          caption: caption,
+          images: [for (final img in result.images) img.bytes],
+          mime: 'image/jpeg',
+          ext: 'jpg');
+      messenger.hideCurrentSnackBar();
+    } else if (isText) {
+      await PostService.updateTextPost(post,
+          caption: caption, tbg: result.tbg, tc: result.tc);
+    } else {
+      await PostService.updateCaption(post, caption);
+    }
     messenger.showSnackBar(SnackBar(
         content: Text(trf('تم تعديل {0}', [isText ? tr('المنشور') : tr('الوصف')]))));
   } catch (error) {
+    messenger.hideCurrentSnackBar();
     messenger.showSnackBar(SnackBar(content: Text(friendlyError(error, fallback: tr('تعذر التعديل')))));
   }
 }
@@ -1702,10 +1739,28 @@ Future<void> deletePostWithConfirm(BuildContext context, Post post) async {
   }
 }
 
+/// نتيجة حوار التعديل: النص، وخلفية ولون المنشور النصي، والصور المضافة.
+class _EditResult {
+  final String caption;
+  final int? tbg;
+  final int? tc;
+  final List<PickedMedia> images;
+  const _EditResult(this.caption, this.tbg, this.tc, this.images);
+}
+
 class _EditCaptionDialog extends StatefulWidget {
   final String initial;
   final bool isText;
-  const _EditCaptionDialog({required this.initial, required this.isText});
+  final bool canStyle; // منشور نصي بلا فيديو: خلفية ولون وإضافة صور
+  final int? tbg;
+  final int? tc;
+  const _EditCaptionDialog({
+    required this.initial,
+    required this.isText,
+    this.canStyle = false,
+    this.tbg,
+    this.tc,
+  });
 
   @override
   State<_EditCaptionDialog> createState() => _EditCaptionDialogState();
@@ -1714,6 +1769,86 @@ class _EditCaptionDialog extends StatefulWidget {
 class _EditCaptionDialogState extends State<_EditCaptionDialog> {
   late final TextEditingController _controller =
       TextEditingController(text: widget.initial);
+  late int? _tbg = widget.tbg;
+  late int? _tc = widget.tc;
+  final List<PickedMedia> _images = [];
+  final _picker = ImagePicker();
+  String? _error;
+
+  bool get _styled =>
+      widget.canStyle && _images.isEmpty && postBgGradient(_tbg) != null;
+
+  Future<void> _addPhotos() async {
+    try {
+      final room = PostService.maxAlbumImages - _images.length;
+      final (picked, truncated) = await pickAlbumMedia(_picker, max: room);
+      if (!mounted || picked.isEmpty) return;
+      setState(() {
+        _images.addAll(picked);
+        _error = truncated
+            ? trf('الحد الأقصى {0} صور', [PostService.maxAlbumImages])
+            : null;
+      });
+    } on MediaError catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = tr('تعذر اختيار الصور'));
+    }
+  }
+
+  Widget _photosRow(BuildContext context) {
+    final colors = context.appColors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_images.isNotEmpty)
+          SizedBox(
+            height: 64,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _images.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 6),
+              itemBuilder: (_, i) => Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.memory(_images[i].bytes,
+                        width: 64, height: 64, fit: BoxFit.cover),
+                  ),
+                  PositionedDirectional(
+                    top: 2,
+                    end: 2,
+                    child: GestureDetector(
+                      onTap: () => setState(() => _images.removeAt(i)),
+                      child: const CircleAvatar(
+                        radius: 9,
+                        backgroundColor: Colors.black54,
+                        child:
+                            Icon(Icons.close, size: 12, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if (_images.length < PostService.maxAlbumImages)
+          TextButton.icon(
+            onPressed: _addPhotos,
+            icon: const Icon(Icons.add_photo_alternate_outlined),
+            label: Text(_images.isEmpty ? tr('إضافة صور') : tr('إضافة المزيد')),
+          ),
+        if (_images.isNotEmpty)
+          Text(tr('سيتحوّل المنشور إلى منشور صور وتُزال الخلفية الملونة'),
+              style: TextStyle(fontSize: 12, color: colors.textDim)),
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(_error!, style: TextStyle(color: colors.text)),
+          ),
+      ],
+    );
+  }
 
   @override
   void dispose() {
@@ -1748,18 +1883,64 @@ class _EditCaptionDialogState extends State<_EditCaptionDialog> {
               ),
               const SizedBox(height: 14),
               Flexible(
-                child: TextField(
-                  controller: _controller,
-                  autofocus: true,
-                  maxLength: 500,
-                  minLines: 8,
-                  maxLines: 16,
-                  keyboardType: TextInputType.multiline,
-                  decoration: InputDecoration(
-                    hintText:
-                        widget.isText ? tr('اكتب المنشور...') : tr('اكتب وصفاً...'),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14)),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        decoration: _styled
+                            ? BoxDecoration(
+                                gradient: postBgGradient(_tbg),
+                                borderRadius: BorderRadius.circular(14))
+                            : null,
+                        child: TextField(
+                          controller: _controller,
+                          autofocus: true,
+                          maxLength: 500,
+                          minLines: _styled ? 6 : 8,
+                          maxLines: 16,
+                          keyboardType: TextInputType.multiline,
+                          textAlign:
+                              _styled ? TextAlign.center : TextAlign.start,
+                          style: widget.canStyle &&
+                                  (_styled || postTextColor(_tc) != null)
+                              ? TextStyle(
+                                  color: postTextColor(_tc) ??
+                                      (_styled ? Colors.white : null),
+                                  fontSize: _styled ? 22 : null,
+                                  fontWeight:
+                                      _styled ? FontWeight.w800 : null)
+                              : null,
+                          decoration: InputDecoration(
+                            hintText: widget.isText
+                                ? tr('اكتب المنشور...')
+                                : tr('اكتب وصفاً...'),
+                            hintStyle: _styled
+                                ? const TextStyle(color: Colors.white70)
+                                : null,
+                            filled: _styled ? false : null,
+                            counterStyle: _styled
+                                ? const TextStyle(color: Colors.white70)
+                                : null,
+                            border: _styled
+                                ? InputBorder.none
+                                : OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14)),
+                            enabledBorder: _styled ? InputBorder.none : null,
+                            focusedBorder: _styled ? InputBorder.none : null,
+                          ),
+                        ),
+                      ),
+                      if (widget.canStyle && _images.isEmpty)
+                        PostStylePicker(
+                          bg: _tbg,
+                          textColor: _tc,
+                          onBg: (v) => setState(() => _tbg = v),
+                          onTextColor: (v) => setState(() => _tc = v),
+                        ),
+                      if (widget.canStyle && PostService.useRemoteMedia)
+                        _photosRow(context),
+                    ],
                   ),
                 ),
               ),
@@ -1776,8 +1957,13 @@ class _EditCaptionDialogState extends State<_EditCaptionDialog> {
                   FilledButton(
                       style: FilledButton.styleFrom(
                           minimumSize: const Size(96, 44)),
-                      onPressed: () =>
-                          Navigator.pop(context, _controller.text.trim()),
+                      onPressed: () => Navigator.pop(
+                          context,
+                          _EditResult(
+                              _controller.text.trim(),
+                              widget.canStyle && _images.isEmpty ? _tbg : null,
+                              widget.canStyle && _images.isEmpty ? _tc : null,
+                              List.of(_images))),
                       child: Text(tr('حفظ'))),
                 ],
               ),
