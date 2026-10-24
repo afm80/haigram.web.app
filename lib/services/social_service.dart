@@ -8,6 +8,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 
 import '../l10n.dart';
+import 'gif_service.dart';
 import 'post_service.dart';
 
 /// وقت من حقل Firestore. الكتابة المعلّقة (serverTimestamp لم يؤكدها الخادم
@@ -248,6 +249,11 @@ class ChatMessage {
   final double? lat;
   final double? lng;
 
+  /// صورة متحركة (kind == 'gif'): رابط GIPHY وأبعادها لحجز المساحة.
+  final String? gifUrl;
+  final int? gifW;
+  final int? gifH;
+
   /// صورة «تُعرض مرة واحدة» (view-once): تُخفى عن المستلم بعد أول فتح.
   final bool viewOnce;
 
@@ -283,6 +289,9 @@ class ChatMessage {
     this.audioWave,
     this.lat,
     this.lng,
+    this.gifUrl,
+    this.gifW,
+    this.gifH,
     this.viewOnce = false,
     this.viewedBy = const [],
     this.expiresAt,
@@ -310,6 +319,9 @@ class ChatMessage {
         audioWave: data['audioWave'] as String?,
         lat: (data['lat'] as num?)?.toDouble(),
         lng: (data['lng'] as num?)?.toDouble(),
+        gifUrl: data['gifUrl'] as String?,
+        gifW: (data['gifW'] as num?)?.toInt(),
+        gifH: (data['gifH'] as num?)?.toInt(),
         replyToMessageId: data['replyToMessageId'] as String?,
         replyToText: data['replyToText'] as String?,
         replyToSenderUid: data['replyToSenderUid'] as String?,
@@ -1238,6 +1250,36 @@ class SocialService {
     );
   }
 
+  /// يرسل صورة متحركة (GIF) من GIPHY: يُحفظ الرابط فقط بلا رفع أي ملف.
+  static Future<void> sendGif(
+    String conversationId,
+    GifItem gif, {
+    String? replyToMessageId,
+    String? replyToText,
+    String? replyToSenderUid,
+    DateTime? expiresAt,
+  }) {
+    if (!GifService.isAllowedUrl(gif.url) ||
+        gif.width < 1 ||
+        gif.height < 1 ||
+        gif.width > 2000 ||
+        gif.height > 2000) {
+      throw ArgumentError(tr('تعذر إرسال الـ GIF'));
+    }
+    return _sendChatMessage(
+      conversationId,
+      text: '🎞 GIF',
+      kind: 'gif',
+      gifUrl: gif.url,
+      gifW: gif.width,
+      gifH: gif.height,
+      replyToMessageId: replyToMessageId,
+      replyToText: replyToText,
+      replyToSenderUid: replyToSenderUid,
+      expiresAt: expiresAt,
+    );
+  }
+
   static Future<void> sendSticker(
     String conversationId,
     String sticker, {
@@ -1357,6 +1399,24 @@ class SocialService {
         kind: 'image',
         imageUrl: url,
         imageBytes: url == null ? bytes : null,
+        forwarded: true,
+      );
+      return;
+    }
+    if (message.kind == 'gif') {
+      final url = message.gifUrl;
+      final w = message.gifW;
+      final h = message.gifH;
+      if (url == null || w == null || h == null || !GifService.isAllowedUrl(url)) {
+        throw StateError(tr('لا يمكن إعادة توجيه هذه الرسالة'));
+      }
+      await _sendChatMessage(
+        conversationId,
+        text: '🎞 GIF',
+        kind: 'gif',
+        gifUrl: url,
+        gifW: w,
+        gifH: h,
         forwarded: true,
       );
       return;
@@ -1676,6 +1736,9 @@ class SocialService {
     String? shareLink,
     double? lat,
     double? lng,
+    String? gifUrl,
+    int? gifW,
+    int? gifH,
     bool viewOnce = false,
     DateTime? expiresAt,
   }) async {
@@ -1733,6 +1796,9 @@ class SocialService {
           if (shareLink != null) 'shareLink': shareLink,
           if (lat != null) 'lat': lat,
           if (lng != null) 'lng': lng,
+          if (gifUrl != null) 'gifUrl': gifUrl,
+          if (gifW != null) 'gifW': gifW,
+          if (gifH != null) 'gifH': gifH,
           if (replyToMessageId != null) 'replyToMessageId': replyToMessageId,
           if (replyToText != null) 'replyToText': replyToText,
           if (replyToSenderUid != null) 'replyToSenderUid': replyToSenderUid,
