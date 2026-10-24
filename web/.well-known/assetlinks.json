@@ -1,1 +1,10 @@
-
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.haigram.app",
+      "sha256_cert_fingerprints": ["ضع_هنا_بصمة_SHA256"]
+    }
+  }
+]
