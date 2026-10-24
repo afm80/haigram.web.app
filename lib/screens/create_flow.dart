@@ -467,6 +467,10 @@ class _ComposeScreenState extends State<ComposeScreen> {
   final Map<PickedMedia, List<StoryStickerItem>> _stickerMap = {};
   // رسم القلم لكل صورة (نقاطه نسبية فيبقى في مكانه).
   final Map<PickedMedia, List<DrawStroke>> _strokeMap = {};
+  // رقم الفلتر المختار لكل صورة (0 = أصلي) يتغيّر بالسحب يميناً ويساراً.
+  final Map<PickedMedia, int> _filterMap = {};
+  String? _filterToast; // اسم الفلتر يظهر لحظة عند التبديل
+  int _toastSeq = 0;
   bool _drawing = false; // وضع الرسم فعّال
   Color _penColor = Colors.white;
   double _penWidth = 0.014;
@@ -508,6 +512,23 @@ class _ComposeScreenState extends State<ComposeScreen> {
     if (_cur >= _images.length) _cur = _images.length - 1;
     if (_cur < 0) _cur = 0;
     return _images[_cur];
+  }
+
+  int _filterOf(PickedMedia m) => _filterMap[m] ?? 0;
+
+  /// تبديل الفلتر بالسحب: [dir] = 1 التالي، -1 السابق (يدور في دائرة).
+  void _swipeFilter(int dir) {
+    final n = storyFilterCount;
+    final img = _curImage;
+    final next = (_filterOf(img) + dir + n) % n;
+    final seq = ++_toastSeq;
+    setState(() {
+      _filterMap[img] = next;
+      _filterToast = tr(storyFilterLabel(next));
+    });
+    Future.delayed(const Duration(milliseconds: 900), () {
+      if (mounted && seq == _toastSeq) setState(() => _filterToast = null);
+    });
   }
 
   /// ملصقات الصورة [m].
@@ -759,6 +780,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
       if (st != null) _stickerMap[fresh] = st;
       final sk = _strokeMap.remove(old);
       if (sk != null) _strokeMap[fresh] = sk;
+      final fl = _filterMap.remove(old);
+      if (fl != null) _filterMap[fresh] = fl;
     });
   }
 
@@ -810,7 +833,9 @@ class _ComposeScreenState extends State<ComposeScreen> {
   Future<PickedMedia> _mediaToPublish(int index) async {
     final img = _images[index];
     if (!_canSticker ||
-        (_stickersOf(img).isEmpty && _strokesOf(img).isEmpty)) {
+        (_stickersOf(img).isEmpty &&
+            _strokesOf(img).isEmpty &&
+            _filterOf(img) == 0)) {
       return img;
     }
     // نُنهي وضع الرسم حتى لا تظهر طبقة اللمس في الالتقاط.
@@ -1181,14 +1206,29 @@ class _ComposeScreenState extends State<ComposeScreen> {
           child: ConstrainedBox(
             constraints: BoxConstraints(
                 maxWidth: c.maxWidth, maxHeight: c.maxHeight),
-            child: Stack(
+            child: GestureDetector(
+              onHorizontalDragEnd: (_busy || _drawing)
+                  ? null
+                  : (d) {
+                      final v = d.primaryVelocity ?? 0;
+                      if (v < -200) _swipeFilter(1);
+                      if (v > 200) _swipeFilter(-1);
+                    },
+              child: Stack(
               children: [
                 RepaintBoundary(
                   key: _captureKey,
                   child: Stack(
                     children: [
-                      Image.memory(img.bytes,
-                          key: ValueKey(img), fit: BoxFit.contain),
+                      _filterOf(img) == 0
+                          ? Image.memory(img.bytes,
+                              key: ValueKey(img), fit: BoxFit.contain)
+                          : ColorFiltered(
+                              colorFilter: ColorFilter.matrix(
+                                  storyFilterMatrix(_filterOf(img))),
+                              child: Image.memory(img.bytes,
+                                  key: ValueKey(img), fit: BoxFit.contain),
+                            ),
                       Positioned.fill(
                         child: StrokesLayer(
                             key: ValueKey('strokes-${img.hashCode}'),
@@ -1232,7 +1272,27 @@ class _ComposeScreenState extends State<ComposeScreen> {
                     onEditSlider: _editSlider,
                   ),
                 ),
+                if (_filterToast != null)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                              color: Colors.black54,
+                              borderRadius: BorderRadius.circular(20)),
+                          child: Text(_filterToast!,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800)),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
+            ),
             ),
           ),
         ),

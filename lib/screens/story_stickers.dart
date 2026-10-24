@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart'
+    show GestureBinding, PointerScrollEvent;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:image/image.dart' as img;
@@ -65,6 +67,8 @@ class StickerLayer extends StatefulWidget {
 
 class _StickerLayerState extends State<StickerLayer> {
   static const _trashY = 0.86;
+  // مساحة لمس إضافية حول الملصق حتى يسهل وضع الإصبعين عليه عند التكبير.
+  static const _hitPad = 36.0;
   StoryStickerItem? _active; // الملصق قيد السحب
   int _pointers = 0;
 
@@ -94,8 +98,11 @@ class _StickerLayerState extends State<StickerLayer> {
                   it,
                   w,
                   h,
-                  storyTextWidget(
-                      it.text!, it.color, it.style, w * 0.07 * it.scale),
+                  Padding(
+                    padding: const EdgeInsets.all(_hitPad),
+                    child: storyTextWidget(
+                        it.text!, it.color, it.style, w * 0.07 * it.scale),
+                  ),
                 ),
               ),
             ),
@@ -104,11 +111,19 @@ class _StickerLayerState extends State<StickerLayer> {
     if (box != null) return box;
     return Positioned(
       key: ObjectKey(it),
-      left: it.dx * w - size / 2,
-      top: it.dy * h - size / 2,
-      width: size,
-      height: size,
-      child: _gestures(it, w, h, StickerGlyph(it.emoji, size: size)),
+      left: it.dx * w - size / 2 - _hitPad,
+      top: it.dy * h - size / 2 - _hitPad,
+      width: size + 2 * _hitPad,
+      height: size + 2 * _hitPad,
+      child: _gestures(
+        it,
+        w,
+        h,
+        Padding(
+          padding: const EdgeInsets.all(_hitPad),
+          child: StickerGlyph(it.emoji, size: size),
+        ),
+      ),
     );
   }
 
@@ -118,6 +133,21 @@ class _StickerLayerState extends State<StickerLayer> {
         onPointerDown: (_) => _down(),
         onPointerUp: (_) => _up(),
         onPointerCancel: (_) => _up(),
+        // عجلة الماوس (على الكمبيوتر) تكبّر وتصغّر الملصق.
+        onPointerSignal: widget.enabled
+            ? (e) {
+                if (e is PointerScrollEvent) {
+                  GestureBinding.instance.pointerSignalResolver.register(e,
+                      (ev) {
+                    final dy = (ev as PointerScrollEvent).scrollDelta.dy;
+                    setState(() {
+                      it.scale =
+                          (it.scale - dy * 0.002).clamp(0.4, 3.0).toDouble();
+                    });
+                  });
+                }
+              }
+            : null,
         child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onScaleStart: widget.enabled

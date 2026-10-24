@@ -118,6 +118,11 @@ final List<_Filter> _filters = [
       _mul(_warmth(0.6), _mul(_brightContrast(0.04, 1.05), _saturation(1.15)))),
 ];
 
+// وصول عام للفلاتر (لتمريرها بالسحب في شاشة إنشاء القصة).
+int get storyFilterCount => _filters.length;
+String storyFilterLabel(int i) => _filters[i].label;
+List<double> storyFilterMatrix(int i) => _filters[i].matrix;
+
 class _Ratio {
   final String label;
   final double? ratio; // العرض ÷ الارتفاع، وnull = نسبة الصورة الأصلية
