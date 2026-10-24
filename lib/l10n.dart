@@ -24,6 +24,15 @@ String trf(String ar, List<Object?> args) {
 
 const Map<String, String> _en = {
   'GIF': "GIF",
+  // محرر صورة القصة
+  'غروب': "Sunset",
+  'سينمائي': "Cinematic",
+  'ثلجي': "Frost",
+  'الشدّة': "Intensity",
+  'السطوع': "Brightness",
+  'التباين': "Contrast",
+  'التشبّع': "Saturation",
+  'الحرارة': "Warmth",
   // ميزات المحادثة الجديدة
   'وضع الاختفاء': "Vanish mode",
   'إيقاف وضع الاختفاء': "Turn off vanish mode",
