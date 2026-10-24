@@ -23,6 +23,18 @@ String trf(String ar, List<Object?> args) {
 }
 
 const Map<String, String> _en = {
+  'لا تشارك كلمة المرور أو رموز التحقق مع أي شخص.': "Never share your password or verification codes.",
+  'احذر الروابط والطلبات المالية من حسابات لا تعرفها.': "Beware of links and money requests from accounts you don't know.",
+  'لا ترسل صوراً خاصة لمن لا تثق به.': "Don't send private photos to someone you don't trust.",
+  'يمكنك حظر الحساب أو الإبلاغ عنه في أي وقت.': "You can block or report the account at any time.",
+  'نصائح متعلقة بالسلامة': "Safety tips",
+  'حظر @{0}؟': "Block @{0}?",
+  'لن يتمكن من مراسلتك، وسيُلغى التتبع بينكما.': "They won't be able to message you, and following between you will end.",
+  'تم الحظر': "Blocked",
+  'تعذر الحظر': "Couldn't block",
+  '{0} متابع': "{0} followers",
+  'كلاكما يتابع الآخر': "You both follow each other",
+  'ملف شخصي': "Profile",
   'مراسلة...': "Message...",
   'إرسال موقعي': "Send my location",
   'تعذر تحديد موقعك، اسمح به من المتصفح': "Couldn't get your location. Allow it in your browser",
