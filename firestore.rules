@@ -1192,6 +1192,31 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // كتم القصص: قائمة خاصة بصاحبها وحده (من كتمتُ قصصهم).
+    match /storyMutes/{owner}/muted/{target} {
+      allow read: if isActiveUser() && (request.auth.uid == owner || isAdmin());
+      allow create: if isActiveUser()
+        && request.auth.uid == owner
+        && target != owner
+        && request.resource.data.keys().hasOnly(['at'])
+        && request.resource.data.at == request.time;
+      allow delete: if isActiveUser() && (request.auth.uid == owner || isAdmin());
+    }
+
+    // إخفاء قصصي عن أشخاص: يقرأ المستند صاحب القائمة أو الشخص المخفيّ عنه
+    // (ليعرف تطبيقه أنه مُخفى عنه)؛ والقائمة الكاملة لصاحبها فقط.
+    match /storyHidden/{owner}/hidden/{target} {
+      allow get: if isActiveUser()
+        && (request.auth.uid == owner || request.auth.uid == target || isAdmin());
+      allow list: if isActiveUser() && (request.auth.uid == owner || isAdmin());
+      allow create: if isActiveUser()
+        && request.auth.uid == owner
+        && target != owner
+        && request.resource.data.keys().hasOnly(['at'])
+        && request.resource.data.at == request.time;
+      allow delete: if isActiveUser() && (request.auth.uid == owner || isAdmin());
+    }
+
     // البلاغات: الإنشاء فقط من المستخدم المسجّل، والقراءة والحذف للأدمن فقط (لوحة التحكم).
     match /reports/{reportId} {
       allow create: if isActiveUser()
