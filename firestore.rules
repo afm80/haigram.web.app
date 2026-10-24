@@ -287,6 +287,16 @@ service cloud.firestore {
                 && request.resource.data.question.q is string
                 && request.resource.data.question.q.size() > 0
                 && request.resource.data.question.q.size() <= 100))
+        // شريط إيموجي القصة: سؤال اختياري (قصير) وإيموجي، للقصص فقط.
+        && (!('slider' in request.resource.data)
+            || (request.resource.data.type == 'story'
+                && request.resource.data.slider is map
+                && request.resource.data.slider.keys().hasOnly(['q', 'e'])
+                && request.resource.data.slider.q is string
+                && request.resource.data.slider.q.size() <= 100
+                && request.resource.data.slider.e is string
+                && request.resource.data.slider.e.size() > 0
+                && request.resource.data.slider.e.size() <= 16))
         // ذكر المستخدمين في القصة: حتى 3، للقصص فقط.
         && (!('mentions' in request.resource.data)
             || (request.resource.data.type == 'story'
@@ -415,6 +425,25 @@ service cloud.firestore {
         // لوحة التحكم: حذف الأصوات عند حذف منشور.
         allow delete: if isAdmin();
         // صاحب القصة يحذف أصواتها عند حذفها.
+        allow delete: if isActiveUser()
+          && get(/databases/$(database)/documents/posts/$(postId)).data.uid == request.auth.uid;
+      }
+
+      // تقييمات شريط الإيموجي: تقييم واحد لكل مستخدم لنفسه فقط (بلا تعديل)،
+      // ولا يقيّم صاحب القصة. القراءة لمن يقرأ القصة (لحساب المتوسط).
+      match /sliderVotes/{voterUid} {
+        allow read: if isActiveUser() && (isAdmin() || parentPostReadable(postId));
+        allow create: if isActiveUser()
+          && request.auth.uid == voterUid
+          && parentPostReadable(postId)
+          && get(/databases/$(database)/documents/posts/$(postId)).data.uid != voterUid
+          && get(/databases/$(database)/documents/posts/$(postId)).data.get('slider', null) != null
+          && request.resource.data.keys().hasOnly(['v', 'at'])
+          && request.resource.data.v is int
+          && request.resource.data.v >= 0
+          && request.resource.data.v <= 100
+          && request.resource.data.at == request.time;
+        allow delete: if isAdmin();
         allow delete: if isActiveUser()
           && get(/databases/$(database)/documents/posts/$(postId)).data.uid == request.auth.uid;
       }
@@ -1227,6 +1256,14 @@ service cloud.firestore {
                 && request.resource.data.question.q is string
                 && request.resource.data.question.q.size() > 0
                 && request.resource.data.question.q.size() <= 100))
+        && (!('slider' in request.resource.data)
+            || (request.resource.data.slider is map
+                && request.resource.data.slider.keys().hasOnly(['q', 'e'])
+                && request.resource.data.slider.q is string
+                && request.resource.data.slider.q.size() <= 100
+                && request.resource.data.slider.e is string
+                && request.resource.data.slider.e.size() > 0
+                && request.resource.data.slider.e.size() <= 16))
         && (!('mentions' in request.resource.data)
             || (request.resource.data.mentions is list
                 && request.resource.data.mentions.size() <= 3));
@@ -1256,6 +1293,23 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/closeStories/$(storyId)).data.get('poll', null) != null
           && request.resource.data.keys().hasOnly(['choice', 'at'])
           && request.resource.data.choice in [0, 1]
+          && request.resource.data.at == request.time;
+        allow delete: if isAdmin();
+        allow delete: if isActiveUser()
+          && get(/databases/$(database)/documents/closeStories/$(storyId)).data.uid == request.auth.uid;
+      }
+
+      match /sliderVotes/{voterUid} {
+        allow read: if isActiveUser() && (isAdmin() || closeStoryReadable(storyId));
+        allow create: if isActiveUser()
+          && request.auth.uid == voterUid
+          && closeStoryReadable(storyId)
+          && get(/databases/$(database)/documents/closeStories/$(storyId)).data.uid != voterUid
+          && get(/databases/$(database)/documents/closeStories/$(storyId)).data.get('slider', null) != null
+          && request.resource.data.keys().hasOnly(['v', 'at'])
+          && request.resource.data.v is int
+          && request.resource.data.v >= 0
+          && request.resource.data.v <= 100
           && request.resource.data.at == request.time;
         allow delete: if isAdmin();
         allow delete: if isActiveUser()
