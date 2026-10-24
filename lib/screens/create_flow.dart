@@ -1030,8 +1030,395 @@ class _ComposeScreenState extends State<ComposeScreen> {
     );
   }
 
+  // ============ واجهة تحرير القصة بملء الشاشة (على طريقة إنستغرام) ============
+
+  Widget _storyRoundBtn(IconData icon, VoidCallback? onTap,
+      {bool active = false}) {
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(start: 10),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: active ? Colors.white : Colors.black45),
+          child: Icon(icon,
+              color: active ? Colors.black : Colors.white, size: 23),
+        ),
+      ),
+    );
+  }
+
+  /// صف الأزرار العلوي: إغلاق في البداية، والأدوات في النهاية.
+  Widget _storyTopBar() {
+    final canAdd = _images.length < _maxImages;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: _busy ? null : () => Navigator.of(context).maybePop(),
+            child: Container(
+              width: 42,
+              height: 42,
+              decoration: const BoxDecoration(
+                  shape: BoxShape.circle, color: Colors.black45),
+              child: const Icon(Icons.close_rounded,
+                  color: Colors.white, size: 24),
+            ),
+          ),
+          const Spacer(),
+          if (canAdd)
+            _storyRoundBtn(
+                Icons.add_photo_alternate_outlined, _busy ? null : _addMore),
+          _storyRoundBtn(Icons.tune_rounded, _busy ? null : _editPhoto),
+          _storyRoundBtn(
+              Icons.brush_rounded,
+              _busy
+                  ? null
+                  : () => setState(() {
+                        _drawing = !_drawing;
+                        _erase = false;
+                      }),
+              active: _drawing),
+          _storyRoundBtn(Icons.text_fields_rounded, _busy ? null : _addText),
+          _storyRoundBtn(
+              Icons.emoji_emotions_outlined, _busy ? null : _openStoryTray),
+        ],
+      ),
+    );
+  }
+
+  /// لوحة الملصقات: كل أنواع الملصقات في مكان واحد.
+  Future<void> _openStoryTray() async {
+    if (_busy) return;
+    final items = <(String, IconData, String)>[
+      ('emoji', Icons.emoji_emotions_outlined, tr('ملصق')),
+      ('poll', Icons.poll_outlined, tr('استطلاع')),
+      ('question', Icons.help_outline_rounded, tr('أسئلة')),
+      ('slider', Icons.linear_scale_rounded, tr('شريط إيموجي')),
+      ('mention', Icons.alternate_email_rounded, tr('ذكر')),
+      ('loc', Icons.place_outlined, tr('موقع')),
+      ('link', Icons.link_rounded, tr('رابط')),
+      ('cd', Icons.timer_outlined, tr('عدّ تنازلي')),
+      ('time', Icons.access_time_rounded, tr('الوقت')),
+    ];
+    final pick = await showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        child: GridView.count(
+          shrinkWrap: true,
+          crossAxisCount: 3,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 1.25,
+          children: [
+            for (final it in items)
+              InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => Navigator.of(ctx).pop(it.$1),
+                child: Container(
+                  decoration: BoxDecoration(
+                      color: ctx.appColors.surface,
+                      borderRadius: BorderRadius.circular(14)),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(it.$2, size: 28),
+                      const SizedBox(height: 6),
+                      Text(it.$3,
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w700)),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (pick == null || !mounted) return;
+    void changed() {
+      if (mounted) setState(() {});
+    }
+
+    switch (pick) {
+      case 'emoji':
+        await _addSticker();
+      case 'poll':
+        await _editPoll();
+      case 'question':
+        await _editQuestion();
+      case 'slider':
+        await _editSlider();
+      case 'mention':
+        if (_mentions.length >= MentionEditor.maxMentions) return;
+        final m = await showMentionPicker(context,
+            exclude: {for (final x in _mentions) x.uid});
+        if (m != null && mounted) setState(() => _mentions.add(m));
+      case 'loc':
+        await showLocationDialog(context, _info, changed);
+      case 'link':
+        await showLinkDialog(context, _info, changed);
+      case 'cd':
+        await showCountdownDialog(context, _info, changed);
+      case 'time':
+        await showTimeDialog(context, _info, changed);
+    }
+  }
+
+  /// الصورة مع طبقات الرسم والملصقات (هي ما يُلتقط ويُنشر).
+  Widget _storyCanvas() {
+    final img = _curImage;
+    return LayoutBuilder(builder: (context, c) {
+      return Center(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+                maxWidth: c.maxWidth, maxHeight: c.maxHeight),
+            child: Stack(
+              children: [
+                RepaintBoundary(
+                  key: _captureKey,
+                  child: Stack(
+                    children: [
+                      Image.memory(img.bytes,
+                          key: ValueKey(img), fit: BoxFit.contain),
+                      Positioned.fill(
+                        child: StrokesLayer(
+                            key: ValueKey('strokes-${img.hashCode}'),
+                            strokes: _strokesOf(img)),
+                      ),
+                      Positioned.fill(
+                        child: StickerLayer(
+                          key: ValueKey(img),
+                          items: _stickers,
+                          enabled: !_busy && !_drawing,
+                          onChanged: () => setState(() {}),
+                          onEditText: _editText,
+                        ),
+                      ),
+                      if (_drawing)
+                        Positioned.fill(
+                          child: DrawingInput(
+                            key: ValueKey('draw-${img.hashCode}'),
+                            strokes: _strokesOf(img),
+                            color: _penColor,
+                            width: _penWidth,
+                            erase: _erase,
+                            onChanged: () => setState(() {}),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                // الاستطلاع والأسئلة والشريط فوق الصورة (لا تُدمج في الصورة).
+                Positioned.fill(
+                  child: StoryCardsLayer(
+                    poll: _poll,
+                    question: _question,
+                    slider: _slider,
+                    enabled: !_busy && !_drawing,
+                    onPoll: (v) => setState(() => _poll = v),
+                    onQuestion: (v) => setState(() => _question = v),
+                    onSlider: (v) => setState(() => _slider = v),
+                    onEditPoll: _editPoll,
+                    onEditQuestion: _editQuestion,
+                    onEditSlider: _editSlider,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    });
+  }
+
+  /// شرائح الرابط/الموقع/العدّ التنازلي/الوقت والمذكورين.
+  Widget _storyChips() {
+    if (_info.isEmpty && _mentions.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 8,
+        runSpacing: 4,
+        children: [
+          if (!_info.isEmpty)
+            StoryInfoChips(
+                info: _info,
+                enabled: !_busy,
+                onChanged: () => setState(() {})),
+          for (final m in _mentions)
+            InputChip(
+              label: Text('@${m.username}'),
+              onDeleted:
+                  _busy ? null : () => setState(() => _mentions.remove(m)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// مصغّرات الصور عند اختيار أكثر من صورة.
+  Widget _storyStrip() {
+    return SizedBox(
+      height: 62,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        itemCount: _images.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, i) => GestureDetector(
+          onTap: _busy ? null : () => setState(() => _cur = i),
+          child: Stack(
+            children: [
+              Container(
+                width: 46,
+                height: 58,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: i == _cur ? Colors.white : Colors.transparent,
+                      width: 2),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Image.memory(_images[i].bytes,
+                      width: 46, height: 58, fit: BoxFit.cover),
+                ),
+              ),
+              PositionedDirectional(
+                top: 0,
+                end: 0,
+                child: GestureDetector(
+                  onTap: _busy
+                      ? null
+                      : () => setState(() {
+                            _stickerMap.remove(_images[i]);
+                            _strokeMap.remove(_images[i]);
+                            _images.removeAt(i);
+                            if (_cur > i || _cur >= _images.length) {
+                              _cur = (_cur - 1)
+                                  .clamp(0, _images.length - 1)
+                                  .toInt();
+                            }
+                          }),
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: const BoxDecoration(
+                        color: Colors.black54, shape: BoxShape.circle),
+                    child: const Icon(Icons.close_rounded,
+                        size: 12, color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// الصف السفلي: الجمهور (الجميع / الأصدقاء المقربون) وزر الإرسال.
+  Widget _storyBottomBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: StoryAudienceSelector(
+                close: _closeFriends,
+                enabled: !_busy,
+                color: Colors.white,
+                onChanged: (v) {
+                  if (mounted) setState(() => _closeFriends = v);
+                }),
+          ),
+          const SizedBox(width: 10),
+          GestureDetector(
+            onTap: _busy ? null : _publish,
+            child: Container(
+              width: 52,
+              height: 52,
+              decoration: const BoxDecoration(
+                  shape: BoxShape.circle, color: Colors.white),
+              child: _busy
+                  ? const Padding(
+                      padding: EdgeInsets.all(15),
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2.5, color: Colors.black),
+                    )
+                  : const Icon(Icons.arrow_forward_rounded,
+                      color: Colors.black, size: 26),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _storyEditor(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      resizeToAvoidBottomInset: false,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _storyTopBar(),
+            if (_busy)
+              LinearProgressIndicator(
+                  value: _progress > 0 ? _progress : null, minHeight: 3),
+            Expanded(child: _storyCanvas()),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                child: Text(_error!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white)),
+              ),
+            _storyChips(),
+            if (_drawing)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+                child: DrawToolbar(
+                  color: _penColor,
+                  width: _penWidth,
+                  erase: _erase,
+                  canUndo: _strokesOf(_curImage).isNotEmpty,
+                  onColor: (c) => setState(() => _penColor = c),
+                  onWidth: (w) => setState(() => _penWidth = w),
+                  onErase: (v) => setState(() => _erase = v),
+                  onUndo: () => setState(() {
+                    final l = _strokesOf(_curImage);
+                    if (l.isNotEmpty) l.removeLast();
+                  }),
+                  onDone: () => setState(() => _drawing = false),
+                ),
+              )
+            else ...[
+              if (_images.length > 1)
+                Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: _storyStrip()),
+              _storyBottomBar(),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // القصة المصوّرة: واجهة ملء الشاشة على طريقة إنستغرام.
+    if (_isStory && _images.isNotEmpty) return _storyEditor(context);
     return Scaffold(
       resizeToAvoidBottomInset: !_dialogOpen,
       appBar: AppBar(
