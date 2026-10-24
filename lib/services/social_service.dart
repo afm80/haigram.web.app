@@ -677,6 +677,11 @@ class SocialService {
     });
   }
 
+  /// يبلّغ عن قصة. تُخزَّن كبلاغ type = post بمعرّف القصة، وتُميَّز بكلمة
+  /// story في details (فلا حاجة لتغيير قواعد Firestore).
+  static Future<void> reportStory(String storyId, String ownerUid, String reason) =>
+      reportPost(storyId, ownerUid, reason, details: 'story');
+
   /// يرسل بلاغاً عن تعليق بعينه (نفس مجموعة reports مع type = comment).
   static Future<void> reportComment(
       String postId, String commentId, String ownerUid, String reason,

@@ -708,6 +708,9 @@ class PostService {
       final p = Post.fromDoc(snapshot);
       if (p.type != PostType.story) return null;
       if (p.createdAt.isBefore(_storyCutoff())) return null;
+      if (!isGuest && p.uid != _user.uid && !await canSeeStoriesOf(p.uid)) {
+        return null;
+      }
       return p;
     } on FirebaseException catch (e) {
       if (_isDenied(e)) return null;
@@ -2063,19 +2066,194 @@ class PostService {
         _closeStoriesForMe());
   }
 
-  static Stream<List<StoryGroup>> storyGroups() =>
-      _visibleStories().map((list) {
-        final cutoff = DateTime.now().subtract(storyLifetime);
-        final live = list.where((p) => p.createdAt.isAfter(cutoff)).toList();
-        final byUser = <String, List<Post>>{};
-        for (final p in live.reversed) {
-          (byUser[p.uid] ??= []).add(p); // الأقدم أولاً
+  /// مجموعات القصص الظاهرة لي. تُستثنى دائماً قصص من حظرتهم أو حظروني أو
+  /// أخفوا قصصهم عني. مع [applyMutes] تُستثنى أيضاً قصص من كتمتُهم (شريط
+  /// القصص فقط؛ الملف الشخصي يعرض القصة دائماً حتى يمكن فتحها وإلغاء الكتم).
+  static Stream<List<StoryGroup>> storyGroups({bool applyMutes = false}) {
+    final base = _visibleStories().map((list) {
+      final cutoff = DateTime.now().subtract(storyLifetime);
+      final live = list.where((p) => p.createdAt.isAfter(cutoff)).toList();
+      final byUser = <String, List<Post>>{};
+      for (final p in live.reversed) {
+        (byUser[p.uid] ??= []).add(p); // الأقدم أولاً
+      }
+      return byUser.entries
+          .map((e) => StoryGroup(
+              uid: e.key, username: e.value.last.username, stories: e.value))
+          .toList();
+    });
+    if (isGuest) return base;
+    return _filterStoryGroups(base, applyMutes);
+  }
+
+  // ---- كتم القصص والإخفاء من أشخاص والحظر ----
+  // storyMutes/{أنا}/muted/{هو}: من كتمتُ قصصهم (خاص بي).
+  // storyHidden/{أنا}/hidden/{هو}: من أخفيتُ قصصي عنهم؛ يقرأ مستند الإخفاء
+  // صاحب القائمة أو الشخص المعني فقط، فيعرف التطبيق عنده هل أُخفيت عنه.
+  static CollectionReference<Map<String, dynamic>> get _mutedCol =>
+      _db.collection('storyMutes').doc(_user.uid).collection('muted');
+
+  static CollectionReference<Map<String, dynamic>> get _hiddenCol =>
+      _db.collection('storyHidden').doc(_user.uid).collection('hidden');
+
+  /// من كتمتُ قصصهم (لحظي).
+  static Stream<Set<String>> mutedStoryUids() => isGuest
+      ? Stream.value(const <String>{})
+      : _mutedCol
+          .snapshots()
+          .map((s) => {for (final d in s.docs) d.id});
+
+  /// من أخفيتُ قصصي عنهم (لحظي).
+  static Stream<Set<String>> hiddenFromUids() => isGuest
+      ? Stream.value(const <String>{})
+      : _hiddenCol
+          .snapshots()
+          .map((s) => {for (final d in s.docs) d.id});
+
+  static Future<bool> isStoryMuted(String uid) async =>
+      !isGuest && (await _mutedCol.doc(uid).get()).exists;
+
+  static Future<bool> isHidingStoriesFrom(String uid) async =>
+      !isGuest && (await _hiddenCol.doc(uid).get()).exists;
+
+  static Future<void> setStoryMuted(String uid, bool muted) {
+    if (uid.isEmpty || uid == _user.uid) {
+      throw ArgumentError(tr('مستخدم غير صالح'));
+    }
+    return muted
+        ? _mutedCol.doc(uid).set({'at': FieldValue.serverTimestamp()})
+        : _mutedCol.doc(uid).delete();
+  }
+
+  static Future<void> setStoriesHiddenFrom(String uid, bool hidden) {
+    if (uid.isEmpty || uid == _user.uid) {
+      throw ArgumentError(tr('مستخدم غير صالح'));
+    }
+    return hidden
+        ? _hiddenCol.doc(uid).set({'at': FieldValue.serverTimestamp()})
+        : _hiddenCol.doc(uid).delete();
+  }
+
+  // ذاكرة مؤقتة لما يخص الآخرين تجاهي (حظروني / أخفوا قصصهم عني) كي لا نقرأ
+  // مستنداً لكل صاحب قصة عند كل تحديث للشريط.
+  static final Map<String, (bool, DateTime)> _blockedMeCache = {};
+  static final Map<String, (bool, DateTime)> _hiddenMeCache = {};
+  static const _flagTtl = Duration(minutes: 5);
+
+  static Future<bool> _cachedFlag(Map<String, (bool, DateTime)> cache,
+      String uid, Future<bool> Function() load) async {
+    final c = cache[uid];
+    if (c != null && DateTime.now().difference(c.$2) < _flagTtl) return c.$1;
+    try {
+      final v = await load();
+      cache[uid] = (v, DateTime.now());
+      return v;
+    } catch (_) {
+      // فشل القراءة (شبكة/صلاحية): نبقي آخر قيمة معروفة وإلا نسمح بالعرض.
+      return c?.$1 ?? false;
+    }
+  }
+
+  static Future<bool> _blockedMe(String uid) => _cachedFlag(
+      _blockedMeCache,
+      uid,
+      () async => (await _db
+              .collection('userBlocks')
+              .doc(uid)
+              .collection('blocked')
+              .doc(_user.uid)
+              .get())
+          .exists);
+
+  static Future<bool> _hiddenFromMe(String uid) => _cachedFlag(
+      _hiddenMeCache,
+      uid,
+      () async => (await _db
+              .collection('storyHidden')
+              .doc(uid)
+              .collection('hidden')
+              .doc(_user.uid)
+              .get())
+          .exists);
+
+  /// هل يحق لي رؤية قصص [uid]؟ false إن حظرتُه أو حظرني أو أخفى قصصه عني.
+  static Future<bool> canSeeStoriesOf(String uid) async {
+    if (isGuest || uid == _user.uid) return true;
+    try {
+      if (await SocialService.isBlockedEither(uid)) return false;
+    } catch (_) {}
+    return !await _hiddenFromMe(uid);
+  }
+
+  static Stream<List<StoryGroup>> _filterStoryGroups(
+      Stream<List<StoryGroup>> base, bool applyMutes) {
+    late final StreamController<List<StoryGroup>> controller;
+    StreamSubscription<List<StoryGroup>>? subGroups;
+    StreamSubscription<List<String>>? subBlocked;
+    StreamSubscription<Set<String>>? subMuted;
+    List<StoryGroup>? groups;
+    var blocked = <String>{};
+    var muted = <String>{};
+    var blockedReady = false;
+    var mutedReady = !applyMutes;
+    var token = 0;
+
+    Future<void> emit() async {
+      final g = groups;
+      if (g == null || !blockedReady || !mutedReady) return;
+      final mine = ++token;
+      final me = uidOrEmpty;
+      final keep = await Future.wait([
+        for (final x in g)
+          () async {
+            if (x.uid == me) return true;
+            if (blocked.contains(x.uid)) return false;
+            if (applyMutes && muted.contains(x.uid)) return false;
+            if (await _blockedMe(x.uid)) return false;
+            return !await _hiddenFromMe(x.uid);
+          }()
+      ]);
+      if (mine != token || controller.isClosed) return; // وصل تحديث أحدث
+      controller.add([
+        for (var i = 0; i < g.length; i++)
+          if (keep[i]) g[i]
+      ]);
+    }
+
+    controller = StreamController<List<StoryGroup>>(
+      onListen: () {
+        subGroups = base.listen((v) {
+          groups = v;
+          emit();
+        }, onError: controller.addError);
+        subBlocked = SocialService.blockedUserIds().listen((v) {
+          blocked = v.toSet();
+          blockedReady = true;
+          emit();
+        }, onError: (_) {
+          // لا نُسقط الشريط كله إن فشلت قراءة قائمة الحظر.
+          blockedReady = true;
+          emit();
+        });
+        if (applyMutes) {
+          subMuted = mutedStoryUids().listen((v) {
+            muted = v;
+            mutedReady = true;
+            emit();
+          }, onError: (_) {
+            mutedReady = true;
+            emit();
+          });
         }
-        return byUser.entries
-            .map((e) => StoryGroup(
-                uid: e.key, username: e.value.last.username, stories: e.value))
-            .toList();
-      });
+      },
+      onCancel: () async {
+        await subGroups?.cancel();
+        await subBlocked?.cancel();
+        await subMuted?.cancel();
+      },
+    );
+    return controller.stream;
+  }
 
   /// يحذف قصصي المنتهية (أقدم من 24 ساعة) لتوفير الحصة المجانية.
   static Future<void> cleanupMyExpiredStories() async {
