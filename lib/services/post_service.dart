@@ -40,16 +40,51 @@ class StoryMention {
 }
 
 /// صندوق أسئلة داخل القصة: عبارة (مثل «اسألني شيئاً») يجيب عنها المشاهدون.
+/// موضع عنصر تفاعلي فوق القصة: [x] و[y] مركزه كنسبة (0..1) من عرض الوسائط
+/// وارتفاعها، و[s] التكبير، و[ar] نسبة عرض الصورة إلى ارتفاعها (لحساب مكانها
+/// في العارض). كلها اختيارية: القصص القديمة بدونها تبقى أسفل الشاشة.
+double? _posNum(Object? v, double lo, double hi) =>
+    v is num && v.isFinite ? v.toDouble().clamp(lo, hi).toDouble() : null;
+
+double _r4(double v) => (v * 10000).round() / 10000;
+
+Map<String, dynamic> _posToMap(double? x, double? y, double? s, double? ar) => {
+      if (x != null && y != null) 'x': _r4(x),
+      if (x != null && y != null) 'y': _r4(y),
+      if (s != null) 's': _r4(s),
+      if (ar != null) 'ar': _r4(ar),
+    };
+
 class StoryQuestion {
   final String q;
-  const StoryQuestion({required this.q});
+  final double? x, y, s, ar;
+  const StoryQuestion({required this.q, this.x, this.y, this.s, this.ar});
 
-  Map<String, dynamic> toMap() => {'q': q};
+  bool get placed => x != null && y != null;
+
+  StoryQuestion withPos({double? x, double? y, double? s}) =>
+      StoryQuestion(q: q, x: x ?? this.x, y: y ?? this.y, s: s ?? this.s, ar: ar);
+
+  StoryQuestion withAspect(double? ar) =>
+      StoryQuestion(q: q, x: x, y: y, s: s, ar: ar);
+
+  /// نص جديد مع إبقاء موضع [old] (أو موضع افتراضي عند [defY]).
+  StoryQuestion placedLike(StoryQuestion? old, double defY) => StoryQuestion(
+      q: q, x: old?.x ?? 0.5, y: old?.y ?? defY, s: old?.s ?? 1, ar: old?.ar);
+
+  Map<String, dynamic> toMap() => {'q': q, ..._posToMap(x, y, s, ar)};
 
   static StoryQuestion? fromMap(Object? m) {
     if (m is! Map) return null;
     final q = m['q'];
-    if (q is String && q.isNotEmpty) return StoryQuestion(q: q);
+    if (q is String && q.isNotEmpty) {
+      return StoryQuestion(
+          q: q,
+          x: _posNum(m['x'], 0, 1),
+          y: _posNum(m['y'], 0, 1),
+          s: _posNum(m['s'], 0.3, 3),
+          ar: _posNum(m['ar'], 0.1, 10));
+    }
     return null;
   }
 }
@@ -58,16 +93,40 @@ class StoryQuestion {
 class StorySlider {
   final String q;
   final String e;
-  const StorySlider({required this.q, required this.e});
+  final double? x, y, s, ar;
+  const StorySlider(
+      {required this.q, required this.e, this.x, this.y, this.s, this.ar});
 
-  Map<String, dynamic> toMap() => {'q': q, 'e': e};
+  bool get placed => x != null && y != null;
+
+  StorySlider withPos({double? x, double? y, double? s}) => StorySlider(
+      q: q, e: e, x: x ?? this.x, y: y ?? this.y, s: s ?? this.s, ar: ar);
+
+  StorySlider withAspect(double? ar) =>
+      StorySlider(q: q, e: e, x: x, y: y, s: s, ar: ar);
+
+  StorySlider placedLike(StorySlider? old, double defY) => StorySlider(
+      q: q,
+      e: e,
+      x: old?.x ?? 0.5,
+      y: old?.y ?? defY,
+      s: old?.s ?? 1,
+      ar: old?.ar);
+
+  Map<String, dynamic> toMap() => {'q': q, 'e': e, ..._posToMap(x, y, s, ar)};
 
   static StorySlider? fromMap(Object? m) {
     if (m is! Map) return null;
     final q = m['q'];
     final e = m['e'];
     if (q is String && e is String && e.isNotEmpty) {
-      return StorySlider(q: q, e: e);
+      return StorySlider(
+          q: q,
+          e: e,
+          x: _posNum(m['x'], 0, 1),
+          y: _posNum(m['y'], 0, 1),
+          s: _posNum(m['s'], 0.3, 3),
+          ar: _posNum(m['ar'], 0.1, 10));
     }
     return null;
   }
@@ -146,9 +205,41 @@ class StoryPoll {
   final String q;
   final String a;
   final String b;
-  const StoryPoll({required this.q, required this.a, required this.b});
+  final double? x, y, s, ar;
+  const StoryPoll(
+      {required this.q,
+      required this.a,
+      required this.b,
+      this.x,
+      this.y,
+      this.s,
+      this.ar});
 
-  Map<String, dynamic> toMap() => {'q': q, 'a': a, 'b': b};
+  bool get placed => x != null && y != null;
+
+  StoryPoll withPos({double? x, double? y, double? s}) => StoryPoll(
+      q: q,
+      a: a,
+      b: b,
+      x: x ?? this.x,
+      y: y ?? this.y,
+      s: s ?? this.s,
+      ar: ar);
+
+  StoryPoll withAspect(double? ar) =>
+      StoryPoll(q: q, a: a, b: b, x: x, y: y, s: s, ar: ar);
+
+  StoryPoll placedLike(StoryPoll? old, double defY) => StoryPoll(
+      q: q,
+      a: a,
+      b: b,
+      x: old?.x ?? 0.5,
+      y: old?.y ?? defY,
+      s: old?.s ?? 1,
+      ar: old?.ar);
+
+  Map<String, dynamic> toMap() =>
+      {'q': q, 'a': a, 'b': b, ..._posToMap(x, y, s, ar)};
 
   static StoryPoll? fromMap(Object? m) {
     if (m is! Map) return null;
@@ -156,7 +247,14 @@ class StoryPoll {
     final a = m['a'];
     final b = m['b'];
     if (q is String && a is String && b is String && q.isNotEmpty) {
-      return StoryPoll(q: q, a: a, b: b);
+      return StoryPoll(
+          q: q,
+          a: a,
+          b: b,
+          x: _posNum(m['x'], 0, 1),
+          y: _posNum(m['y'], 0, 1),
+          s: _posNum(m['s'], 0.3, 3),
+          ar: _posNum(m['ar'], 0.1, 10));
     }
     return null;
   }
