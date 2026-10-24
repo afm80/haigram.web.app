@@ -698,6 +698,31 @@ class SocialService {
   static Future<void> reportStory(String storyId, String ownerUid, String reason) =>
       reportPost(storyId, ownerUid, reason, details: 'story');
 
+  /// يبلّغ عن رسالة في محادثة أنا عضو فيها (type = message). تُحفظ مقتطفة من
+  /// نص الرسالة في details لأن صاحبها قد يحذفها لاحقاً فيضيع الدليل.
+  static Future<void> reportMessage(String conversationId, String messageId,
+      String senderUid, String reason,
+      {String snippet = ''}) async {
+    if (conversationId.isEmpty ||
+        messageId.isEmpty ||
+        senderUid.isEmpty ||
+        senderUid == _uid ||
+        !reportReasons.containsKey(reason)) {
+      throw ArgumentError(tr('بلاغ غير صالح'));
+    }
+    final text = snippet.trim();
+    await _db.collection('reports').add({
+      'type': 'message',
+      'chatId': conversationId,
+      'messageId': messageId,
+      'targetUid': senderUid,
+      'reporterUid': _uid,
+      'reason': reason,
+      'details': text.length > 250 ? text.substring(0, 250) : text,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   /// يرسل بلاغاً عن تعليق بعينه (نفس مجموعة reports مع type = comment).
   static Future<void> reportComment(
       String postId, String commentId, String ownerUid, String reason,
@@ -880,6 +905,11 @@ class SocialService {
         .toList());
   }
 
+  /// أقصى عدد رسائل يفحصها البحث (الأحدث أولاً) وأقصى عدد نتائج، حتى لا يقرأ
+  /// البحث كل تاريخ المحادثة ويضاعف تكلفة القراءات.
+  static const searchMaxScanned = 1000;
+  static const searchMaxResults = 100;
+
   static Future<List<ChatMessage>> searchMessages(
     String conversationId,
     String query,
@@ -887,21 +917,26 @@ class SocialService {
     final term = query.trim().toLowerCase();
     if (term.isEmpty) return const [];
 
+    const pageSize = 80;
     final collection = _chats.doc(conversationId).collection('messages');
     final matches = <ChatMessage>[];
     QueryDocumentSnapshot<Map<String, dynamic>>? cursor;
-    while (true) {
+    var scanned = 0;
+    while (scanned < searchMaxScanned && matches.length < searchMaxResults) {
       Query<Map<String, dynamic>> pageQuery =
-          collection.orderBy('createdAt', descending: true).limit(80);
+          collection.orderBy('createdAt', descending: true).limit(pageSize);
       if (cursor != null) pageQuery = pageQuery.startAfterDocument(cursor);
       final page = await pageQuery.get();
       for (final document in page.docs) {
         final message = ChatMessage.tryFromDoc(document);
-        if (message != null && message.text.toLowerCase().contains(term)) {
+        if (message != null &&
+            !message.deleted &&
+            message.text.toLowerCase().contains(term)) {
           matches.add(message);
         }
       }
-      if (page.docs.length < 80) break;
+      scanned += page.docs.length;
+      if (page.docs.length < pageSize) break;
       cursor = page.docs.last;
     }
     return matches;
