@@ -28,13 +28,11 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
   late Stream<List<Post>> _shortsFeed = _allShorts();
   final ScrollController _scroll = ScrollController();
 
-  // التحميل على دفعات: صور ونصوص كل منها بمؤشره الخاص.
-  List<Post>? _photos;
-  List<Post>? _texts;
-  DocumentSnapshot<Map<String, dynamic>>? _photoCursor;
-  DocumentSnapshot<Map<String, dynamic>>? _textCursor;
-  bool _morePhotos = true;
-  bool _moreTexts = true;
+  // التحميل على دفعات: كل «مصدر» = نوع منشور (صور/نصوص) + مجموعة حسابات (حتى 30،
+  // حد Firestore)، بمؤشره الخاص. في «المتابَعون» ننشئ مصدراً لكل 30 حساباً حتى
+  // لا يُهمَل من يتابع أكثر من 30 حساباً.
+  List<_Src> _srcs = const [];
+  bool _loaded = false; // وصلت الدفعة الأولى للوضع الحالي
   bool _loading = false;
   Object? _error;
   _FeedMode _mode = _FeedMode.all;
@@ -45,7 +43,8 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
   List<Post> _privPosts = const [];
   bool get _morePrivate => _privateIds.any((id) => !_privDone.contains(id));
   bool _more() =>
-      _morePhotos || _moreTexts || (_mode == _FeedMode.following && _morePrivate);
+      _srcs.any((s) => s.more) ||
+      (_mode == _FeedMode.following && _morePrivate);
   // // حسابات أتابعها (تُجلب عند أول فتح لتبويب المتابَعين)
   Set<String> _hiddenBase = const {}; // مخفيّات وقت آخر تحديث (الجديدة تُعرض بشريط تراجع)
   int _gen = 0; // يُلغي نتائج طلب قديم إذا بدأ تحديث جديد
@@ -84,6 +83,14 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
     _load(reset: true);
   }
 
+  /// سحب للتحديث: ينتهي المؤشر عند وصول الدفعة الأولى.
+  Future<void> _pullRefresh() {
+    if (!mounted) return Future<void>.value();
+    stopInlineVideos();
+    setState(() => _shortsFeed = _allShorts());
+    return _load(reset: true);
+  }
+
   void _setMode(_FeedMode m) {
     if (m == _mode) return;
     // «المتابَعون» يحتاج حساباً: الزائر يرى «للجميع» فقط.
@@ -92,8 +99,8 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
     if (_scroll.hasClients) _scroll.jumpTo(0);
     setState(() {
       _mode = m;
-      _photos = null;
-      _texts = null;
+      _loaded = false;
+      _srcs = const [];
     });
     _load(reset: true);
   }
@@ -111,7 +118,6 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
         await PostService.loadHiddenIds();
         _hiddenBase = {...PostService.hiddenIds.value};
       }
-      List<String>? uids;
       if (_mode == _FeedMode.following) {
         if (reset || _followIds == null) {
           final ids =
@@ -128,10 +134,26 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
             _privDone.clear();
           }
         }
-        uids = [
-          for (final id in _followIds!)
-            if (!_privateIds.contains(id)) id
-        ];
+      }
+      // المصادر: عند التحديث نبنيها من جديد، وإلا نكمل على الحالية.
+      List<_Src> srcs = _srcs;
+      if (reset) {
+        srcs = <_Src>[];
+        if (_mode == _FeedMode.all) {
+          srcs.add(_Src(PostType.photo, null));
+          srcs.add(_Src(PostType.text, null));
+        } else {
+          final pub = [
+            for (final id in _followIds!)
+              if (!_privateIds.contains(id)) id
+          ];
+          for (var i = 0; i < pub.length; i += 30) {
+            final end = i + 30 > pub.length ? pub.length : i + 30;
+            final chunk = pub.sublist(i, end);
+            srcs.add(_Src(PostType.photo, chunk));
+            srcs.add(_Src(PostType.text, chunk));
+          }
+        }
       }
       // الحسابات الخاصة: دفعة لكل حساب لم ينتهِ.
       final privIds = _mode != _FeedMode.following
@@ -144,28 +166,25 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
         for (final id in privIds)
           PostService.userPage(id, after: reset ? null : _privCursor[id])
       ]);
-      final photoPage = (reset || _morePhotos)
-          ? PostService.page(PostType.photo,
-              after: reset ? null : _photoCursor, uids: uids)
-          : Future<PostPage?>.value(null);
-      final textPage = (reset || _moreTexts)
-          ? PostService.page(PostType.text,
-              after: reset ? null : _textCursor, uids: uids)
-          : Future<PostPage?>.value(null);
-      final photos = await photoPage;
-      final texts = await textPage;
+      final todo = [
+        for (final s in srcs)
+          if (reset || s.more) s
+      ];
+      final pages = await Future.wait([
+        for (final s in todo)
+          PostService.page(s.type,
+              after: reset ? null : s.cursor, uids: s.uids)
+      ]);
       if (!mounted || gen != _gen) return;
       setState(() {
-        if (photos != null) {
-          _photos = _merge(reset ? null : _photos, photos.posts);
-          _photoCursor = photos.cursor;
-          _morePhotos = photos.hasMore;
+        for (var i = 0; i < todo.length; i++) {
+          final s = todo[i], pg = pages[i];
+          s.posts = _merge(reset ? null : s.posts, pg.posts);
+          s.cursor = pg.cursor;
+          s.more = pg.hasMore;
         }
-        if (texts != null) {
-          _texts = _merge(reset ? null : _texts, texts.posts);
-          _textCursor = texts.cursor;
-          _moreTexts = texts.hasMore;
-        }
+        _srcs = srcs;
+        _loaded = true;
         if (_mode == _FeedMode.following) {
           _privPosts = _merge(reset ? null : _privPosts, [
             for (final pg in privPages) ...pg.posts,
@@ -179,6 +198,8 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
         }
         _loading = false;
       });
+      // إن قلّ ما يظهر (بسبب الترتيب أو الفلترة) نكمل الجلب دون انتظار تمرير.
+      if (_more() && _visible().length < 6) _load();
     } catch (e) {
       if (!mounted || gen != _gen) return;
       setState(() {
@@ -186,6 +207,47 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
         _loading = false;
       });
     }
+  }
+
+  /// المنشورات الظاهرة (غير الريلز) مرتبة بالأحدث.
+  /// نعرض فقط ما هو أحدث من «حدّ الأمان»: أقدم منشور في كل مصدر لم ينتهِ بعد.
+  /// وإلا قد تصل دفعة لاحقة بمنشور أحدث مما رأيته فتُدرج في وسط القائمة
+  /// وتقفز الصفحة أثناء التمرير.
+  List<Post> _visible() {
+    DateTime? cutoff;
+    void consider(Iterable<Post> list) {
+      if (list.isEmpty) return;
+      var oldest = list.first.createdAt;
+      for (final p in list) {
+        if (p.createdAt.isBefore(oldest)) oldest = p.createdAt;
+      }
+      if (cutoff == null || oldest.isAfter(cutoff!)) cutoff = oldest;
+    }
+
+    for (final s in _srcs) {
+      if (s.more) consider(s.posts);
+    }
+    if (_mode == _FeedMode.following) {
+      for (final id in _privateIds) {
+        if (!_privDone.contains(id)) {
+          consider(_privPosts.where((p) => p.uid == id));
+        }
+      }
+    }
+    final seen = <String>{};
+    final all = [
+      for (final s in _srcs) ...s.posts,
+      ..._privPosts,
+    ];
+    final cut = cutoff;
+    return [
+      for (final p in all)
+        if (!p.isShort &&
+            !_hiddenBase.contains(p.id) &&
+            seen.add(p.id) &&
+            (cut == null || !p.createdAt.isBefore(cut)))
+          p
+    ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   }
 
   static List<Post> _merge(List<Post>? old, List<Post> add) {
@@ -225,22 +287,19 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
               if (seenShorts.add(p.id)) p
           ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
           // شورتز تظهر في شريط أفقي، والبقية منشورات عادية.
-          final loaded = _photos != null && _texts != null;
-          final posts = !loaded
-              ? null
-              : ([
-                  for (final p in [..._photos!, ..._texts!, ..._privPosts])
-                    if (!p.isShort && !_hiddenBase.contains(p.id)) p
-                ]..sort((a, b) => b.createdAt.compareTo(a.createdAt)));
+          final posts = !_loaded ? null : _visible();
           final hasPosts = posts != null && posts.isNotEmpty;
           // شريط شورتز في الأعلى مباشرة تحت القصص ليعرف المستخدم بوجوده.
           const shortsAt = 0;
           final hasShorts = shorts.isNotEmpty;
-          final rows = hasPosts ? posts.length + 1 : (hasShorts ? 1 : 2);
+          final rows = hasPosts ? posts.length + 1 : 2;
           final showFooter = hasPosts && _loading;
           final count = rows + (hasShorts ? 1 : 0) + (showFooter ? 1 : 0);
-          return ListView.builder(
+          return RefreshIndicator(
+            onRefresh: _pullRefresh,
+            child: ListView.builder(
             controller: _scroll,
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.only(top: 8, bottom: 80),
             itemCount: count,
             itemBuilder: (_, i) {
@@ -267,18 +326,30 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
                 return ShortsRow(shorts: shorts);
               }
               final idx = (hasShorts && i > shortsAt + 1) ? i - 1 : i;
-              if (hasPosts) return PostCard(post: posts[idx - 1]);
+              if (hasPosts) {
+                final post = posts[idx - 1];
+                return PostCard(key: ValueKey(post.id), post: post);
+              }
               if (_error != null) {
                 return Padding(
                   padding: const EdgeInsets.all(28),
-                  child: Text(trf('تعذر تحميل المنشورات\n{0}', [_error]),
-                      textAlign: TextAlign.center),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(trf('تعذر تحميل المنشورات\n{0}', [_error]),
+                          textAlign: TextAlign.center),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: () => _load(reset: true),
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: Text(tr('إعادة المحاولة')),
+                      ),
+                    ],
+                  ),
                 );
               }
-              if (posts == null) {
-                return const SizedBox.shrink();
-              }
-              if (_loading) return const SizedBox.shrink();
+              // الدفعة الأولى لم تصل بعد: هياكل تحميل بدل شاشة فارغة.
+              if (posts == null || _loading) return const _FeedSkeleton();
               return following
                   ? EmptyState(
                       icon: Icons.people_outline_rounded,
@@ -292,7 +363,7 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
                       message: tr('شارك أول صورة أو خاطرة مع مجتمعنا.'),
                     );
             },
-          );
+          ));
         },
       ),
     );
@@ -340,5 +411,79 @@ class _FeedModeBar extends StatelessWidget {
       item(tr('للجميع'), _FeedMode.all),
       item(tr('المتابَعون'), _FeedMode.following),
     ]);
+  }
+}
+
+
+/// مصدر تحميل: نوع منشور + مجموعة حسابات (null = الجميع) بمؤشره الخاص.
+class _Src {
+  final PostType type;
+  final List<String>? uids;
+  DocumentSnapshot<Map<String, dynamic>>? cursor;
+  bool more = true;
+  List<Post> posts = const [];
+  _Src(this.type, this.uids);
+}
+
+/// هياكل تحميل تظهر قبل وصول أول دفعة من المنشورات.
+class _FeedSkeleton extends StatefulWidget {
+  const _FeedSkeleton();
+
+  @override
+  State<_FeedSkeleton> createState() => _FeedSkeletonState();
+}
+
+class _FeedSkeletonState extends State<_FeedSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 900))
+    ..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final base = context.appColors.text.withOpacity(0.08);
+    Widget bar(double w, double h) => Container(
+        width: w,
+        height: h,
+        decoration: BoxDecoration(
+            color: base, borderRadius: BorderRadius.circular(6)));
+    Widget card() => Padding(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Container(
+                    width: 38,
+                    height: 38,
+                    decoration:
+                        BoxDecoration(color: base, shape: BoxShape.circle)),
+                const SizedBox(width: 10),
+                Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [bar(110, 12), const SizedBox(height: 6), bar(70, 10)]),
+              ]),
+              const SizedBox(height: 12),
+              AspectRatio(
+                aspectRatio: 4 / 3,
+                child: Container(
+                    decoration: BoxDecoration(
+                        color: base, borderRadius: BorderRadius.circular(12))),
+              ),
+              const SizedBox(height: 12),
+              bar(180, 12),
+            ],
+          ),
+        );
+    return FadeTransition(
+      opacity: Tween<double>(begin: 0.45, end: 1).animate(_c),
+      child: Column(children: [card(), card()]),
+    );
   }
 }
