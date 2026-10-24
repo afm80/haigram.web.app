@@ -446,18 +446,26 @@ exports.notifyChatMessage = onDocumentCreated(
     const participants = chat?.participants;
     if (!Array.isArray(participants) || participants.length < 2) return;
 
-    // محادثة فردية أو مجموعة: كل الأعضاء ما عدا المرسل، بعد استثناء من كتم.
+    // المُشار إليهم بـ @ (قواعد Firestore تضمن أنهم أعضاء في المجموعة).
+    const mentioned = new Set(
+      Array.isArray(message.mentions)
+        ? message.mentions.filter((uid) => typeof uid === 'string')
+        : [],
+    );
+
+    // محادثة فردية أو مجموعة: كل الأعضاء ما عدا المرسل. الكتم يُستثنى منه
+    // من أُشير إليه بـ @ (يصله إشعار حتى لو كتم المجموعة).
     const nowMs = Date.now();
     const recipients = participants.filter(
       (uid) =>
         typeof uid === 'string' &&
         uid !== message.senderUid &&
-        !isChatMutedFor(chat, uid, nowMs),
+        (mentioned.has(uid) || !isChatMutedFor(chat, uid, nowMs)),
     );
     if (recipients.length === 0) return;
 
-    const tokenRefs = [];
-    const tokens = [];
+    // رموز الأجهزة مع علامة «أُشير إليه» لكل رمز.
+    const entries = [];
     await Promise.all(
       recipients.map(async (uid) => {
         const snapshot = await db
@@ -468,13 +476,12 @@ exports.notifyChatMessage = onDocumentCreated(
         snapshot.docs.forEach((doc) => {
           const token = doc.data().token;
           if (typeof token === 'string' && token) {
-            tokens.push(token);
-            tokenRefs.push(doc.ref);
+            entries.push({ token, ref: doc.ref, mentioned: mentioned.has(uid) });
           }
         });
       }),
     );
-    if (tokens.length === 0) return;
+    if (entries.length === 0) return;
 
     const senderSnapshot = await db.doc(`users/${message.senderUid}`).get();
     const senderName = String(
@@ -486,9 +493,10 @@ exports.notifyChatMessage = onDocumentCreated(
     // المجموعة: عنوان الإشعار اسمها، والمرسل يسبق النص.
     const title = isGroup ? String(chat?.groupName || 'Haigram') : senderName;
     const content = chatNotificationBody(message);
-    const body = isGroup ? `${senderName}: ${content}` : content;
+    const plainBody = isGroup ? `${senderName}: ${content}` : content;
+    const mentionBody = `${senderName} ذكرك: ${content}`;
 
-    const payload = {
+    const buildPayload = (body) => ({
       // بلا حقل notification على مستوى الرسالة: على الويب يعرض الـ service worker
       // الإشعار بنفسه (وإلا ظهر إشعاران: تلقائي + يدوي). أندرويد يعرضه من
       // android.notification.
@@ -506,28 +514,38 @@ exports.notifyChatMessage = onDocumentCreated(
         priority: 'high',
         notification: { title, body, tag: `chat_${event.params.chatId}` },
       },
-    };
+    });
 
     // حد FCM: 500 توكن في الطلب الواحد (المجموعة قد تصل إلى 250 عضواً).
     const staleTokens = [];
-    for (let start = 0; start < tokens.length; start += 500) {
-      const chunk = tokens.slice(start, start + 500);
-      const response = await getMessaging().sendEachForMulticast({
-        ...payload,
-        tokens: chunk,
-      });
-      response.responses.forEach((result, index) => {
-        if (
-          !result.success &&
-          ['messaging/invalid-registration-token',
-            'messaging/registration-token-not-registered'].includes(
-              result.error?.code,
-            )
-        ) {
-          staleTokens.push(tokenRefs[start + index]);
-        }
-      });
+    const sendGroup = async (group, body) => {
+      const payload = buildPayload(body);
+      for (let start = 0; start < group.length; start += 500) {
+        const chunk = group.slice(start, start + 500);
+        const response = await getMessaging().sendEachForMulticast({
+          ...payload,
+          tokens: chunk.map((entry) => entry.token),
+        });
+        response.responses.forEach((result, index) => {
+          if (
+            !result.success &&
+            ['messaging/invalid-registration-token',
+              'messaging/registration-token-not-registered'].includes(
+                result.error?.code,
+              )
+          ) {
+            staleTokens.push(chunk[index].ref);
+          }
+        });
+      }
+    };
+    const mentionedEntries = entries.filter((entry) => entry.mentioned);
+    const plainEntries = entries.filter((entry) => !entry.mentioned);
+    if (plainEntries.length > 0) await sendGroup(plainEntries, plainBody);
+    if (mentionedEntries.length > 0) {
+      await sendGroup(mentionedEntries, mentionBody);
     }
+
     if (staleTokens.length > 0) {
       const batch = db.batch();
       staleTokens.forEach((ref) => batch.delete(ref));
