@@ -66,6 +66,18 @@ List<double> _mul(List<double> a, List<double> b) {
   return out;
 }
 
+/// درجة الحرارة [w] (-1 بارد .. 1 دافئ): يرفع الأحمر ويخفض الأزرق أو العكس.
+List<double> _warmth(double w) => [
+      1 + 0.12 * w, 0, 0, 0, 10 * w, //
+      0, 1, 0, 0, 0,
+      0, 0, 1 - 0.12 * w, 0, -10 * w,
+      0, 0, 0, 1, 0,
+    ];
+
+/// مزج مصفوفتين: t=0 الأولى، t=1 الثانية (لشدّة الفلتر).
+List<double> _lerpM(List<double> a, List<double> b, double t) =>
+    List<double>.generate(20, (i) => a[i] + (b[i] - a[i]) * t);
+
 class _Filter {
   final String label;
   final List<double> matrix;
@@ -96,6 +108,14 @@ final List<_Filter> _filters = [
   ]),
   _Filter('باهت', _mul(_brightContrast(0.06, 0.85), _saturation(0.8))),
   _Filter('درامي', _mul(_brightContrast(-0.02, 1.3), _saturation(0.85))),
+  _Filter('غروب',
+      _mul(_warmth(0.9), _mul(_brightContrast(0.02, 1.08), _saturation(1.25)))),
+  _Filter('سينمائي',
+      _mul(_warmth(-0.25), _mul(_brightContrast(-0.03, 1.2), _saturation(0.9)))),
+  _Filter('ثلجي',
+      _mul(_warmth(-0.8), _mul(_brightContrast(0.05, 1.05), _saturation(0.8)))),
+  _Filter('ذهبي',
+      _mul(_warmth(0.6), _mul(_brightContrast(0.04, 1.05), _saturation(1.15)))),
 ];
 
 class _Ratio {
@@ -129,6 +149,9 @@ class _StoryPhotoEditorState extends State<_StoryPhotoEditor> {
   int _filter = 0;
   double _bright = 0; // -0.3..0.3
   double _contrast = 1; // 0.7..1.4
+  double _sat = 1; // التشبّع 0..2
+  double _warm = 0; // الحرارة -1..1
+  double _intensity = 1; // شدّة الفلتر 0..1
   bool _needsCentering = true;
   bool _busy = false;
   bool _changed = false; // تدوير أو قلب (يتطلب إعادة ترميز)
@@ -197,9 +220,21 @@ class _StoryPhotoEditorState extends State<_StoryPhotoEditor> {
 
   /// المصفوفة النهائية: الفلتر ثم السطوع والتباين.
   List<double> get _matrix => _mul(
-      _brightContrast(_bright, _contrast), _filters[_filter].matrix);
+      _warmth(_warm),
+      _mul(_saturation(_sat),
+          _mul(_brightContrast(_bright, _contrast), _filterMatrix)));
 
-  bool get _hasColor => _filter != 0 || _bright != 0 || _contrast != 1;
+  /// الفلتر المختار بعد تطبيق شدّته.
+  List<double> get _filterMatrix => _intensity >= 1
+      ? _filters[_filter].matrix
+      : _lerpM(_identity, _filters[_filter].matrix, _intensity);
+
+  bool get _hasColor =>
+      _filter != 0 ||
+      _bright != 0 ||
+      _contrast != 1 ||
+      _sat != 1 ||
+      _warm != 0;
 
   /// أبعاد صندوق القص داخل المساحة المتاحة بحسب النسبة المختارة.
   Size _fitBox(double maxW, double maxH, Size image) {
@@ -402,50 +437,113 @@ class _StoryPhotoEditorState extends State<_StoryPhotoEditor> {
                 ),
               ),
             ],
-            if (_tab == 1)
+            if (_tab == 1) ...[
               SizedBox(
-                height: 78,
+                height: 104,
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   itemCount: _filters.length,
                   itemBuilder: (context, i) => GestureDetector(
-                    onTap: () => setState(() => _filter = i),
+                    onTap: () => setState(() {
+                      _filter = i;
+                      _intensity = 1;
+                    }),
                     child: Container(
-                      width: 70,
-                      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        color: i == _filter
-                            ? AppColors.brandPurple
-                            : Colors.white12,
-                      ),
-                      child: Text(
-                        tr(_filters[i].label),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700),
+                      width: 68,
+                      margin:
+                          const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 62,
+                            height: 62,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: i == _filter
+                                      ? AppColors.brandPurple
+                                      : Colors.transparent,
+                                  width: 2.5),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(9),
+                              child: ColorFiltered(
+                                colorFilter:
+                                    ColorFilter.matrix(_filters[i].matrix),
+                                // معاينة مصغّرة بحقيقة الفلتر (تُفكّ بحجم صغير فقط).
+                                child: Image.memory(_bytes,
+                                    fit: BoxFit.cover,
+                                    cacheWidth: 124,
+                                    gaplessPlayback: true),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            tr(_filters[i].label),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: i == _filter
+                                    ? AppColors.brandPurple
+                                    : Colors.white70,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ),
               ),
+              if (_filter != 0)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      Text(tr('الشدّة'),
+                          style: const TextStyle(
+                              color: Colors.white70, fontSize: 12.5)),
+                      Expanded(
+                        child: Slider(
+                          value: _intensity,
+                          min: 0,
+                          max: 1,
+                          activeColor: AppColors.brandPurple,
+                          onChanged: (v) => setState(() => _intensity = v),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 38,
+                        child: Text('${(_intensity * 100).round()}%',
+                            textAlign: TextAlign.end,
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 12.5)),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
             if (_tab == 2)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(
                   children: [
-                    _slider(Icons.light_mode_outlined, _bright, -0.3, 0.3,
-                        (v) => setState(() => _bright = v)),
-                    _slider(Icons.contrast_rounded, _contrast, 0.7, 1.4,
-                        (v) => setState(() => _contrast = v)),
+                    _slider(Icons.light_mode_outlined, tr('السطوع'), _bright,
+                        -0.3, 0.3, (v) => setState(() => _bright = v)),
+                    _slider(Icons.contrast_rounded, tr('التباين'), _contrast,
+                        0.7, 1.4, (v) => setState(() => _contrast = v)),
+                    _slider(Icons.water_drop_outlined, tr('التشبّع'), _sat, 0,
+                        2, (v) => setState(() => _sat = v)),
+                    _slider(Icons.thermostat_rounded, tr('الحرارة'), _warm, -1,
+                        1, (v) => setState(() => _warm = v)),
                     TextButton(
                       onPressed: () => setState(() {
                         _bright = 0;
                         _contrast = 1;
+                        _sat = 1;
+                        _warm = 0;
                       }),
                       child: Text(tr('إعادة الضبط'),
                           style: const TextStyle(color: Colors.white70)),
@@ -489,18 +587,32 @@ class _StoryPhotoEditorState extends State<_StoryPhotoEditor> {
         ),
       );
 
-  Widget _slider(IconData icon, double v, double min, double max,
-          ValueChanged<double> onChanged) =>
+  Widget _slider(IconData icon, String label, double v, double min,
+          double max, ValueChanged<double> onChanged) =>
       Row(
         children: [
           Icon(icon, color: Colors.white70, size: 22),
+          SizedBox(
+            width: 58,
+            child: Padding(
+              padding: const EdgeInsetsDirectional.only(start: 6),
+              child: Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white70, fontSize: 12)),
+            ),
+          ),
           Expanded(
-            child: Slider(
-              value: v,
-              min: min,
-              max: max,
-              activeColor: AppColors.brandPurple,
-              onChanged: onChanged,
+            child: SliderTheme(
+              data: SliderTheme.of(context)
+                  .copyWith(trackHeight: 2.5, overlayShape: SliderComponentShape.noOverlay),
+              child: Slider(
+                value: v,
+                min: min,
+                max: max,
+                activeColor: AppColors.brandPurple,
+                onChanged: onChanged,
+              ),
             ),
           ),
         ],
