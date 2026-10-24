@@ -8,7 +8,9 @@ class VoiceClip {
   final String mime;
   final String ext;
   final int seconds;
-  const VoiceClip(this.bytes, this.mime, this.ext, this.seconds);
+  final String wave;
+  const VoiceClip(this.bytes, this.mime, this.ext, this.seconds,
+      [this.wave = '']);
 }
 
 class VoiceRecorder {
@@ -24,6 +26,8 @@ class VoicePlayer {
   VoicePlayer(String url);
   bool get playing => false;
   double get position => 0;
+  double get speed => 1;
+  set speed(double v) {}
   Future<void> toggle() async {}
   void addListener(void Function() listener) {}
   void removeListener(void Function() listener) {}

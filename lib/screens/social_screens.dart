@@ -2369,6 +2369,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Timer? _voiceTimer;
   bool _recording = false;
   int _recSecs = 0;
+  // وضع الضغط المطوّل: الإصبع على الميكروفون؛ السحب جانباً يلغي التسجيل.
+  bool _recHold = false;
+  bool _holdActive = false;
+  bool _recCancel = false;
   bool _draftRestored = false;
   String? _failedText;
   List<Uint8List> _failedImages = const [];
@@ -2970,8 +2974,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _pendingImages.isEmpty &&
       _text.text.trim().isEmpty;
 
-  Future<void> _startRecording() async {
+  Future<void> _startRecording({bool hold = false}) async {
     if (_recording || !_canRecordVoice) return;
+    _holdActive = hold;
+    _recCancel = false;
     final recorder = VoiceRecorder();
     try {
       await recorder.start();
@@ -2985,13 +2991,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
       return;
     }
-    if (!mounted) {
+    if (!mounted || (hold && !_holdActive)) {
+      // رُفع الإصبع قبل أن يبدأ التسجيل (مثلاً أثناء نافذة الصلاحية).
       recorder.cancel();
       return;
     }
     setState(() {
       _voice = recorder;
       _recording = true;
+      _recHold = hold;
       _recSecs = 0;
     });
     _voiceTimer?.cancel();
@@ -3009,8 +3017,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _voiceTimer?.cancel();
     setState(() {
       _recording = false;
+      _recHold = false;
+      _recCancel = false;
       _voice = null;
     });
+    _holdActive = false;
     if (!send) {
       recorder.cancel();
       return;
@@ -3027,6 +3038,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         mime: clip.mime,
         ext: clip.ext,
         seconds: clip.seconds,
+        wave: clip.wave,
         replyToMessageId: replyTarget?.id,
         replyToText: replyTarget?.text,
         replyToSenderUid: replyTarget?.senderUid,
@@ -3103,6 +3115,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final colors = context.appColors;
     final hasContent = _hasContent;
     final blocked = _attachBlocked;
+    final holding = _recording && _recHold;
     Widget small(IconData icon, String tip, VoidCallback? onTap,
             {Color? color}) =>
         IconButton(
@@ -3121,6 +3134,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          if (!holding)
           IconButton.filled(
             tooltip: hasContent ? tr('إرسال') : tr('التقاط صورة'),
             onPressed: _sending
@@ -3141,6 +3155,40 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         : Icons.photo_camera_rounded,
                     color: Colors.white),
           ),
+          if (holding)
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Row(
+                  children: [
+                    const Icon(Icons.fiber_manual_record_rounded,
+                        color: Colors.redAccent, size: 14),
+                    const SizedBox(width: 8),
+                    Text(
+                      _fmtSecs(_recSecs),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontFeatures: [FontFeature.tabularFigures()]),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _recCancel
+                            ? tr('حرّر للإلغاء')
+                            : tr('اسحب جانباً للإلغاء'),
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: _recCancel
+                                ? Colors.redAccent
+                                : colors.textDim),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
           Expanded(
             child: TextField(
               controller: _text,
@@ -3163,21 +3211,64 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               ),
             ),
           ),
-          if (!hasContent && VoiceRecorder.supported)
-            small(Icons.mic_none_rounded, tr('رسالة صوتية'),
-                _canRecordVoice ? _startRecording : null),
-          if (!hasContent)
+          // الميكروفون: ضغطة قصيرة = تسجيل مثبّت بشريط، ضغط مطوّل = يسجّل
+          // ما دام الإصبع عليه (السحب جانباً يلغي). المفتاح يُبقي الإيماءة
+          // حيّة حين يتبدّل الشريط أثناء الضغط.
+          if ((!hasContent || holding) && VoiceRecorder.supported)
+            GestureDetector(
+              key: const ValueKey('voice-mic'),
+              behavior: HitTestBehavior.opaque,
+              onTap: _canRecordVoice ? () => _startRecording() : null,
+              onLongPressStart: _canRecordVoice
+                  ? (_) => _startRecording(hold: true)
+                  : null,
+              onLongPressMoveUpdate: (d) {
+                if (!_recording || !_recHold) return;
+                final cancel = d.offsetFromOrigin.dx.abs() > 80;
+                if (cancel != _recCancel) setState(() => _recCancel = cancel);
+              },
+              onLongPressEnd: (_) {
+                _holdActive = false;
+                if (_recording && _recHold) {
+                  _finishRecording(send: !_recCancel && _recSecs >= 1);
+                }
+              },
+              onLongPressCancel: () {
+                _holdActive = false;
+                if (_recording && _recHold) _finishRecording(send: false);
+              },
+              child: Container(
+                width: 40,
+                height: 40,
+                alignment: Alignment.center,
+                decoration: holding
+                    ? BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _recCancel
+                            ? Colors.redAccent
+                            : AppColors.accent.withOpacity(0.25),
+                      )
+                    : null,
+                child: Icon(
+                  holding ? Icons.mic_rounded : Icons.mic_none_rounded,
+                  color: _canRecordVoice || holding ? null : colors.textDim,
+                ),
+              ),
+            ),
+          if (!hasContent && !holding)
             small(Icons.image_outlined, tr('إرسال صورة'),
                 blocked ? null : () => _pickImage(ImageSource.gallery)),
-          small(
-              _showStickers
-                  ? Icons.keyboard_alt_outlined
-                  : Icons.emoji_emotions_outlined,
-              tr('الملصقات والرموز التعبيرية'),
-              _toggleStickers),
-          small(Icons.add_circle_outline_rounded, tr('إضافة'),
-              blocked ? null : _showPlusMenu,
-              color: _viewOnce ? AppColors.accent : null),
+          if (!holding)
+            small(
+                _showStickers
+                    ? Icons.keyboard_alt_outlined
+                    : Icons.emoji_emotions_outlined,
+                tr('الملصقات والرموز التعبيرية'),
+                _toggleStickers),
+          if (!holding)
+            small(Icons.add_circle_outline_rounded, tr('إضافة'),
+                blocked ? null : _showPlusMenu,
+                color: _viewOnce ? AppColors.accent : null),
         ],
       ),
     );
@@ -4855,6 +4946,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                         key: ValueKey('voice-${message.id}'),
                                         url: message.audioUrl!,
                                         seconds: message.audioSecs ?? 0,
+                                        wave: message.audioWave,
                                         mine: mine,
                                       )
                                     else if (isShare)
@@ -5354,7 +5446,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       bottom: !_showStickers,
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(8, 7, 8, 8),
-                        child: _recording
+                        child: _recording && !_recHold
                             ? _buildRecordingBar()
                             : _buildComposerPill(),
                       ),
@@ -8273,16 +8365,19 @@ class _TypingBubbleState extends State<_TypingBubble>
 }
 
 
-/// فقاعة رسالة صوتية: زر تشغيل/إيقاف + شريط تقدم + المدة.
+/// فقاعة رسالة صوتية: زر تشغيل/إيقاف + موجة صوتية تتلوّن مع التقدم + المدة
+/// + سرعة التشغيل (1x / 1.5x / 2x).
 class _VoiceBubble extends StatefulWidget {
   final String url;
   final int seconds;
+  final String? wave;
   final bool mine;
   const _VoiceBubble({
     super.key,
     required this.url,
     required this.seconds,
     required this.mine,
+    this.wave,
   });
 
   @override
@@ -8291,6 +8386,25 @@ class _VoiceBubble extends StatefulWidget {
 
 class _VoiceBubbleState extends State<_VoiceBubble> {
   VoicePlayer? _player;
+  double _speed = 1;
+  late final List<double> _bars = _parseBars();
+
+  /// أعمدة الموجة من الرقم المخزّن، أو شكل ثابت مشتق من الرابط للرسائل
+  /// القديمة التي بلا موجة.
+  List<double> _parseBars() {
+    final w = widget.wave ?? '';
+    if (w.length >= 8) {
+      return [for (final c in w.codeUnits) ((c - 48).clamp(0, 9)) / 9];
+    }
+    var h = 7;
+    for (final c in widget.url.codeUnits) {
+      h = (h * 31 + c) & 0x7fffffff;
+    }
+    return [
+      for (var i = 0; i < 40; i++)
+        0.25 + 0.75 * (((h = (h * 1103515245 + 12345) & 0x7fffffff) >> 8) % 100) / 100,
+    ];
+  }
 
   VoicePlayer _ensurePlayer() {
     var player = _player;
@@ -8313,7 +8427,9 @@ class _VoiceBubbleState extends State<_VoiceBubble> {
       return;
     }
     try {
-      await _ensurePlayer().toggle();
+      final player = _ensurePlayer();
+      player.speed = _speed;
+      await player.toggle();
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -8321,6 +8437,13 @@ class _VoiceBubbleState extends State<_VoiceBubble> {
         );
       }
     }
+  }
+
+  void _cycleSpeed() {
+    setState(() {
+      _speed = _speed == 1 ? 1.5 : (_speed == 1.5 ? 2 : 1);
+    });
+    _player?.speed = _speed;
   }
 
   @override
@@ -8342,8 +8465,9 @@ class _VoiceBubbleState extends State<_VoiceBubble> {
     final shown = playing || pos > 0 ? pos.floor() : total;
     final label =
         '${shown ~/ 60}:${(shown % 60).toString().padLeft(2, '0')}';
+    final speedLabel = _speed == 1 ? '1x' : (_speed == 1.5 ? '1.5x' : '2x');
     return SizedBox(
-      width: 210,
+      width: 236,
       child: Row(
         children: [
           InkWell(
@@ -8365,216 +8489,81 @@ class _VoiceBubbleState extends State<_VoiceBubble> {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(2),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 4,
-                color: fg,
-                backgroundColor: fg.withOpacity(0.25),
+            child: SizedBox(
+              height: 28,
+              child: CustomPaint(
+                painter: _WavePainter(
+                  bars: _bars,
+                  progress: progress,
+                  active: fg,
+                  idle: fg.withOpacity(0.35),
+                ),
               ),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Text(label,
               style: TextStyle(
                   color: fg,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   fontFeatures: const [FontFeature.tabularFigures()])),
-        ],
-      ),
-    );
-  }
-}
-
-
-/// بطاقة التعريف في المحادثة الفارغة (كإنستغرام): صورة الطرف الآخر واسمه
-/// وعدد متابعيه، وهل تتابعان بعضكما، مع أزرار الملف والسلامة والحظر.
-class _ChatIntroCard extends StatefulWidget {
-  final String otherUid;
-  const _ChatIntroCard({required this.otherUid});
-
-  @override
-  State<_ChatIntroCard> createState() => _ChatIntroCardState();
-}
-
-class _ChatIntroCardState extends State<_ChatIntroCard> {
-  AppUser? _user;
-  int? _followers;
-  bool _mutual = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final uid = widget.otherUid;
-    final user = UserService.profileOf(uid).catchError((_) => null);
-    final followers =
-        PostService.countFollowers(uid).then<int?>((v) => v).catchError(
-              (_) => null,
-            );
-    final mutual =
-        SocialService.areMutualFriends(uid).catchError((_) => false);
-    final results = await Future.wait<Object?>([user, followers, mutual]);
-    if (!mounted) return;
-    setState(() {
-      _user = results[0] as AppUser?;
-      _followers = results[1] as int?;
-      _mutual = results[2] == true;
-    });
-  }
-
-  void _showSafetyTips() {
-    final tips = [
-      tr('لا تشارك كلمة المرور أو رموز التحقق مع أي شخص.'),
-      tr('احذر الروابط والطلبات المالية من حسابات لا تعرفها.'),
-      tr('لا ترسل صوراً خاصة لمن لا تثق به.'),
-      tr('يمكنك حظر الحساب أو الإبلاغ عنه في أي وقت.'),
-    ];
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(tr('نصائح متعلقة بالسلامة')),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (final tip in tips)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(top: 2),
-                      child: Icon(Icons.check_circle_outline_rounded, size: 16),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(tip)),
-                  ],
+          if (playing || _speed != 1) ...[
+            const SizedBox(width: 6),
+            InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: _cycleSpeed,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  color: fg.withOpacity(0.18),
                 ),
+                child: Text(speedLabel,
+                    style: TextStyle(
+                        color: fg,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700)),
               ),
+            ),
           ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: Text(tr('حسناً')),
-          ),
         ],
       ),
     );
   }
+}
 
-  Future<void> _block() async {
-    final name = _user?.username ?? '';
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(trf('حظر @{0}؟', [name])),
-        content: Text(tr('لن يتمكن من مراسلتك، وسيُلغى التتبع بينكما.')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(tr('إلغاء')),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(tr('حظر'),
-                style: const TextStyle(color: Colors.redAccent)),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-    try {
-      await SocialService.setBlocked(widget.otherUid, true);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('تم الحظر'))),
+class _WavePainter extends CustomPainter {
+  final List<double> bars;
+  final double progress;
+  final Color active;
+  final Color idle;
+  const _WavePainter({
+    required this.bars,
+    required this.progress,
+    required this.active,
+    required this.idle,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (bars.isEmpty) return;
+    final slot = size.width / bars.length;
+    final barW = slot * 0.6;
+    for (var i = 0; i < bars.length; i++) {
+      final h = (3 + bars[i] * (size.height - 3)).clamp(3.0, size.height);
+      final x = i * slot + (slot - barW) / 2;
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(x, (size.height - h) / 2, barW, h),
+        const Radius.circular(2),
       );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyError(e, fallback: tr('تعذر الحظر')))),
-      );
+      final played = (i + 0.5) / bars.length <= progress;
+      canvas.drawRRect(rect, Paint()..color = played ? active : idle);
     }
   }
 
   @override
-  Widget build(BuildContext context) {
-    final colors = context.appColors;
-    final user = _user;
-    final dim = TextStyle(color: colors.textDim, fontSize: 13);
-    Widget action(IconData icon, String label, VoidCallback onTap) =>
-        InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 26),
-                const SizedBox(height: 6),
-                Text(label,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 12)),
-              ],
-            ),
-          ),
-        );
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            UserAvatar(
-              uid: widget.otherUid,
-              fallbackName: user?.name ?? '',
-              radius: 48,
-              profile: user,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              user?.username ?? '',
-              style:
-                  const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-            ),
-            if ((user?.name ?? '').isNotEmpty &&
-                user?.name != user?.username) ...[
-              const SizedBox(height: 4),
-              Text(user!.name, style: dim),
-            ],
-            if (_followers != null) ...[
-              const SizedBox(height: 4),
-              Text(trf('{0} متابع', [_followers]), style: dim),
-            ],
-            if (_mutual) ...[
-              const SizedBox(height: 4),
-              Text(tr('كلاكما يتابع الآخر'), style: dim),
-            ],
-            const SizedBox(height: 18),
-            Wrap(
-              alignment: WrapAlignment.center,
-              children: [
-                action(Icons.person_outline_rounded, tr('ملف شخصي'),
-                    () => openProfile(context, widget.otherUid)),
-                action(Icons.shield_outlined, tr('نصائح متعلقة بالسلامة'),
-                    _showSafetyTips),
-                action(Icons.block_rounded, tr('حظر'), _block),
-              ],
-            ),
-            const SizedBox(height: 18),
-            Text(tr('أرسل أول رسالة لبدء المحادثة'), style: dim),
-          ],
-        ),
-      ),
-    );
-  }
+  bool shouldRepaint(_WavePainter old) =>
+      old.progress != progress || old.bars != bars || old.active != active;
 }

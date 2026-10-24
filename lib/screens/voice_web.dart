@@ -4,7 +4,9 @@
 // ignore_for_file: avoid_web_libraries_in_flutter
 import 'dart:async';
 import 'dart:html' as html;
+import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:web_audio' as wa;
 
 const int voiceMaxSeconds = 120;
 
@@ -13,7 +15,11 @@ class VoiceClip {
   final String mime;
   final String ext;
   final int seconds;
-  const VoiceClip(this.bytes, this.mime, this.ext, this.seconds);
+
+  /// شكل الموجة: أرقام 0-9 (ارتفاع كل عمود)، أو نص فارغ إن تعذّر القياس.
+  final String wave;
+  const VoiceClip(this.bytes, this.mime, this.ext, this.seconds,
+      [this.wave = '']);
 }
 
 class _Format {
@@ -46,6 +52,9 @@ class VoiceRecorder {
   final List<html.Blob> _chunks = [];
   final Stopwatch _clock = Stopwatch();
   _Format? _format;
+  wa.AudioContext? _ctx;
+  Timer? _sampler;
+  final List<double> _levels = [];
 
   static bool get supported =>
       html.window.navigator.mediaDevices != null && _pickFormat() != null;
@@ -78,13 +87,70 @@ class VoiceRecorder {
       if (data != null && data.size > 0) _chunks.add(data);
     });
     _recorder = recorder;
+    _startMeter(stream);
     recorder.start(1000);
     _clock
       ..reset()
       ..start();
   }
 
+  /// يقيس علوّ الصوت كل 100ms لرسم الموجة؛ فشله لا يوقف التسجيل.
+  void _startMeter(html.MediaStream stream) {
+    _levels.clear();
+    try {
+      final ctx = wa.AudioContext();
+      final analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      ctx.createMediaStreamSource(stream).connectNode(analyser);
+      try {
+        ctx.resume();
+      } catch (_) {}
+      _ctx = ctx;
+      final buf = Uint8List(512);
+      _sampler = Timer.periodic(const Duration(milliseconds: 100), (_) {
+        try {
+          analyser.getByteTimeDomainData(buf);
+          var peak = 0;
+          for (final v in buf) {
+            final d = (v - 128).abs();
+            if (d > peak) peak = d;
+          }
+          _levels.add(peak / 128);
+        } catch (_) {}
+      });
+    } catch (_) {}
+  }
+
+  String _buildWave() {
+    const bars = 40;
+    if (_levels.length < 4) return '';
+    final out = StringBuffer();
+    var top = 0.0;
+    for (final v in _levels) {
+      if (v > top) top = v;
+    }
+    if (top <= 0.02) return '';
+    for (var i = 0; i < bars; i++) {
+      final from = (i * _levels.length / bars).floor();
+      var to = ((i + 1) * _levels.length / bars).ceil();
+      if (to <= from) to = from + 1;
+      var peak = 0.0;
+      for (var j = from; j < to && j < _levels.length; j++) {
+        if (_levels[j] > peak) peak = _levels[j];
+      }
+      final norm = math.sqrt(peak / top);
+      out.write((norm * 9).round().clamp(0, 9));
+    }
+    return out.toString();
+  }
+
   void _release() {
+    _sampler?.cancel();
+    _sampler = null;
+    try {
+      _ctx?.close();
+    } catch (_) {}
+    _ctx = null;
     _clock.stop();
     for (final track in _stream?.getTracks() ?? const <html.MediaStreamTrack>[]) {
       track.stop();
@@ -105,6 +171,7 @@ class VoiceRecorder {
     });
     if (recorder.state != 'inactive') recorder.stop();
     await done.future.timeout(const Duration(seconds: 5), onTimeout: () {});
+    final wave = _buildWave();
     _release();
     if (_chunks.isEmpty) return null;
     final blob = html.Blob(List<html.Blob>.of(_chunks), format.mime);
@@ -116,7 +183,8 @@ class VoiceRecorder {
         ? result
         : (result as ByteBuffer).asUint8List();
     if (bytes.isEmpty) return null;
-    return VoiceClip(bytes, format.mime, format.ext, seconds < 1 ? 1 : seconds);
+    return VoiceClip(
+        bytes, format.mime, format.ext, seconds < 1 ? 1 : seconds, wave);
   }
 
   /// يلغي التسجيل ويتجاهل ما سُجّل.
@@ -154,6 +222,10 @@ class VoicePlayer {
 
   bool get playing => !_audio.paused && !_audio.ended;
   double get position => _audio.currentTime.toDouble();
+
+  /// سرعة التشغيل (1 / 1.5 / 2).
+  double get speed => _audio.playbackRate.toDouble();
+  set speed(double v) => _audio.playbackRate = v;
 
   void _notify() {
     if (_disposed) return;
