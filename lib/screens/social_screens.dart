@@ -4451,6 +4451,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                     m.createdAt.isAfter(cleared)))
                             .toList();
                         if (messages.isEmpty) {
+                          if (!_isGroup) {
+                            return _ChatIntroCard(otherUid: widget.otherUid);
+                          }
                           return _MessageState(
                             message: tr('أرسل أول رسالة لبدء المحادثة'),
                             icon: Icons.waving_hand_outlined,
@@ -8380,6 +8383,197 @@ class _VoiceBubbleState extends State<_VoiceBubble> {
                   fontWeight: FontWeight.w600,
                   fontFeatures: const [FontFeature.tabularFigures()])),
         ],
+      ),
+    );
+  }
+}
+
+
+/// بطاقة التعريف في المحادثة الفارغة (كإنستغرام): صورة الطرف الآخر واسمه
+/// وعدد متابعيه، وهل تتابعان بعضكما، مع أزرار الملف والسلامة والحظر.
+class _ChatIntroCard extends StatefulWidget {
+  final String otherUid;
+  const _ChatIntroCard({required this.otherUid});
+
+  @override
+  State<_ChatIntroCard> createState() => _ChatIntroCardState();
+}
+
+class _ChatIntroCardState extends State<_ChatIntroCard> {
+  AppUser? _user;
+  int? _followers;
+  bool _mutual = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final uid = widget.otherUid;
+    final user = UserService.profileOf(uid).catchError((_) => null);
+    final followers =
+        PostService.countFollowers(uid).then<int?>((v) => v).catchError(
+              (_) => null,
+            );
+    final mutual =
+        SocialService.areMutualFriends(uid).catchError((_) => false);
+    final results = await Future.wait<Object?>([user, followers, mutual]);
+    if (!mounted) return;
+    setState(() {
+      _user = results[0] as AppUser?;
+      _followers = results[1] as int?;
+      _mutual = results[2] == true;
+    });
+  }
+
+  void _showSafetyTips() {
+    final tips = [
+      tr('لا تشارك كلمة المرور أو رموز التحقق مع أي شخص.'),
+      tr('احذر الروابط والطلبات المالية من حسابات لا تعرفها.'),
+      tr('لا ترسل صوراً خاصة لمن لا تثق به.'),
+      tr('يمكنك حظر الحساب أو الإبلاغ عنه في أي وقت.'),
+    ];
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(tr('نصائح متعلقة بالسلامة')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final tip in tips)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 2),
+                      child: Icon(Icons.check_circle_outline_rounded, size: 16),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(tip)),
+                  ],
+                ),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(tr('حسناً')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _block() async {
+    final name = _user?.username ?? '';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(trf('حظر @{0}؟', [name])),
+        content: Text(tr('لن يتمكن من مراسلتك، وسيُلغى التتبع بينكما.')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(tr('إلغاء')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(tr('حظر'),
+                style: const TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await SocialService.setBlocked(widget.otherUid, true);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('تم الحظر'))),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: tr('تعذر الحظر')))),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final user = _user;
+    final dim = TextStyle(color: colors.textDim, fontSize: 13);
+    Widget action(IconData icon, String label, VoidCallback onTap) =>
+        InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 26),
+                const SizedBox(height: 6),
+                Text(label,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 12)),
+              ],
+            ),
+          ),
+        );
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            UserAvatar(
+              uid: widget.otherUid,
+              fallbackName: user?.name ?? '',
+              radius: 48,
+              profile: user,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              user?.username ?? '',
+              style:
+                  const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            if ((user?.name ?? '').isNotEmpty &&
+                user?.name != user?.username) ...[
+              const SizedBox(height: 4),
+              Text(user!.name, style: dim),
+            ],
+            if (_followers != null) ...[
+              const SizedBox(height: 4),
+              Text(trf('{0} متابع', [_followers]), style: dim),
+            ],
+            if (_mutual) ...[
+              const SizedBox(height: 4),
+              Text(tr('كلاكما يتابع الآخر'), style: dim),
+            ],
+            const SizedBox(height: 18),
+            Wrap(
+              alignment: WrapAlignment.center,
+              children: [
+                action(Icons.person_outline_rounded, tr('ملف شخصي'),
+                    () => openProfile(context, widget.otherUid)),
+                action(Icons.shield_outlined, tr('نصائح متعلقة بالسلامة'),
+                    _showSafetyTips),
+                action(Icons.block_rounded, tr('حظر'), _block),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Text(tr('أرسل أول رسالة لبدء المحادثة'), style: dim),
+          ],
+        ),
       ),
     );
   }
