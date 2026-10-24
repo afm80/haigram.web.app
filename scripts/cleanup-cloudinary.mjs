@@ -132,10 +132,13 @@ async function main() {
   // السكربت قبل أي حذف.
   const chatImages = await db
     .collectionGroup('messages')
-    .where('kind', '==', 'image')
-    .select('imageUrl')
+    .where('kind', 'in', ['image', 'audio'])
+    .select('imageUrl', 'audioUrl')
     .get();
-  for (const d of chatImages.docs) addReference(d.get('imageUrl'));
+  for (const d of chatImages.docs) {
+    addReference(d.get('imageUrl'));
+    addReference(d.get('audioUrl'));
+  }
   // أرشيف القصص والقصص المميزة تحتفظ بصورها بعد انتهاء القصة، فتُحسب مشاراً إليها
   // وإلا حُذفت صورها كأنها يتيمة. لا تحتاج فهرساً (بلا فلاتر).
   const archived = await db.collectionGroup('stories').select('mediaUrl').get();
