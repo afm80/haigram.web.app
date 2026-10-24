@@ -23,6 +23,27 @@ String trf(String ar, List<Object?> args) {
 }
 
 const Map<String, String> _en = {
+  // خصوصية القصص (إبلاغ، كتم، إخفاء)
+  'إبلاغ عن القصة': "Report story",
+  'إبلاغ عن هذه القصة': "Report this story",
+  'اختر السبب الأقرب. لن يعرف صاحب القصة أنك من أبلغ.': "Choose the closest reason. The story owner won't know it was you.",
+  'كتم قصص @{0}': "Mute @{0}'s stories",
+  'إلغاء كتم قصص @{0}': "Unmute @{0}'s stories",
+  'إخفاء قصصي عن @{0}': "Hide my stories from @{0}",
+  'إظهار قصصي لـ @{0}': "Show my stories to @{0}",
+  'أُلغي كتم قصص @{0}': "@{0}'s stories unmuted",
+  'تم كتم قصص @{0}. تجدها دائماً من ملفه الشخصي': "@{0}'s stories muted. You can always find them on their profile",
+  'ستظهر قصصك لـ @{0}': "Your stories will be visible to @{0}",
+  'أُخفيت قصصك عن @{0}': "Your stories are hidden from @{0}",
+  'تعذّر تنفيذ الإجراء': "Couldn't complete the action",
+  'خصوصية القصص': "Story privacy",
+  'القصص التي كتمتها، ومن أخفيت قصصك عنهم': "Stories you've muted and people you hide yours from",
+  'قصص مكتومة': "Muted stories",
+  'قصصي مخفية عنهم': "Hidden from",
+  'لم تكتم قصص أي حساب': "You haven't muted anyone's stories",
+  'لم تُخفِ قصصك عن أي حساب': "You haven't hidden your stories from anyone",
+  'إلغاء الكتم': "Unmute",
+  'إظهار': "Show",
   // ردود القصص كبطاقات في المحادثة
   'ردّ على قصتك': "Replied to your story",
   'ردّك على القصة': "Your reply to the story",
