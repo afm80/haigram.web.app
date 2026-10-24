@@ -1269,23 +1269,40 @@ service cloud.firestore {
       allow create: if isActiveUser()
         && request.resource.data.keys().hasOnly([
           'type', 'targetUid', 'reporterUid', 'reason', 'details', 'createdAt',
-          'postId', 'commentId'
+          'postId', 'commentId', 'chatId', 'messageId'
         ])
         && ((request.resource.data.type == 'user'
               && !('postId' in request.resource.data)
-              && !('commentId' in request.resource.data))
+              && !('commentId' in request.resource.data)
+              && !('chatId' in request.resource.data)
+              && !('messageId' in request.resource.data))
             || (request.resource.data.type == 'post'
               && request.resource.data.postId is string
               && request.resource.data.postId.size() > 0
               && request.resource.data.postId.size() <= 40
-              && !('commentId' in request.resource.data))
+              && !('commentId' in request.resource.data)
+              && !('chatId' in request.resource.data)
+              && !('messageId' in request.resource.data))
             || (request.resource.data.type == 'comment'
               && request.resource.data.postId is string
               && request.resource.data.postId.size() > 0
               && request.resource.data.postId.size() <= 40
               && request.resource.data.commentId is string
               && request.resource.data.commentId.size() > 0
-              && request.resource.data.commentId.size() <= 40))
+              && request.resource.data.commentId.size() <= 40
+              && !('chatId' in request.resource.data)
+              && !('messageId' in request.resource.data))
+            // بلاغ عن رسالة: المُبلِّغ عضو في المحادثة نفسها.
+            || (request.resource.data.type == 'message'
+              && !('postId' in request.resource.data)
+              && !('commentId' in request.resource.data)
+              && request.resource.data.chatId is string
+              && request.resource.data.chatId.size() > 0
+              && request.resource.data.chatId.size() <= 128
+              && request.resource.data.messageId is string
+              && request.resource.data.messageId.size() > 0
+              && request.resource.data.messageId.size() <= 128
+              && request.auth.uid in get(/databases/$(database)/documents/chats/$(request.resource.data.chatId)).data.participants))
         && request.resource.data.reporterUid == request.auth.uid
         && request.resource.data.targetUid is string
         && request.resource.data.targetUid != request.auth.uid
