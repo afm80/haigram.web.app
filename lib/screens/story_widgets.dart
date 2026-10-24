@@ -19,6 +19,7 @@ import 'profile_screen.dart';
 import 'story_backgrounds.dart';
 import 'story_mentions.dart';
 import 'story_movable.dart' show storyCardWidth;
+import 'story_reaction_burst.dart';
 import 'story_poll.dart';
 import 'story_question.dart';
 import 'story_info.dart';
@@ -664,12 +665,14 @@ class _StoryViewerState extends State<StoryViewer>
     if (needsLogin(context)) return;
     final story = _story;
     final messenger = ScaffoldMessenger.of(context);
+    // أثر فوري: انفجار إيموجي واهتزاز خفيف (بدون انتظار الشبكة).
+    showEmojiBurst(context, emoji);
+    HapticFeedback.selectionClick();
+    // يظهر التفاعل لصاحب القصة في قائمة المشاهدين (لا يمنع الرسالة إن فشل).
+    PostService.reactToStory(story, emoji).catchError((_) {});
     try {
       final id = await SocialService.startConversation(story.uid);
       await SocialService.sendStoryReply(id, story, emoji);
-      messenger.showSnackBar(SnackBar(
-          content: Text(emoji, style: const TextStyle(fontSize: 22)),
-          duration: const Duration(seconds: 1)));
     } catch (_) {
       messenger.showSnackBar(SnackBar(
           content: Text(tr('تعذّر إرسال الردّ')),
@@ -1424,6 +1427,9 @@ class _ViewerTile extends StatelessWidget {
           title: Text(name.isEmpty ? '...' : name,
               style: const TextStyle(fontWeight: FontWeight.w600)),
           subtitle: Text(timeAgo(entry.at)),
+          trailing: entry.reaction == null
+              ? null
+              : Text(entry.reaction!, style: const TextStyle(fontSize: 26)),
           onTap: () {
             Navigator.of(context).push(appRoute('user', {'uid': entry.uid},
                 (_) => UserProfileScreen(uid: entry.uid)));
