@@ -14,6 +14,7 @@ import '../video_source.dart';
 import 'sticker_sheet.dart' show StickerPanel;
 import 'close_friends_screen.dart';
 import 'story_mentions.dart';
+import 'story_drawing.dart';
 import 'story_photo_editor.dart';
 import 'story_poll.dart';
 import 'story_stickers.dart';
@@ -460,6 +461,12 @@ class _ComposeScreenState extends State<ComposeScreen> {
   final _captureKey = GlobalKey(); // يلتقط الصورة مع ملصقاتها عند النشر
   // ملصقات ونصوص كل صورة على حدة (المفتاح هو كائن الصورة نفسه).
   final Map<PickedMedia, List<StoryStickerItem>> _stickerMap = {};
+  // رسم القلم لكل صورة (نقاطه نسبية فيبقى في مكانه).
+  final Map<PickedMedia, List<DrawStroke>> _strokeMap = {};
+  bool _drawing = false; // وضع الرسم فعّال
+  Color _penColor = Colors.white;
+  double _penWidth = 0.014;
+  bool _erase = false;
   int _cur = 0; // الصورة المعروضة حالياً للتحرير (للقصص المتعددة)
   int _publishedCount = 0; // عدد القصص المنشورة حتى الآن
   bool _extrasSent = false; // أُرسل الاستطلاع والذكر مع أول قصة
@@ -497,6 +504,9 @@ class _ComposeScreenState extends State<ComposeScreen> {
   /// ملصقات الصورة [m].
   List<StoryStickerItem> _stickersOf(PickedMedia m) =>
       _stickerMap.putIfAbsent(m, () => <StoryStickerItem>[]);
+
+  List<DrawStroke> _strokesOf(PickedMedia m) =>
+      _strokeMap.putIfAbsent(m, () => <DrawStroke>[]);
 
   /// ملصقات الصورة المعروضة الآن.
   List<StoryStickerItem> get _stickers => _stickersOf(_curImage);
@@ -738,6 +748,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
       _images[i] = fresh;
       final st = _stickerMap.remove(old);
       if (st != null) _stickerMap[fresh] = st;
+      final sk = _strokeMap.remove(old);
+      if (sk != null) _strokeMap[fresh] = sk;
     });
   }
 
@@ -749,7 +761,12 @@ class _ComposeScreenState extends State<ComposeScreen> {
   /// الصورة رقم [index] التي ستُرفع: الأصلية، أو بعد دمج ملصقاتها فيها.
   Future<PickedMedia> _mediaToPublish(int index) async {
     final img = _images[index];
-    if (!_canSticker || _stickersOf(img).isEmpty) return img;
+    if (!_canSticker ||
+        (_stickersOf(img).isEmpty && _strokesOf(img).isEmpty)) {
+      return img;
+    }
+    // نُنهي وضع الرسم حتى لا تظهر طبقة اللمس في الالتقاط.
+    if (_drawing) setState(() => _drawing = false);
     // نعرض هذه الصورة في المعاينة ثم نلتقطها مع ملصقاتها.
     if (_cur != index) setState(() => _cur = index);
     if (_scroll.hasClients && _scroll.offset > 0) {
@@ -843,6 +860,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
           // نزيل المنشورة حتى لا تتكرر عند إعادة المحاولة بعد فشل جزئي.
           final done = _images.removeAt(0);
           _stickerMap.remove(done);
+          _strokeMap.remove(done);
           _cur = 0;
           _publishedCount++;
         }
@@ -923,6 +941,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
                     ? null
                     : () => setState(() {
                           _stickerMap.remove(_images[i]);
+                          _strokeMap.remove(_images[i]);
                           _images.removeAt(i);
                           if (_cur > i || _cur >= _images.length) {
                             _cur = (_cur - 1).clamp(0, _images.length).toInt();
@@ -972,7 +991,9 @@ class _ComposeScreenState extends State<ComposeScreen> {
         child: ListView(
           controller: _scroll,
           cacheExtent: 2000,
-          physics: _lockScroll ? const NeverScrollableScrollPhysics() : null,
+          physics: (_lockScroll || _drawing)
+              ? const NeverScrollableScrollPhysics()
+              : null,
           padding: const EdgeInsets.all(16),
           children: [
             if (_images.length == 1 || (_isStory && _images.isNotEmpty))
@@ -1008,20 +1029,52 @@ class _ComposeScreenState extends State<ComposeScreen> {
                             ),
                           if (_canSticker)
                             Positioned.fill(
+                              child: StrokesLayer(
+                                  key: ValueKey('strokes-${_curImage.hashCode}'),
+                                  strokes: _strokesOf(_curImage)),
+                            ),
+                          if (_canSticker)
+                            Positioned.fill(
                               child: StickerLayer(
                                   key: ValueKey(_curImage),
                                   items: _stickers,
-                                  enabled: !_busy,
+                                  enabled: !_busy && !_drawing,
                                   onChanged: () => setState(() {}),
                                   onEditText: _editText,
                                   onTouching: (v) =>
                                       setState(() => _lockScroll = v)),
+                            ),
+                          if (_canSticker && _drawing)
+                            Positioned.fill(
+                              child: DrawingInput(
+                                key: ValueKey('draw-${_curImage.hashCode}'),
+                                strokes: _strokesOf(_curImage),
+                                color: _penColor,
+                                width: _penWidth,
+                                erase: _erase,
+                                onChanged: () => setState(() {}),
+                              ),
                             ),
                         ],
                       ),
                     ),
                   ),
                 ),
+              ),
+            if (_canSticker && _drawing)
+              DrawToolbar(
+                color: _penColor,
+                width: _penWidth,
+                erase: _erase,
+                canUndo: _strokesOf(_curImage).isNotEmpty,
+                onColor: (c) => setState(() => _penColor = c),
+                onWidth: (w) => setState(() => _penWidth = w),
+                onErase: (v) => setState(() => _erase = v),
+                onUndo: () => setState(() {
+                  final l = _strokesOf(_curImage);
+                  if (l.isNotEmpty) l.removeLast();
+                }),
+                onDone: () => setState(() => _drawing = false),
               ),
             if (widget.kind == CreateKind.story)
               Padding(
@@ -1041,6 +1094,16 @@ class _ComposeScreenState extends State<ComposeScreen> {
                     onPressed: _busy ? null : _editPhoto,
                     icon: const Icon(Icons.crop_rotate_rounded),
                     label: Text(tr('قص وتدوير')),
+                  ),
+                  TextButton.icon(
+                    onPressed: _busy
+                        ? null
+                        : () => setState(() {
+                              _drawing = !_drawing;
+                              _erase = false;
+                            }),
+                    icon: const Icon(Icons.brush_rounded),
+                    label: Text(tr('رسم')),
                   ),
                   TextButton.icon(
                     onPressed: _busy ? null : _addText,
