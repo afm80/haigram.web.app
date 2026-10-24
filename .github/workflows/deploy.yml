@@ -79,6 +79,14 @@ jobs:
             --dart-define=CLOUDINARY_UPLOAD_PRESET=${{ secrets.CLOUDINARY_UPLOAD_PRESET }} \
             --dart-define=GIPHY_API_KEY=${{ secrets.GIPHY_API_KEY }}
 
+      # تنظيف إصدارات Hosting القديمة لتفادي خطأ 429 (تجاوز حصة التخزين).
+      - name: Prune old Hosting versions
+        continue-on-error: true
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FB_PROJECT_ID: ${{ secrets.FB_PROJECT_ID }}
+        run: node scripts/prune_hosting_versions.mjs
+
       - name: Deploy
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
