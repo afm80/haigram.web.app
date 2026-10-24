@@ -1,9 +1,12 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../share_links.dart' show kSiteOrigin;
 import '../theme.dart';
 import 'sticker_data.dart';
 
@@ -17,7 +20,10 @@ String stickerImageUrl(String emoji) {
       .where((r) => r != 0xFE0F)
       .map((r) => r.toRadixString(16))
       .join('_');
-  return 'stickers/emoji_u$cps.png';
+  // على الويب مسار نسبي، وعلى أندرويد لا يوجد مسار نسبي فنحمّلها من الموقع.
+  return kIsWeb
+      ? 'stickers/emoji_u$cps.png'
+      : '$kSiteOrigin/stickers/emoji_u$cps.png';
 }
 
 /// إيموجي ملوّن: صورة Noto Emoji المحلية فتظهر بألوانها على كل الأجهزة.
@@ -29,26 +35,43 @@ class StickerGlyph extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fallback = Text(emoji,
-        maxLines: 1,
-        softWrap: false,
-        style: TextStyle(fontSize: size * 0.8, height: 1.1));
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Image.network(
-        stickerImageUrl(emoji),
-        width: size,
-        height: size,
-        cacheWidth: (size * 3).round(),
-        fit: BoxFit.contain,
-        filterQuality: FilterQuality.medium,
-        gaplessPlayback: true,
-        errorBuilder: (_, __, ___) => Center(child: fallback),
-        loadingBuilder: (_, child, progress) =>
-            progress == null ? child : const SizedBox.shrink(),
+    // FittedBox يمنع قص الإيموجي من الجانب عند استخدام خط النظام (أندرويد).
+    final fallback = FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Padding(
+        padding: EdgeInsets.all(size * 0.06),
+        child: Text(emoji,
+            maxLines: 1,
+            softWrap: false,
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: size * 0.8, height: 1.2)),
       ),
     );
+    final Widget image = kIsWeb
+        ? Image.network(
+            stickerImageUrl(emoji),
+            width: size,
+            height: size,
+            cacheWidth: (size * 3).round(),
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.medium,
+            gaplessPlayback: true,
+            errorBuilder: (_, __, ___) => Center(child: fallback),
+            loadingBuilder: (_, child, progress) =>
+                progress == null ? child : const SizedBox.shrink(),
+          )
+        : CachedNetworkImage(
+            imageUrl: stickerImageUrl(emoji),
+            width: size,
+            height: size,
+            memCacheWidth: (size * 3).round(),
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.medium,
+            fadeInDuration: Duration.zero,
+            placeholder: (_, __) => const SizedBox.shrink(),
+            errorWidget: (_, __, ___) => Center(child: fallback),
+          );
+    return SizedBox(width: size, height: size, child: image);
   }
 }
 
