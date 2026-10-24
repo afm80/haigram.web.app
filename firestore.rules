@@ -51,6 +51,13 @@ service cloud.firestore {
             || request.resource.data.name == myProfile().username);
     }
 
+    // موضع عنصر تفاعلي (استطلاع/أسئلة/شريط) فوق القصة: كلها اختيارية.
+    function validStoryPos(m) {
+      return (!('x' in m) || (m.x is number && m.x >= 0 && m.x <= 1))
+          && (!('y' in m) || (m.y is number && m.y >= 0 && m.y <= 1))
+          && (!('s' in m) || (m.s is number && m.s >= 0.3 && m.s <= 3))
+          && (!('ar' in m) || (m.ar is number && m.ar >= 0.1 && m.ar <= 10));
+    }
     // معلومات القصة (رابط/موقع/عدّ تنازلي/وقت): كلها اختيارية وبحدود صارمة.
     function hasStoryInfo(d) {
       return 'link' in d || 'location' in d || 'countdown' in d || 'time' in d;
@@ -301,7 +308,7 @@ service cloud.firestore {
         && (!('poll' in request.resource.data)
             || (request.resource.data.type == 'story'
                 && request.resource.data.poll is map
-                && request.resource.data.poll.keys().hasOnly(['q', 'a', 'b'])
+                && request.resource.data.poll.keys().hasOnly(['q', 'a', 'b', 'x', 'y', 's', 'ar'])
                 && request.resource.data.poll.q is string
                 && request.resource.data.poll.q.size() > 0
                 && request.resource.data.poll.q.size() <= 100
@@ -310,25 +317,28 @@ service cloud.firestore {
                 && request.resource.data.poll.a.size() <= 40
                 && request.resource.data.poll.b is string
                 && request.resource.data.poll.b.size() > 0
-                && request.resource.data.poll.b.size() <= 40))
+                && request.resource.data.poll.b.size() <= 40
+                && validStoryPos(request.resource.data.poll)))
         // صندوق أسئلة القصة: عبارة قصيرة، للقصص فقط.
         && (!('question' in request.resource.data)
             || (request.resource.data.type == 'story'
                 && request.resource.data.question is map
-                && request.resource.data.question.keys().hasOnly(['q'])
+                && request.resource.data.question.keys().hasOnly(['q', 'x', 'y', 's', 'ar'])
                 && request.resource.data.question.q is string
                 && request.resource.data.question.q.size() > 0
-                && request.resource.data.question.q.size() <= 100))
+                && request.resource.data.question.q.size() <= 100
+                && validStoryPos(request.resource.data.question)))
         // شريط إيموجي القصة: سؤال اختياري (قصير) وإيموجي، للقصص فقط.
         && (!('slider' in request.resource.data)
             || (request.resource.data.type == 'story'
                 && request.resource.data.slider is map
-                && request.resource.data.slider.keys().hasOnly(['q', 'e'])
+                && request.resource.data.slider.keys().hasOnly(['q', 'e', 'x', 'y', 's', 'ar'])
                 && request.resource.data.slider.q is string
                 && request.resource.data.slider.q.size() <= 100
                 && request.resource.data.slider.e is string
                 && request.resource.data.slider.e.size() > 0
-                && request.resource.data.slider.e.size() <= 16))
+                && request.resource.data.slider.e.size() <= 16
+                && validStoryPos(request.resource.data.slider)))
         // معلومات القصة: للقصص فقط.
         && validStoryInfo(request.resource.data)
         && (request.resource.data.type == 'story'
