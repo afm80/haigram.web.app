@@ -4,7 +4,7 @@
     "target": {
       "namespace": "android_app",
       "package_name": "com.haigram.app",
-      "sha256_cert_fingerprints": ["ضع_هنا_بصمة_SHA256"]
+      "sha256_cert_fingerprints": ["24:A3:48:CE:16:25:84:00:D1:2B:8A:61:45:AD:43:70:89:4D:79:B2:7D:0F:50:F7:73:99:13:E5:52:1C:2A:3F"]
     }
   }
 ]
