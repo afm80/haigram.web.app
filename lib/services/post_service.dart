@@ -13,6 +13,7 @@ import 'social_service.dart';
 import 'user_service.dart';
 
 import '../l10n.dart';
+import '../share_links.dart';
 import '../video_source.dart';
 
 enum PostType { photo, text, story }
@@ -74,6 +75,8 @@ class Post {
   final String? videoUrl; // الرابط الأصلي للمنصات غير يوتيوب
   final bool isShort; // فيديو عمودي (شورتز، ريلز، تيك توك)
   final int? bg; // قصة نصية: رقم الخلفية الملونة (فارغ = قصة صورة)
+  final int? tbg; // منشور نصي: رقم الخلفية الملونة (فارغ = بلا خلفية)
+  final int? tc; // منشور نصي: رقم لون النص (فارغ = اللون الافتراضي)
   final StoryPoll? poll; // استطلاع داخل القصة (اختياري)
   final List<StoryMention> mentions; // مستخدمون مذكورون في القصة
   final bool authorPrivate; // حساب صاحب المنشور خاص (تفرضه قواعد Firestore)
@@ -106,6 +109,8 @@ class Post {
     this.videoUrl,
     this.isShort = false,
     this.bg,
+    this.tbg,
+    this.tc,
     this.poll,
     this.mentions = const [],
     this.authorPrivate = false,
@@ -144,6 +149,8 @@ class Post {
       videoUrl: m['videoUrl'] as String?,
       isShort: m['isShort'] == true,
       bg: (m['bg'] as num?)?.toInt(),
+      tbg: (m['tbg'] as num?)?.toInt(),
+      tc: (m['tc'] as num?)?.toInt(),
       poll: StoryPoll.fromMap(m['poll']),
       mentions: StoryMention.listFrom(m['mentions']),
       authorPrivate: m['authorPrivate'] == true,
@@ -499,8 +506,7 @@ class PostService {
     }
   }
 
-  static String postLink(Post post) =>
-      Uri.base.replace(path: '/', queryParameters: {'p': post.id}).toString();
+  static String postLink(Post post) => postLinkFor(post.id);
 
   /// رفع ملف إلى Storage مع تتبّع نسبة التقدم.
   static Future<String> _upload(Uint8List bytes, String path,
@@ -832,8 +838,10 @@ class PostService {
 
   /// منشور نصي، وقد يرافقه (أو يحلّ محلّه) فيديو يوتيوب.
   static Future<void> publishText(String text,
-          {VideoSource? video}) =>
+          {VideoSource? video, int? tbg, int? tc}) =>
       _create(PostType.text, text, null, extra: {
+        if (tbg != null) 'tbg': tbg,
+        if (tc != null) 'tc': tc,
         if (video != null) 'videoId': video.id,
         // يوتيوب بلا حقلي المنصة والرابط (متوافق مع المنشورات والقواعد القديمة).
         if (video != null && video.provider != VideoProvider.youtube) ...{
@@ -1288,6 +1296,60 @@ class PostService {
   /// تعديل نص المنشور/وصف الفيديو (للمالك فقط حسب قواعد Firestore).
   static Future<void> updateCaption(Post p, String caption) async {
     await _db.collection('posts').doc(p.id).update({'caption': caption});
+  }
+
+  /// تعديل منشور نصي: النص مع الخلفية ولون النص (null = إزالته).
+  static Future<void> updateTextPost(Post p,
+      {required String caption, int? tbg, int? tc}) async {
+    await _db.collection('posts').doc(p.id).update({
+      'caption': caption,
+      'tbg': tbg ?? FieldValue.delete(),
+      'tc': tc ?? FieldValue.delete(),
+    });
+  }
+
+  /// إضافة صور لمنشور نصي: يتحوّل إلى منشور صورة (أو ألبوم) بالنص نفسه،
+  /// وتُزال الخلفية ولون النص لأنهما للمنشور النصي فقط.
+  static Future<void> convertTextToPhotoPost(
+    Post p, {
+    required String caption,
+    required List<Uint8List> images,
+    required String mime,
+    required String ext,
+    void Function(double)? onProgress,
+  }) async {
+    if (images.isEmpty) {
+      throw StateError(tr('اختر صورة واحدة على الأقل'));
+    }
+    if (images.length > maxAlbumImages) {
+      throw StateError(trf('الحد الأقصى {0} صور', [maxAlbumImages]));
+    }
+    if (!useRemoteMedia) {
+      throw StateError(tr('إضافة الصور تتطلب تفعيل Cloudinary أو Storage'));
+    }
+    final urls = <String>[];
+    onProgress?.call(0);
+    for (var i = 0; i < images.length; i++) {
+      final String url;
+      if (useCloudinary) {
+        url = await _uploadCloudinary(images[i], mime, ext);
+      } else {
+        url = await _upload(images[i],
+            'photos/${_user.uid}/${_stamp()}_$i.$ext', mime, null);
+      }
+      urls.add(url);
+      onProgress?.call((i + 1) / images.length);
+    }
+    await _db.collection('posts').doc(p.id).update({
+      'type': PostType.photo.name,
+      'caption': caption,
+      'mediaUrl': urls.first,
+      'mime': mime,
+      if (urls.length > 1) 'albumUrls': urls,
+      'tbg': FieldValue.delete(),
+      'tc': FieldValue.delete(),
+    });
+    notifyStatsChanged();
   }
 
   static Future<void> deletePost(Post p) async {
