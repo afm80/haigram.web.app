@@ -23,6 +23,10 @@ String trf(String ar, List<Object?> args) {
 }
 
 const Map<String, String> _en = {
+  'GIF': "GIF",
+  'ابحث عن GIF': "Search GIFs",
+  'تعذر تحميل الـ GIF': "Couldn't load GIFs",
+  'تعذر إرسال الـ GIF': "Couldn't send the GIF",
   'إبلاغ عن الرسالة': "Report message",
   'إبلاغ عن هذه الرسالة': "Report this message",
   'اختر السبب الأقرب. لن يعرف المرسل أنك من أبلغ.': "Choose the closest reason. The sender won't know you reported.",
