@@ -7475,6 +7475,94 @@ class _MessageState extends StatelessWidget {
       );
 }
 
+/// بطاقة تظهر في محادثة فردية فارغة: صورة الطرف الآخر واسمه ونصائح السلامة.
+class _ChatIntroCard extends StatelessWidget {
+  final String otherUid;
+
+  const _ChatIntroCard({required this.otherUid});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final tips = [
+      tr('لا تشارك كلمة المرور أو رموز التحقق مع أي شخص.'),
+      tr('احذر الروابط والطلبات المالية من حسابات لا تعرفها.'),
+      tr('لا ترسل صوراً خاصة لمن لا تثق به.'),
+      tr('يمكنك حظر الحساب أو الإبلاغ عنه في أي وقت.'),
+    ];
+    return FutureBuilder<AppUser?>(
+      future: UserService.profileOf(otherUid),
+      builder: (context, snapshot) {
+        final user = snapshot.data;
+        return Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                UserAvatar(
+                  uid: otherUid,
+                  fallbackName: user?.username ?? '',
+                  profile: user,
+                  radius: 44,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  user?.displayName ?? tr('مستخدم'),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+                if (user != null && user.username.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text('@${user.username}',
+                        style: TextStyle(color: colors.textDim)),
+                  ),
+                const SizedBox(height: 14),
+                Text(
+                  tr('أرسل أول رسالة لبدء المحادثة'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: colors.textDim),
+                ),
+                const SizedBox(height: 22),
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(
+                    tr('نصائح متعلقة بالسلامة'),
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                for (final tip in tips)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.shield_outlined,
+                            size: 15, color: colors.textDim),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(tip,
+                              style: TextStyle(
+                                  fontSize: 12.5, color: colors.textDim)),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// ورقة اختيار المحادثات لإعادة توجيه رسالة أو أكثر إليها (اختيار متعدد
 /// كإنستغرام).
 class _ForwardSheet extends StatefulWidget {

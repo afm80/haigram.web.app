@@ -6,7 +6,7 @@ import 'dart:async';
 import 'dart:html' as html;
 import 'dart:math' as math;
 import 'dart:typed_data';
-import 'dart:web_audio' as wa;
+import 'dart:js_util' as js_util;
 
 const int voiceMaxSeconds = 120;
 
@@ -52,7 +52,7 @@ class VoiceRecorder {
   final List<html.Blob> _chunks = [];
   final Stopwatch _clock = Stopwatch();
   _Format? _format;
-  wa.AudioContext? _ctx;
+  Object? _ctx;
   Timer? _sampler;
   final List<double> _levels = [];
 
@@ -98,18 +98,26 @@ class VoiceRecorder {
   void _startMeter(html.MediaStream stream) {
     _levels.clear();
     try {
-      final ctx = wa.AudioContext();
-      final analyser = ctx.createAnalyser();
-      analyser.fftSize = 512;
-      ctx.createMediaStreamSource(stream).connectNode(analyser);
+      // بلا dart:web_audio (أُزيلت من بعض إصدارات SDK): نستدعي Web Audio عبر js_util.
+      Object? ctor = js_util.getProperty<Object?>(html.window, 'AudioContext');
+      ctor ??= js_util.getProperty<Object?>(html.window, 'webkitAudioContext');
+      if (ctor == null) return;
+      final Object ctx = js_util.callConstructor<Object>(ctor, <Object?>[]);
+      final Object analyser =
+          js_util.callMethod<Object>(ctx, 'createAnalyser', <Object?>[]);
+      js_util.setProperty(analyser, 'fftSize', 512);
+      final Object source = js_util
+          .callMethod<Object>(ctx, 'createMediaStreamSource', <Object?>[stream]);
+      js_util.callMethod<void>(source, 'connect', <Object?>[analyser]);
       try {
-        ctx.resume();
+        js_util.callMethod<void>(ctx, 'resume', <Object?>[]);
       } catch (_) {}
       _ctx = ctx;
       final buf = Uint8List(512);
       _sampler = Timer.periodic(const Duration(milliseconds: 100), (_) {
         try {
-          analyser.getByteTimeDomainData(buf);
+          js_util.callMethod<void>(
+              analyser, 'getByteTimeDomainData', <Object?>[buf]);
           var peak = 0;
           for (final v in buf) {
             final d = (v - 128).abs();
@@ -148,7 +156,8 @@ class VoiceRecorder {
     _sampler?.cancel();
     _sampler = null;
     try {
-      _ctx?.close();
+      final ctx = _ctx;
+      if (ctx != null) js_util.callMethod<void>(ctx, 'close', <Object?>[]);
     } catch (_) {}
     _ctx = null;
     _clock.stop();
