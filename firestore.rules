@@ -131,7 +131,7 @@ service cloud.firestore {
       return data.keys().hasOnly([
           'conversationId', 'senderUid', 'text', 'kind', 'createdAt', 'savedAt',
           'imageUrl', 'shareType', 'shareId', 'shareSubtitle', 'shareImage',
-          'shareLink', 'lat', 'lng', 'audioUrl', 'audioSecs'
+          'shareLink', 'lat', 'lng', 'audioUrl', 'audioSecs', 'audioWave'
         ])
         && data.keys().hasAll([
           'conversationId', 'senderUid', 'text', 'kind', 'createdAt', 'savedAt'
@@ -158,6 +158,9 @@ service cloud.firestore {
           || (data.audioUrl is string && data.audioUrl.size() <= 1000))
         && (!('audioSecs' in data)
           || (data.audioSecs is int && data.audioSecs >= 1 && data.audioSecs <= 125))
+        && (!('audioWave' in data)
+          || (data.audioWave is string && data.audioWave.size() <= 64
+            && data.audioWave.matches('^[0-9]+$')))
         && (!('shareType' in data) || data.shareType in ['post', 'profile'])
         && (!('shareId' in data)
           || (data.shareId is string && data.shareId.size() <= 128))
@@ -1004,7 +1007,7 @@ service cloud.firestore {
             'readBy', 'createdAt', 'replyToMessageId', 'replyToText',
             'replyToSenderUid', 'forwarded', 'shareType', 'shareId',
             'shareSubtitle', 'shareImage', 'shareLink', 'lat', 'lng',
-            'viewOnce', 'expiresAt', 'audioUrl', 'audioSecs'
+            'viewOnce', 'expiresAt', 'audioUrl', 'audioSecs', 'audioWave'
           ])
           && request.resource.data.keys().hasAll([
             'senderUid', 'text', 'kind', 'deliveredTo', 'readBy', 'createdAt'
@@ -1096,7 +1099,7 @@ service cloud.firestore {
             // رسالة صوتية: رابط الملف (Cloudinary/Storage) ومدتها بالثواني.
             (request.resource.data.kind == 'audio'
               && request.resource.data.keys().hasOnly([
-                'senderUid', 'text', 'kind', 'audioUrl', 'audioSecs',
+                'senderUid', 'text', 'kind', 'audioUrl', 'audioSecs', 'audioWave',
                 'deliveredTo', 'readBy', 'createdAt', 'replyToMessageId',
                 'replyToText', 'replyToSenderUid', 'forwarded', 'expiresAt'
               ])
@@ -1107,6 +1110,10 @@ service cloud.firestore {
               && request.resource.data.audioSecs is int
               && request.resource.data.audioSecs >= 1
               && request.resource.data.audioSecs <= 125
+              && (!('audioWave' in request.resource.data)
+                || (request.resource.data.audioWave is string
+                  && request.resource.data.audioWave.size() <= 64
+                  && request.resource.data.audioWave.matches('^[0-9]+$')))
               && request.resource.data.text.size() <= 200)
             ||
             // موقع: إحداثيان صالحان، والنص اسم المكان (قصير).
