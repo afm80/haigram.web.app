@@ -408,6 +408,8 @@ function chatNotificationBody(message) {
       return '📷 صورة جديدة';
     case 'audio':
       return '🎤 رسالة صوتية';
+    case 'gif':
+      return '🎞 GIF';
     case 'location':
       return '📍 موقع';
     case 'share':
