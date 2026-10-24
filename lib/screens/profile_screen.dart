@@ -490,13 +490,6 @@ class _Header extends StatelessWidget {
                             : null,
                       ),
                     ),
-                    if (isMe || !u.hideLikes)
-                      Expanded(
-                        child: _LiveStat(
-                          label: tr('إعجابات'),
-                          load: () => PostService.totalLikes(uid),
-                        ),
-                      ),
                     Expanded(
                       child: _LiveStat(
                         label: tr('أتابعه'),
