@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../auth_gate.dart';
 import '../l10n.dart';
+import 'story_dialog.dart';
 import '../services/post_service.dart';
 import 'sticker_sheet.dart' show StickerGlyph;
 
@@ -9,10 +10,11 @@ const List<String> _sliderEmojis = ['😍', '🔥', '😂', '😮', '😢', '�
 
 /// نافذة إنشاء شريط الإيموجي: سؤال اختياري واختيار الإيموجي. تعيد null عند الإلغاء.
 Future<StorySlider?> showSliderDialog(BuildContext context,
-    {StorySlider? initial}) {
-  return showDialog<StorySlider>(
-    context: context,
-    builder: (_) => _SliderDialog(initial: initial),
+    {StorySlider? initial, ValueChanged<bool>? onOpen}) {
+  return showStoryDialog<StorySlider>(
+    context,
+    (_) => _SliderDialog(initial: initial),
+    onOpen: onOpen,
   );
 }
 

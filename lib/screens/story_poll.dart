@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../auth_gate.dart';
 import '../l10n.dart';
+import 'story_dialog.dart';
 import '../services/post_service.dart';
 
 /// نافذة إنشاء الاستطلاع: سؤال وخياران. تعيد null عند الإلغاء.
-Future<StoryPoll?> showPollDialog(BuildContext context, {StoryPoll? initial}) {
-  return showDialog<StoryPoll>(
-    context: context,
-    builder: (_) => _PollDialog(initial: initial),
+Future<StoryPoll?> showPollDialog(BuildContext context,
+    {StoryPoll? initial, ValueChanged<bool>? onOpen}) {
+  return showStoryDialog<StoryPoll>(
+    context,
+    (_) => _PollDialog(initial: initial),
+    onOpen: onOpen,
   );
 }
 

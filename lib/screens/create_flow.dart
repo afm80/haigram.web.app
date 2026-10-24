@@ -474,6 +474,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
   int _publishedCount = 0; // عدد القصص المنشورة حتى الآن
   bool _extrasSent = false; // أُرسل الاستطلاع والذكر مع أول قصة
   bool _lockScroll = false; // نوقف التمرير أثناء تحريك ملصق
+  bool _dialogOpen = false; // نافذة استطلاع/أسئلة مفتوحة: نجمّد حجم الصفحة
+  double? _frozenImgH; // ارتفاع الصورة المثبّت أثناء النافذة
   StoryPoll? _poll; // استطلاع القصة (اختياري)
   StoryQuestion? _question; // صندوق أسئلة القصة (اختياري)
   StorySlider? _slider; // شريط إيموجي القصة (اختياري)
@@ -759,18 +761,30 @@ class _ComposeScreenState extends State<ComposeScreen> {
     });
   }
 
+  void _setDialogOpen(bool v) {
+    if (!mounted || _dialogOpen == v) return;
+    setState(() {
+      _dialogOpen = v;
+      _frozenImgH =
+          v ? MediaQuery.of(context).size.height * 0.5 : null;
+    });
+  }
+
   Future<void> _editSlider() async {
-    final r = await showSliderDialog(context, initial: _slider);
+    final r = await showSliderDialog(context,
+        initial: _slider, onOpen: _setDialogOpen);
     if (r != null && mounted) setState(() => _slider = r);
   }
 
   Future<void> _editQuestion() async {
-    final q = await showQuestionDialog(context, initial: _question);
+    final q = await showQuestionDialog(context,
+        initial: _question, onOpen: _setDialogOpen);
     if (q != null && mounted) setState(() => _question = q);
   }
 
   Future<void> _editPoll() async {
-    final p = await showPollDialog(context, initial: _poll);
+    final p = await showPollDialog(context,
+        initial: _poll, onOpen: _setDialogOpen);
     if (p != null && mounted) setState(() => _poll = p);
   }
 
@@ -995,6 +1009,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: !_dialogOpen,
       appBar: AppBar(
         title: Text(_kindTitle(widget.kind)),
         actions: [
@@ -1022,7 +1037,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
                   borderRadius: BorderRadius.circular(14),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
-                        maxHeight: MediaQuery.of(context).size.height * 0.5),
+                        maxHeight: _frozenImgH ??
+                        MediaQuery.of(context).size.height * 0.5),
                     child: RepaintBoundary(
                       key: _captureKey,
                       child: Stack(

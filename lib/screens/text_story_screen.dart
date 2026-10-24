@@ -32,7 +32,12 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
   final List<StoryMention> _mentions = [];
   bool _closeFriends = false; // القصة للأصدقاء المقربين فقط
   bool _busy = false;
+  bool _dialogOpen = false; // نافذة مفتوحة: نجمّد حجم الصفحة
   String? _error;
+
+  void _setDialogOpen(bool v) {
+    if (mounted && _dialogOpen != v) setState(() => _dialogOpen = v);
+  }
 
   @override
   void dispose() {
@@ -41,17 +46,20 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
   }
 
   Future<void> _editSlider() async {
-    final r = await showSliderDialog(context, initial: _slider);
+    final r = await showSliderDialog(context,
+        initial: _slider, onOpen: _setDialogOpen);
     if (r != null && mounted) setState(() => _slider = r);
   }
 
   Future<void> _editQuestion() async {
-    final q = await showQuestionDialog(context, initial: _question);
+    final q = await showQuestionDialog(context,
+        initial: _question, onOpen: _setDialogOpen);
     if (q != null && mounted) setState(() => _question = q);
   }
 
   Future<void> _editPoll() async {
-    final p = await showPollDialog(context, initial: _poll);
+    final p = await showPollDialog(context,
+        initial: _poll, onOpen: _setDialogOpen);
     if (p != null && mounted) setState(() => _poll = p);
   }
 
@@ -93,6 +101,7 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: !_dialogOpen,
       body: Container(
         decoration: BoxDecoration(gradient: storyGradient(_bg)),
         child: SafeArea(

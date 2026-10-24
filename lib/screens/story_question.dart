@@ -2,15 +2,17 @@ import 'package:flutter/material.dart';
 
 import '../auth_gate.dart';
 import '../l10n.dart';
+import 'story_dialog.dart';
 import '../services/post_service.dart';
 import '../theme.dart';
 
 /// نافذة إنشاء صندوق الأسئلة: عبارة قصيرة يجيب عنها المشاهدون. تعيد null عند الإلغاء.
 Future<StoryQuestion?> showQuestionDialog(BuildContext context,
-    {StoryQuestion? initial}) {
-  return showDialog<StoryQuestion>(
-    context: context,
-    builder: (_) => _QuestionDialog(initial: initial),
+    {StoryQuestion? initial, ValueChanged<bool>? onOpen}) {
+  return showStoryDialog<StoryQuestion>(
+    context,
+    (_) => _QuestionDialog(initial: initial),
+    onOpen: onOpen,
   );
 }
 
@@ -45,6 +47,7 @@ class _QuestionDialogState extends State<_QuestionDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      scrollable: true,
       title: Text(tr('صندوق أسئلة')),
       content: Column(
         mainAxisSize: MainAxisSize.min,
