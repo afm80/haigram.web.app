@@ -54,6 +54,16 @@ class PresenceService {
     }
   }
 
+  /// الوقت الحالي بساعة الخادم (تقريباً)، لحساب «نشط قبل ...» بدقة.
+  static DateTime get serverNow => DateTime.now().add(_serverOffset);
+
+  /// آخر نبضة/نشاط للمستخدم (وقت الخادم)، أو null إن لم يُسجَّل شيء.
+  static Stream<DateTime?> lastActive(String uid) =>
+      _presence(uid).snapshots().map((snapshot) {
+        final updatedAt = snapshot.data()?['updatedAt'];
+        return updatedAt is Timestamp ? updatedAt.toDate() : null;
+      });
+
   static Stream<bool> isOnline(String uid) =>
       _streams.putIfAbsent(uid, () => _onlineStream(uid));
 
