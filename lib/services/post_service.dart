@@ -54,6 +54,25 @@ class StoryQuestion {
   }
 }
 
+/// شريط إيموجي داخل القصة: سؤال اختياري وإيموجي يسحبه المشاهد (0 إلى 100).
+class StorySlider {
+  final String q;
+  final String e;
+  const StorySlider({required this.q, required this.e});
+
+  Map<String, dynamic> toMap() => {'q': q, 'e': e};
+
+  static StorySlider? fromMap(Object? m) {
+    if (m is! Map) return null;
+    final q = m['q'];
+    final e = m['e'];
+    if (q is String && e is String && e.isNotEmpty) {
+      return StorySlider(q: q, e: e);
+    }
+    return null;
+  }
+}
+
 /// إجابة مشاهد على صندوق أسئلة القصة (يقرؤها صاحب القصة).
 class StoryAnswer {
   final String uid;
@@ -109,6 +128,7 @@ class Post {
   final int? tc; // منشور نصي: رقم لون النص (فارغ = اللون الافتراضي)
   final StoryPoll? poll; // استطلاع داخل القصة (اختياري)
   final StoryQuestion? question; // صندوق أسئلة داخل القصة (اختياري)
+  final StorySlider? slider; // شريط إيموجي داخل القصة (اختياري)
   final List<StoryMention> mentions; // مستخدمون مذكورون في القصة
   final bool authorPrivate; // حساب صاحب المنشور خاص (تفرضه قواعد Firestore)
   final bool closeFriends; // قصة للأصدقاء المقربين فقط (مجموعة closeStories)
@@ -144,6 +164,7 @@ class Post {
     this.tc,
     this.poll,
     this.question,
+    this.slider,
     this.mentions = const [],
     this.authorPrivate = false,
     this.closeFriends = false,
@@ -185,6 +206,7 @@ class Post {
       tc: (m['tc'] as num?)?.toInt(),
       poll: StoryPoll.fromMap(m['poll']),
       question: StoryQuestion.fromMap(m['question']),
+      slider: StorySlider.fromMap(m['slider']),
       mentions: StoryMention.listFrom(m['mentions']),
       authorPrivate: m['authorPrivate'] == true,
       closeFriends: m['closeFriends'] == true,
@@ -888,12 +910,14 @@ class PostService {
   static Future<void> publishTextStory(String text, int bg,
           {StoryPoll? poll,
           StoryQuestion? question,
+          StorySlider? slider,
           List<StoryMention> mentions = const [],
           bool closeFriends = false}) =>
       _create(PostType.story, text, null, closeFriends: closeFriends, extra: {
         'bg': bg,
         if (poll != null) 'poll': poll.toMap(),
         if (question != null) 'question': question.toMap(),
+        if (slider != null) 'slider': slider.toMap(),
         if (mentions.isNotEmpty)
           'mentions': [for (final m in mentions) m.toMap()],
       });
@@ -958,6 +982,39 @@ class PostService {
       votes.where('choice', isEqualTo: 1).count().get(),
     ]);
     return [r[0].count ?? 0, r[1].count ?? 0];
+  }
+
+  // ---- شريط إيموجي القصة ----
+  /// يسجّل تقييمي (0 إلى 100). مرة واحدة فقط؛ القواعد ترفض التعديل.
+  static Future<void> voteSlider(String storyId, int value) => _db
+      .collection(_colOf(storyId))
+      .doc(storyId)
+      .collection('sliderVotes')
+      .doc(_user.uid)
+      .set({'v': value.clamp(0, 100), 'at': FieldValue.serverTimestamp()});
+
+  /// تقييمي، أو null إن لم أقيّم.
+  static Future<int?> mySliderVote(String storyId) async {
+    if (isGuest) return null;
+    final d = await _db
+        .collection(_colOf(storyId))
+        .doc(storyId)
+        .collection('sliderVotes')
+        .doc(_user.uid)
+        .get();
+    final v = d.data()?['v'];
+    return v is num ? v.toInt() : null;
+  }
+
+  /// عدد المقيّمين ومتوسط تقييمهم (0 إلى 100) باستعلام تجميعي واحد.
+  static Future<(int, double)> sliderStats(String storyId) async {
+    final r = await _db
+        .collection(_colOf(storyId))
+        .doc(storyId)
+        .collection('sliderVotes')
+        .aggregate(count(), average('v'))
+        .get();
+    return (r.count ?? 0, r.getAverage('v') ?? 0.0);
   }
 
   // ---- صندوق أسئلة القصة ----
@@ -1487,7 +1544,7 @@ class PostService {
   /// يحذف مشاهدات القصة وأصواتها وإعجاباتها قبل حذف القصة نفسها (القواعد تتحقق
   /// من صاحب القصة، فلا بد أن تسبق حذف المستند). أي فشل لا يوقف حذف القصة.
   static Future<void> _deleteStoryExtras(String storyId) async {
-    for (final sub in const ['views', 'votes', 'answers', 'likes']) {
+    for (final sub in const ['views', 'votes', 'sliderVotes', 'answers', 'likes']) {
       try {
         if (sub == 'likes' && isCloseId(storyId)) continue;
         final snap = await _db
