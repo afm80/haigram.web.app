@@ -23,6 +23,9 @@ String trf(String ar, List<Object?> args) {
 }
 
 const Map<String, String> _en = {
+  'إبلاغ عن الرسالة': "Report message",
+  'إبلاغ عن هذه الرسالة': "Report this message",
+  'اختر السبب الأقرب. لن يعرف المرسل أنك من أبلغ.': "Choose the closest reason. The sender won't know you reported.",
   'أنت': "You",
   'اضغط لإزالة تفاعلك': "Tap to remove your reaction",
   'حرّر للإلغاء': "Release to cancel",
