@@ -191,10 +191,11 @@ Future<PickedMedia?> pickMedia(
 Future<(List<PickedMedia>, bool)> pickAlbumMedia(
   ImagePicker picker, {
   int max = PostService.maxAlbumImages,
+  bool tall = false,
 }) async {
   if (max <= 0) return (<PickedMedia>[], false);
   final files = await picker.pickMultiImage(
-      maxWidth: 1080, maxHeight: 1080, imageQuality: 60);
+      maxWidth: 1080, maxHeight: tall ? 1920 : 1080, imageQuality: 60);
   final out = <PickedMedia>[];
   for (final f in files.take(max)) {
     final bytes = await f.readAsBytes();
@@ -248,6 +249,26 @@ class _CaptureScreenState extends State<CaptureScreen> {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text(trf('الحد الأقصى {0} صور، تم أخذ أول {1}',
                   [PostService.maxAlbumImages, PostService.maxAlbumImages]))));
+        }
+        Navigator.of(context).pushReplacement(MaterialPageRoute(
+            builder: (_) => ComposeScreen(
+                kind: widget.kind,
+                media: picked.first,
+                extraMedia: picked.sublist(1))));
+        return;
+      }
+      // قصة من ملفات الجهاز: اختيار عدة صور تُنشر كقصص متتالية (مثل إنستغرام).
+      if (source == ImageSource.gallery && widget.kind == CreateKind.story) {
+        final (picked, truncated) = await pickAlbumMedia(_picker,
+            max: ComposeScreen.maxStoryImages, tall: true);
+        if (picked.isEmpty || !mounted) {
+          if (mounted) setState(() => _busy = false);
+          return;
+        }
+        if (truncated) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(trf('الحد الأقصى {0} صور، تم أخذ أول {1}',
+                  [ComposeScreen.maxStoryImages, ComposeScreen.maxStoryImages]))));
         }
         Navigator.of(context).pushReplacement(MaterialPageRoute(
             builder: (_) => ComposeScreen(
@@ -421,6 +442,9 @@ class ComposeScreen extends StatefulWidget {
   final CreateKind kind;
   final PickedMedia? media; // null = منشور نصي فقط
   final List<PickedMedia> extraMedia; // صور إضافية لألبوم (بعد الأولى)
+
+  /// أقصى عدد صور تُنشر دفعة واحدة كقصص متتالية.
+  static const maxStoryImages = 10;
   const ComposeScreen(
       {super.key, required this.kind, this.media, this.extraMedia = const []});
 
@@ -433,7 +457,11 @@ class _ComposeScreenState extends State<ComposeScreen> {
   final _videoLink = TextEditingController();
   final _scroll = ScrollController();
   final _captureKey = GlobalKey(); // يلتقط الصورة مع ملصقاتها عند النشر
-  final List<StoryStickerItem> _stickers = [];
+  // ملصقات ونصوص كل صورة على حدة (المفتاح هو كائن الصورة نفسه).
+  final Map<PickedMedia, List<StoryStickerItem>> _stickerMap = {};
+  int _cur = 0; // الصورة المعروضة حالياً للتحرير (للقصص المتعددة)
+  int _publishedCount = 0; // عدد القصص المنشورة حتى الآن
+  bool _extrasSent = false; // أُرسل الاستطلاع والذكر مع أول قصة
   bool _lockScroll = false; // نوقف التمرير أثناء تحريك ملصق
   StoryPoll? _poll; // استطلاع القصة (اختياري)
   final List<StoryMention> _mentions = []; // مذكورون في القصة (حتى 3)
@@ -456,6 +484,22 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
   bool get _textOnly => _images.isEmpty;
 
+  bool get _isStory => widget.kind == CreateKind.story;
+
+  /// الصورة قيد التحرير حالياً.
+  PickedMedia get _curImage {
+    if (_cur >= _images.length) _cur = _images.length - 1;
+    if (_cur < 0) _cur = 0;
+    return _images[_cur];
+  }
+
+  /// ملصقات الصورة [m].
+  List<StoryStickerItem> _stickersOf(PickedMedia m) =>
+      _stickerMap.putIfAbsent(m, () => <StoryStickerItem>[]);
+
+  /// ملصقات الصورة المعروضة الآن.
+  List<StoryStickerItem> get _stickers => _stickersOf(_curImage);
+
   // خلفية ولون النص للمنشور النصي فقط (على طريقة فيسبوك).
   int? _tbg;
   int? _tc;
@@ -465,6 +509,10 @@ class _ComposeScreenState extends State<ComposeScreen> {
   // الألبومات للمنشور فقط (لا للقصة) وتتطلب تخزيناً برابط مباشر.
   bool get _canAlbum =>
       widget.kind == CreateKind.post && PostService.useRemoteMedia;
+
+  // القصة تقبل عدة صور (كل صورة قصة مستقلة) بدون شرط التخزين.
+  int get _maxImages =>
+      _isStory ? ComposeScreen.maxStoryImages : PostService.maxAlbumImages;
 
   /// إضافة الصورة الأولى للمنشور (اختيارية): من الكاميرا أو ملفات الجهاز.
   Future<void> _addFirstPhoto(ImageSource source) async {
@@ -499,16 +547,15 @@ class _ComposeScreenState extends State<ComposeScreen> {
   }
 
   Future<void> _addMore() async {
-    final room = PostService.maxAlbumImages - _images.length;
+    final room = _maxImages - _images.length;
     if (room <= 0 || _busy) return;
     try {
-      final (picked, truncated) = await pickAlbumMedia(_picker, max: room);
+      final (picked, truncated) =
+          await pickAlbumMedia(_picker, max: room, tall: _isStory);
       if (!mounted || picked.isEmpty) return;
       setState(() {
         _images.addAll(picked);
-        _error = truncated
-            ? trf('الحد الأقصى {0} صور', [PostService.maxAlbumImages])
-            : null;
+        _error = truncated ? trf('الحد الأقصى {0} صور', [_maxImages]) : null;
       });
     } on MediaError catch (e) {
       if (mounted) setState(() => _error = e.message);
@@ -640,7 +687,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
       };
 
   // الملصقات للقصة المصوّرة (صورة واحدة) فقط.
-  bool get _canSticker => widget.kind == CreateKind.story && _images.length == 1;
+  bool get _canSticker => _isStory && _images.isNotEmpty;
 
   Future<void> _addSticker() async {
     final emoji = await showModalBottomSheet<String>(
@@ -681,19 +728,21 @@ class _ComposeScreenState extends State<ComposeScreen> {
     if (p != null && mounted) setState(() => _poll = p);
   }
 
-  /// الصورة التي ستُرفع: الأصلية، أو بعد دمج الملصقات فيها.
-  Future<PickedMedia?> _mediaToPublish() async {
-    if (_images.isEmpty) return null;
-    final first = _images.first;
-    if (!_canSticker || _stickers.isEmpty) return first;
+  /// الصورة رقم [index] التي ستُرفع: الأصلية، أو بعد دمج ملصقاتها فيها.
+  Future<PickedMedia> _mediaToPublish(int index) async {
+    final img = _images[index];
+    if (!_canSticker || _stickersOf(img).isEmpty) return img;
+    // نعرض هذه الصورة في المعاينة ثم نلتقطها مع ملصقاتها.
+    if (_cur != index) setState(() => _cur = index);
     if (_scroll.hasClients && _scroll.offset > 0) {
       await _scroll.animateTo(0,
           duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
     }
     await WidgetsBinding.instance.endOfFrame;
+    await WidgetsBinding.instance.endOfFrame;
     Uint8List? bytes;
     try {
-      bytes = await bakeStickers(_captureKey, first.bytes,
+      bytes = await bakeStickers(_captureKey, img.bytes,
           maxBytes: maxPhotoBytes);
     } catch (_) {
       bytes = null;
@@ -701,8 +750,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
     if (bytes == null) {
       throw StateError(tr('تعذر دمج الملصقات، حاول مرة أخرى'));
     }
-    return PickedMedia(
-        bytes: bytes, ext: 'jpg', mime: 'image/jpeg', name: first.name);
+    return PickedMedia(bytes: bytes, ext: 'jpg', mime: 'image/jpeg', name: img.name);
   }
 
   Future<void> _publish() async {
@@ -748,13 +796,40 @@ class _ComposeScreenState extends State<ComposeScreen> {
         if (mounted) setState(() => _progress = p);
       }
 
-      final m = await _mediaToPublish();
-      if (m == null) {
+      if (_textOnly) {
         await PostService.publishText(caption,
             video: video,
             tbg: _canStyle ? _tbg : null,
             tc: _canStyle ? _tc : null);
+      } else if (_isStory) {
+        // كل صورة تُنشر كقصة مستقلة بالترتيب. الاستطلاع والذكر على أول قصة فقط.
+        final total = _images.length + _publishedCount;
+        while (_images.isNotEmpty) {
+          final first = !_extrasSent;
+          final m = await _mediaToPublish(0);
+          await PostService.publishMedia(PostType.story, m.bytes,
+              mime: m.mime,
+              ext: m.ext,
+              caption: caption,
+              onProgress: (p) => onProgress((_publishedCount + p) / total),
+              closeFriends: _closeFriends,
+              extra: <String, dynamic>{
+                if (first && _poll != null) 'poll': _poll!.toMap(),
+                if (first && _mentions.isNotEmpty)
+                  'mentions': [for (final u in _mentions) u.toMap()],
+              });
+          if (first && _mentions.isNotEmpty) {
+            unawaited(notifyStoryMentions(List.of(_mentions)));
+          }
+          _extrasSent = true;
+          // نزيل المنشورة حتى لا تتكرر عند إعادة المحاولة بعد فشل جزئي.
+          final done = _images.removeAt(0);
+          _stickerMap.remove(done);
+          _cur = 0;
+          _publishedCount++;
+        }
       } else {
+        final m = _images.first;
         final type = switch (widget.kind) {
           CreateKind.post => PostType.photo,
           CreateKind.story => PostType.story,
@@ -771,30 +846,25 @@ class _ComposeScreenState extends State<ComposeScreen> {
               mime: m.mime,
               ext: m.ext,
               caption: caption,
-              onProgress: onProgress,
-              closeFriends: type == PostType.story && _closeFriends,
-              extra: type == PostType.story
-                  ? <String, dynamic>{
-                      if (_poll != null) 'poll': _poll!.toMap(),
-                      if (_mentions.isNotEmpty)
-                        'mentions': [for (final u in _mentions) u.toMap()],
-                    }
-                  : const <String, dynamic>{});
-          if (type == PostType.story && _mentions.isNotEmpty) {
-            unawaited(notifyStoryMentions(List.of(_mentions)));
-          }
+              onProgress: onProgress);
         }
       }
       nav.popUntil((r) => r.isFirst);
       messenger.showSnackBar(SnackBar(
           content: Text(widget.kind == CreateKind.story
-              ? tr('تمت إضافة القصة')
+              ? (_publishedCount > 1
+                  ? trf('تمت إضافة {0} قصص', [_publishedCount])
+                  : tr('تمت إضافة القصة'))
               : tr('تم النشر بنجاح'))));
     } catch (e) {
       if (mounted) {
         setState(() {
           _busy = false;
-          _error = friendlyError(e, fallback: tr('فشل النشر'));
+          final base = friendlyError(e, fallback: tr('فشل النشر'));
+          _error = (_isStory && _publishedCount > 0)
+              ? trf('{0} (نُشر {1} وبقي {2})',
+                  [base, _publishedCount, _images.length])
+              : base;
         });
       }
     }
@@ -808,18 +878,38 @@ class _ComposeScreenState extends State<ComposeScreen> {
         scrollDirection: Axis.horizontal,
         itemCount: _images.length,
         separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (context, i) => Stack(
+        itemBuilder: (context, i) => GestureDetector(
+         onTap: (_isStory && !_busy) ? () => setState(() => _cur = i) : null,
+         child: Stack(
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.memory(_images[i].bytes,
-                  width: 120, height: 150, fit: BoxFit.cover),
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                    color: (_isStory && i == _cur)
+                        ? AppColors.brandPurple
+                        : Colors.transparent,
+                    width: 2.5),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(11),
+                child: Image.memory(_images[i].bytes,
+                    width: 120, height: 150, fit: BoxFit.cover),
+              ),
             ),
             PositionedDirectional(
               top: 4,
               end: 4,
               child: GestureDetector(
-                onTap: _busy ? null : () => setState(() => _images.removeAt(i)),
+                onTap: _busy
+                    ? null
+                    : () => setState(() {
+                          _stickerMap.remove(_images[i]);
+                          _images.removeAt(i);
+                          if (_cur > i || _cur >= _images.length) {
+                            _cur = (_cur - 1).clamp(0, _images.length).toInt();
+                          }
+                        }),
                 child: Container(
                   padding: const EdgeInsets.all(4),
                   decoration: const BoxDecoration(
@@ -839,6 +929,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
                       shadows: [Shadow(blurRadius: 4, color: Colors.black87)])),
             ),
           ],
+         ),
         ),
       ),
     );
@@ -866,7 +957,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
           physics: _lockScroll ? const NeverScrollableScrollPhysics() : null,
           padding: const EdgeInsets.all(16),
           children: [
-            if (_images.length == 1)
+            if (_images.length == 1 || (_isStory && _images.isNotEmpty))
               Center(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(14),
@@ -877,8 +968,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
                       key: _captureKey,
                       child: Stack(
                         children: [
-                          Image.memory(_images.first.bytes,
-                              fit: BoxFit.contain),
+                          Image.memory(_curImage.bytes,
+                              key: ValueKey(_curImage), fit: BoxFit.contain),
                           if (widget.kind == CreateKind.post)
                             PositionedDirectional(
                               top: 6,
@@ -900,6 +991,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
                           if (_canSticker)
                             Positioned.fill(
                               child: StickerLayer(
+                                  key: ValueKey(_curImage),
                                   items: _stickers,
                                   enabled: !_busy,
                                   onChanged: () => setState(() {}),
@@ -967,17 +1059,20 @@ class _ComposeScreenState extends State<ComposeScreen> {
                   tr('حرّك الملصق بإصبعك، وبإصبعين للتكبير، واسحبه إلى السلة لحذفه'),
                   style: TextStyle(
                       color: context.appColors.textDim, fontSize: 12.5)),
-            if (_images.length > 1) _albumStrip(),
+            if (_images.length > 1) ...[
+              const SizedBox(height: 8),
+              _albumStrip(),
+            ],
             if (_images.isNotEmpty &&
-                _canAlbum &&
-                _images.length < PostService.maxAlbumImages)
+                (_canAlbum || _isStory) &&
+                _images.length < _maxImages)
               Align(
                 alignment: AlignmentDirectional.centerStart,
                 child: TextButton.icon(
                   onPressed: _busy ? null : _addMore,
                   icon: const Icon(Icons.add_photo_alternate_outlined),
                   label: Text(trf('إضافة صور ({0}/{1})',
-                      [_images.length, PostService.maxAlbumImages])),
+                      [_images.length, _maxImages])),
                 ),
               ),
             const SizedBox(height: 16),
