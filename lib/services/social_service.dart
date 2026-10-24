@@ -254,6 +254,9 @@ class ChatMessage {
   final int? gifW;
   final int? gifH;
 
+  /// المُشار إليهم بـ @ في رسالة مجموعة (معرّفاتهم).
+  final List<String> mentions;
+
   /// صورة «تُعرض مرة واحدة» (view-once): تُخفى عن المستلم بعد أول فتح.
   final bool viewOnce;
 
@@ -292,6 +295,7 @@ class ChatMessage {
     this.gifUrl,
     this.gifW,
     this.gifH,
+    this.mentions = const [],
     this.viewOnce = false,
     this.viewedBy = const [],
     this.expiresAt,
@@ -322,6 +326,7 @@ class ChatMessage {
         gifUrl: data['gifUrl'] as String?,
         gifW: (data['gifW'] as num?)?.toInt(),
         gifH: (data['gifH'] as num?)?.toInt(),
+        mentions: List<String>.from(data['mentions'] as List? ?? const []),
         replyToMessageId: data['replyToMessageId'] as String?,
         replyToText: data['replyToText'] as String?,
         replyToSenderUid: data['replyToSenderUid'] as String?,
@@ -1234,6 +1239,7 @@ class SocialService {
     String? replyToText,
     String? replyToSenderUid,
     DateTime? expiresAt,
+    List<String> mentions = const [],
   }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty || trimmed.length > 2000) {
@@ -1247,6 +1253,7 @@ class SocialService {
       replyToText: replyToText,
       replyToSenderUid: replyToSenderUid,
       expiresAt: expiresAt,
+      mentions: mentions.take(10).toList(),
     );
   }
 
@@ -1739,6 +1746,7 @@ class SocialService {
     String? gifUrl,
     int? gifW,
     int? gifH,
+    List<String> mentions = const [],
     bool viewOnce = false,
     DateTime? expiresAt,
   }) async {
@@ -1799,6 +1807,7 @@ class SocialService {
           if (gifUrl != null) 'gifUrl': gifUrl,
           if (gifW != null) 'gifW': gifW,
           if (gifH != null) 'gifH': gifH,
+          if (mentions.isNotEmpty) 'mentions': mentions,
           if (replyToMessageId != null) 'replyToMessageId': replyToMessageId,
           if (replyToText != null) 'replyToText': replyToText,
           if (replyToSenderUid != null) 'replyToSenderUid': replyToSenderUid,
