@@ -3749,6 +3749,29 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _showMessageActions(ChatMessage message, bool mine) async {
+    if (message.deleted) {
+      // أثر محذوف: الوحيد المتاح «حذف لدي فقط» لإخفائه عندي.
+      await showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: context.appColors.surface,
+        builder: (sheetContext) => SafeArea(
+          child: ListTile(
+            leading: const Icon(Icons.delete_outline_rounded),
+            title: Text(tr('حذف لدي فقط')),
+            onTap: () async {
+              Navigator.pop(sheetContext);
+              try {
+                await SocialService.hideMessageForMe(
+                    widget.conversationId, message.id);
+              } catch (error) {
+                _showError(tr('تعذر حذف الرسالة'), error);
+              }
+            },
+          ),
+        ),
+      );
+      return;
+    }
     Future<void> run(Future<void> Function() action, String failure) async {
       try {
         await action();
@@ -3953,7 +3976,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             color: AppColors.brandPurple),
                         title: Text(tr('حذف لدى الجميع')),
                         subtitle:
-                            Text(tr('تُحذف الرسالة من المحادثة عند الطرفين')),
+                            Text(tr('يظهر عند الطرفين أنها حُذفت')),
                         onTap: () {
                           Navigator.pop(sheetContext);
                           run(
@@ -4718,6 +4741,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                         .contains(SocialService.currentUid));
                             // مشاركة غنية (بطاقة منشور/ملف شخصي): بلا فقاعة.
                             final isShare = message.kind == 'share';
+                            // رسالة محذوفة لدى الجميع: أثر «تم حذف الرسالة».
+                            final isDeleted = message.deleted;
                             final isAudio = message.kind == 'audio' &&
                                 message.audioUrl != null;
                             // موقع مُرسل: بطاقة بلا فقاعة (كإنستغرام).
@@ -4745,7 +4770,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             final bubble = GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               // في وضع التحديد يتولّى الصف كله النقر لتحديد الرسالة.
-                              onDoubleTap: _selecting
+                              onDoubleTap: (_selecting || isDeleted)
                                   ? null
                                   : () => _quickHeart(message),
                               onLongPress: _selecting
@@ -4759,14 +4784,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                         ? const EdgeInsetsDirectional.fromSTEB(
                                             6, 6, 6, 0)
                                         : EdgeInsets.zero)
-                                    : (sticker || isShare || isLocation
+                                    : (sticker || isShare || isLocation || isDeleted
                                         ? EdgeInsets.zero
                                         : const EdgeInsets.symmetric(
                                             horizontal: 13, vertical: 9)),
                                 decoration: (sticker ||
                                         hasImage ||
                                         isShare ||
-                                        isLocation)
+                                        isLocation ||
+                                        isDeleted)
                                     ? null
                                     : BoxDecoration(
                                         color: mine
@@ -4939,6 +4965,34 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                                       : _openImage(
                                                           message.imageBytes!),
                                             )
+                                    else if (isDeleted)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 13, vertical: 9),
+                                        decoration: BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(18),
+                                          border: Border.all(
+                                              color: colors.textDim
+                                                  .withOpacity(0.5)),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.block_rounded,
+                                                size: 15,
+                                                color: colors.textDim),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              tr('تم حذف الرسالة'),
+                                              style: TextStyle(
+                                                  color: colors.textDim,
+                                                  fontStyle: FontStyle.italic,
+                                                  fontSize: 14),
+                                            ),
+                                          ],
+                                        ),
+                                      )
                                     else if (sticker)
                                       StickerMessage(message.text)
                                     else if (isAudio)
@@ -5157,7 +5211,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                       ],
                                     ),
                                   )
-                                : _SwipeToReply(
+                                : isDeleted
+                                    ? alignedRow
+                                    : _SwipeToReply(
                                     alignment: mine
                                         ? AlignmentDirectional.centerEnd
                                         : AlignmentDirectional.centerStart,
