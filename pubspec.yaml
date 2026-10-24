@@ -23,6 +23,7 @@ dependencies:
   intl: any
   url_launcher: ^6.3.1
   share_plus: 10.1.4
+  app_links: ^6.1.4
   http: ^1.2.2
   webview_flutter: ^4.8.0
   webview_flutter_android: ^3.16.8
