@@ -10,6 +10,7 @@ import 'story_backgrounds.dart';
 import 'story_mentions.dart';
 import 'story_poll.dart';
 import 'story_question.dart';
+import 'story_slider.dart';
 
 /// قصة نصية بخلفية ملونة (مثل إنستغرام): اكتب نصاً واختر لون الخلفية.
 class TextStoryScreen extends StatefulWidget {
@@ -25,6 +26,7 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
   int _bg = 0;
   StoryPoll? _poll;
   StoryQuestion? _question;
+  StorySlider? _slider;
   final List<StoryMention> _mentions = [];
   bool _closeFriends = false; // القصة للأصدقاء المقربين فقط
   bool _busy = false;
@@ -34,6 +36,11 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
   void dispose() {
     _text.dispose();
     super.dispose();
+  }
+
+  Future<void> _editSlider() async {
+    final r = await showSliderDialog(context, initial: _slider);
+    if (r != null && mounted) setState(() => _slider = r);
   }
 
   Future<void> _editQuestion() async {
@@ -62,6 +69,7 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
       await PostService.publishTextStory(text, _bg,
           poll: _poll,
           question: _question,
+          slider: _slider,
           mentions: List.of(_mentions),
           closeFriends: _closeFriends);
       if (_mentions.isNotEmpty) {
@@ -98,6 +106,12 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
                           size: 28, color: Colors.white),
                     ),
                     const Spacer(),
+                    IconButton(
+                      onPressed: _busy ? null : _editSlider,
+                      tooltip: tr('شريط إيموجي'),
+                      icon: const Icon(Icons.linear_scale_rounded,
+                          size: 26, color: Colors.white),
+                    ),
                     IconButton(
                       onPressed: _busy ? null : _editQuestion,
                       tooltip: tr('صندوق أسئلة'),
@@ -193,6 +207,19 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
                       if (mounted) setState(() {});
                     }),
               ),
+              if (_slider != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: InputChip(
+                    avatar: const Icon(Icons.linear_scale_rounded, size: 18),
+                    label: Text(
+                        _slider!.q.isEmpty ? _slider!.e : '${_slider!.e} ${_slider!.q}',
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    onPressed: _busy ? null : _editSlider,
+                    onDeleted:
+                        _busy ? null : () => setState(() => _slider = null),
+                  ),
+                ),
               if (_question != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),

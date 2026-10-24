@@ -18,6 +18,7 @@ import 'story_drawing.dart';
 import 'story_photo_editor.dart';
 import 'story_poll.dart';
 import 'story_question.dart';
+import 'story_slider.dart';
 import 'story_stickers.dart';
 import 'story_text_editor.dart';
 import 'text_story_screen.dart';
@@ -474,6 +475,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
   bool _lockScroll = false; // نوقف التمرير أثناء تحريك ملصق
   StoryPoll? _poll; // استطلاع القصة (اختياري)
   StoryQuestion? _question; // صندوق أسئلة القصة (اختياري)
+  StorySlider? _slider; // شريط إيموجي القصة (اختياري)
   final List<StoryMention> _mentions = []; // مذكورون في القصة (حتى 3)
   bool _closeFriends = false; // القصة للأصدقاء المقربين فقط
   Timer? _linkDebounce;
@@ -755,6 +757,11 @@ class _ComposeScreenState extends State<ComposeScreen> {
     });
   }
 
+  Future<void> _editSlider() async {
+    final r = await showSliderDialog(context, initial: _slider);
+    if (r != null && mounted) setState(() => _slider = r);
+  }
+
   Future<void> _editQuestion() async {
     final q = await showQuestionDialog(context, initial: _question);
     if (q != null && mounted) setState(() => _question = q);
@@ -859,6 +866,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
                 if (first && _poll != null) 'poll': _poll!.toMap(),
                 if (first && _question != null)
                   'question': _question!.toMap(),
+                if (first && _slider != null) 'slider': _slider!.toMap(),
                 if (first && _mentions.isNotEmpty)
                   'mentions': [for (final u in _mentions) u.toMap()],
               });
@@ -1130,6 +1138,11 @@ class _ComposeScreenState extends State<ComposeScreen> {
                     label: Text(tr('استطلاع')),
                   ),
                   TextButton.icon(
+                    onPressed: _busy ? null : _editSlider,
+                    icon: const Icon(Icons.linear_scale_rounded),
+                    label: Text(tr('شريط إيموجي')),
+                  ),
+                  TextButton.icon(
                     onPressed: _busy ? null : _editQuestion,
                     icon: const Icon(Icons.help_outline_rounded),
                     label: Text(tr('أسئلة')),
@@ -1143,6 +1156,17 @@ class _ComposeScreenState extends State<ComposeScreen> {
                   onChanged: () {
                     if (mounted) setState(() {});
                   }),
+            if (_canSticker && _slider != null)
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: InputChip(
+                  avatar: const Icon(Icons.linear_scale_rounded, size: 18),
+                  label: Text(_slider!.q.isEmpty ? _slider!.e : '${_slider!.e} ${_slider!.q}',
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  onPressed: _busy ? null : _editSlider,
+                  onDeleted: _busy ? null : () => setState(() => _slider = null),
+                ),
+              ),
             if (_canSticker && _question != null)
               Align(
                 alignment: AlignmentDirectional.centerStart,
