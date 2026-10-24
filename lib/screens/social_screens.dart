@@ -3986,6 +3986,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                           );
                         },
                       ),
+                    if (!mine && !message.deleted)
+                      ListTile(
+                        leading: const Icon(Icons.flag_outlined),
+                        title: Text(tr('إبلاغ عن الرسالة')),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          _reportMessage(message);
+                        },
+                      ),
                     ListTile(
                       leading: const Icon(Icons.delete_outline_rounded),
                       title: Text(tr('حذف لدي فقط')),
@@ -4001,6 +4010,66 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ),
                   ],
                 ),
+        ),
+      ),
+    );
+  }
+
+  /// الإبلاغ عن رسالة وردتني: يختار المستخدم السبب ثم يُرسل البلاغ للمشرف.
+  Future<void> _reportMessage(ChatMessage message) async {
+    final messenger = ScaffoldMessenger.of(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: context.appColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(tr('إبلاغ عن هذه الرسالة'),
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: context.appColors.text)),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(
+                    tr('اختر السبب الأقرب. لن يعرف المرسل أنك من أبلغ.'),
+                    style: TextStyle(
+                        fontSize: 12, color: context.appColors.textDim)),
+              ),
+            ),
+            for (final reason in SocialService.reportReasons.entries)
+              ListTile(
+                title: Text(tr(reason.value)),
+                trailing: const Icon(Icons.chevron_left_rounded),
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  try {
+                    await SocialService.reportMessage(widget.conversationId,
+                        message.id, message.senderUid, reason.key,
+                        snippet: message.text);
+                    messenger.showSnackBar(SnackBar(
+                        content: Text(tr('تم إرسال البلاغ، شكراً لك'))));
+                  } catch (error) {
+                    messenger.showSnackBar(SnackBar(
+                        content: Text(friendlyError(error,
+                            fallback: tr('تعذر إرسال البلاغ')))));
+                  }
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
         ),
       ),
     );
