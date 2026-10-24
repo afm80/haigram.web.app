@@ -234,6 +234,10 @@ class ChatMessage {
   /// رابط الصورة عند استعمال Cloudinary/Storage (وضع التجربة يستعمل [imageBytes]).
   final String? imageUrl;
 
+  /// رسالة صوتية (kind == 'audio'): رابط الملف ومدته بالثواني.
+  final String? audioUrl;
+  final int? audioSecs;
+
   /// موقع مُرسل (kind == 'location').
   final double? lat;
   final double? lng;
@@ -268,6 +272,8 @@ class ChatMessage {
     this.shareImage,
     this.shareLink,
     this.imageUrl,
+    this.audioUrl,
+    this.audioSecs,
     this.lat,
     this.lng,
     this.viewOnce = false,
@@ -292,6 +298,8 @@ class ChatMessage {
         kind: data['kind'] as String? ?? 'text',
         imageBytes: (data['image'] as Blob?)?.bytes,
         imageUrl: data['imageUrl'] as String?,
+        audioUrl: data['audioUrl'] as String?,
+        audioSecs: (data['audioSecs'] as num?)?.toInt(),
         lat: (data['lat'] as num?)?.toDouble(),
         lng: (data['lng'] as num?)?.toDouble(),
         replyToMessageId: data['replyToMessageId'] as String?,
@@ -1241,6 +1249,38 @@ class SocialService {
     );
   }
 
+  /// يرفع رسالة صوتية (Opus/AAC كما سُجّلت) ويرسلها.
+  static Future<void> sendAudio(
+    String conversationId,
+    Uint8List bytes, {
+    required String mime,
+    required String ext,
+    required int seconds,
+    String? replyToMessageId,
+    String? replyToText,
+    String? replyToSenderUid,
+    DateTime? expiresAt,
+  }) async {
+    if (bytes.isEmpty || bytes.length > 512 * 1024) {
+      throw ArgumentError(tr('الرسالة الصوتية كبيرة جداً'));
+    }
+    if (seconds < 1 || seconds > 125) {
+      throw ArgumentError(tr('مدة الرسالة الصوتية غير صالحة'));
+    }
+    final url = await PostService.uploadChatAudio(bytes, mime, ext);
+    await _sendChatMessage(
+      conversationId,
+      text: tr('🎤 رسالة صوتية'),
+      kind: 'audio',
+      audioUrl: url,
+      audioSecs: seconds,
+      replyToMessageId: replyToMessageId,
+      replyToText: replyToText,
+      replyToSenderUid: replyToSenderUid,
+      expiresAt: expiresAt,
+    );
+  }
+
   /// يسجّل أن المستلم فتح صورة «تُعرض مرة واحدة» (يُخفى المحتوى بعدها لديه).
   /// يُحدَّث التسليم/القراءة معه ليبقى الطلب صالحاً وفق القواعد.
   static Future<void> markMessageViewed(
@@ -1272,6 +1312,22 @@ class SocialService {
         kind: 'image',
         imageUrl: url,
         imageBytes: url == null ? bytes : null,
+        forwarded: true,
+      );
+      return;
+    }
+    if (message.kind == 'audio') {
+      final url = message.audioUrl;
+      final secs = message.audioSecs;
+      if (url == null || secs == null) {
+        throw StateError(tr('لا يمكن إعادة توجيه هذه الرسالة'));
+      }
+      await _sendChatMessage(
+        conversationId,
+        text: tr('🎤 رسالة صوتية'),
+        kind: 'audio',
+        audioUrl: url,
+        audioSecs: secs,
         forwarded: true,
       );
       return;
@@ -1416,6 +1472,8 @@ class SocialService {
       'createdAt': message.createdAt,
       'savedAt': FieldValue.serverTimestamp(),
       if (message.imageUrl != null) 'imageUrl': message.imageUrl,
+      if (message.audioUrl != null) 'audioUrl': message.audioUrl,
+      if (message.audioSecs != null) 'audioSecs': message.audioSecs,
       if (message.shareType != null) 'shareType': message.shareType,
       if (message.shareId != null) 'shareId': message.shareId,
       if (message.shareSubtitle != null) 'shareSubtitle': message.shareSubtitle,
@@ -1560,6 +1618,8 @@ class SocialService {
     required String kind,
     Uint8List? imageBytes,
     String? imageUrl,
+    String? audioUrl,
+    int? audioSecs,
     String? replyToMessageId,
     String? replyToText,
     String? replyToSenderUid,
@@ -1632,6 +1692,10 @@ class SocialService {
           if (replyToText != null) 'replyToText': replyToText,
           if (replyToSenderUid != null) 'replyToSenderUid': replyToSenderUid,
         };
+        if (audioUrl != null) {
+          messageData['audioUrl'] = audioUrl;
+          messageData['audioSecs'] = audioSecs;
+        }
         if (imageUrl != null) {
           messageData['imageUrl'] = imageUrl;
         } else if (imageBytes != null) {

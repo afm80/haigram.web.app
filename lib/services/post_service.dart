@@ -739,10 +739,11 @@ class PostService {
   /// يرفع الملف إلى Cloudinary ويعيد الرابط المباشر (https).
   /// ملاحظة: التقدم هنا ثنائي (يبدأ 0 وينتهي 1) لأن حزمة http لا تعطي تقدّم الرفع.
   static Future<String> _uploadCloudinary(
-      Uint8List bytes, String mime, String ext) async {
+      Uint8List bytes, String mime, String ext,
+      {String resource = 'image'}) async {
     final fileExt = ext == 'quicktime' ? 'mov' : ext;
     final uri = Uri.https(
-        'api.cloudinary.com', '/v1_1/$cloudinaryCloud/image/upload');
+        'api.cloudinary.com', '/v1_1/$cloudinaryCloud/$resource/upload');
     final request = http.MultipartRequest('POST', uri)
       ..fields['upload_preset'] = cloudinaryPreset
       ..files.add(http.MultipartFile.fromBytes('file', bytes,
@@ -774,6 +775,20 @@ class PostService {
           'image/jpeg', null);
     }
     return null;
+  }
+
+  /// يرفع رسالة صوتية كما هي (بلا أي تحويل) ويعيد رابطها.
+  /// Cloudinary يعامل الصوت كنوع «video» في مسار الرفع.
+  static Future<String> uploadChatAudio(
+      Uint8List bytes, String mime, String ext) async {
+    if (useCloudinary) {
+      return _uploadCloudinary(bytes, mime, ext, resource: 'video');
+    }
+    if (useStorage) {
+      return _upload(
+          bytes, 'audio/${_user.uid}/chat_${_stamp()}.$ext', mime, null);
+    }
+    throw StateError(tr('الرسائل الصوتية تتطلب تفعيل Cloudinary أو Storage'));
   }
 
   /// وضع التجربة: يقسّم الملف إلى قطع ويحفظها في مجموعة media.
