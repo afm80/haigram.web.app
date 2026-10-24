@@ -292,6 +292,34 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['caption'])
           && request.resource.data.caption is string
           && request.resource.data.caption.size() <= 500) ||
+        // المنشور النصي: المالك يعدّل النص والخلفية الملونة ولون النص (أرقام فقط).
+        (resource.data.uid == request.auth.uid
+          && resource.data.type == 'text'
+          && request.resource.data.type == 'text'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['caption', 'tbg', 'tc'])
+          && request.resource.data.caption is string
+          && request.resource.data.caption.size() <= 500
+          && (!('tbg' in request.resource.data)
+              || (request.resource.data.tbg is int
+                  && request.resource.data.tbg >= 0 && request.resource.data.tbg < 100))
+          && (!('tc' in request.resource.data)
+              || (request.resource.data.tc is int
+                  && request.resource.data.tc >= 0 && request.resource.data.tc < 100))) ||
+        // إضافة صور لمنشور نصي: يتحوّل إلى منشور صورة (أو ألبوم) وتُزال الخلفية ولون النص.
+        (resource.data.uid == request.auth.uid
+          && resource.data.type == 'text'
+          && request.resource.data.type == 'photo'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['type', 'caption', 'mediaUrl', 'albumUrls', 'mime', 'tbg', 'tc'])
+          && request.resource.data.caption is string
+          && request.resource.data.caption.size() <= 500
+          && request.resource.data.mediaUrl is string
+          && request.resource.data.mediaUrl.size() <= 1000
+          && request.resource.data.mediaUrl.matches('^https://[^ ]+$')
+          && (!('albumUrls' in request.resource.data)
+              || (request.resource.data.albumUrls is list
+                  && request.resource.data.albumUrls.size() <= 10))
+          && !('tbg' in request.resource.data)
+          && !('tc' in request.resource.data)) ||
         // مزامنة authorPrivate عند تبديل خصوصية حسابي (يجب أن تطابق ملفي الحالي).
         (resource.data.uid == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['authorPrivate'])
