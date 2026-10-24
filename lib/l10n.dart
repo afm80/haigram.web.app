@@ -25,6 +25,16 @@ String trf(String ar, List<Object?> args) {
 const Map<String, String> _en = {
   'GIF': "GIF",
   // ميزات المحادثة الجديدة
+  'كتم المحادثة': "Mute chat",
+  'لن تصلك إشعارات من هذه المحادثة': "You won't get notifications from this chat",
+  'كتم لساعة واحدة': "Mute for 1 hour",
+  'كتم لـ 8 ساعات': "Mute for 8 hours",
+  'كتم لـ 24 ساعة': "Mute for 24 hours",
+  'كتم حتى أعيد تفعيله': "Mute until I turn it back on",
+  'تم كتم المحادثة': "Chat muted",
+  'تم كتم المحادثة مؤقتاً': "Chat muted temporarily",
+  'تم إلغاء كتم المحادثة': "Chat unmuted",
+  'تعذر تحديث المحادثة': "Couldn't update the chat",
   'ترجمة': "Translate",
   'ترجمة الرسالة': "Translate message",
   'الرسالة بلغتك بالفعل': "This message is already in your language",
