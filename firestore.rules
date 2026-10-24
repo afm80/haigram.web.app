@@ -1420,6 +1420,71 @@ service cloud.firestore {
       }
     }
 
+    // أرشيف قصصي: نسخة من كل قصة أنشرها تبقى بعد انتهاء الـ24 ساعة.
+    // خاص بصاحبه وحده (القراءة والإنشاء والحذف)، ولا تعديل على النسخ.
+    match /storyArchive/{ownerUid}/stories/{storyId} {
+      allow read: if isActiveUser() && (request.auth.uid == ownerUid || isAdmin());
+      allow create: if isActiveUser()
+        && request.auth.uid == ownerUid
+        && request.resource.data.uid == ownerUid
+        && request.resource.data.type == 'story'
+        && request.resource.data.keys().size() <= 40
+        && request.resource.data.caption is string
+        && request.resource.data.caption.size() <= 500
+        && (request.resource.data.get('mediaUrl', null) == null
+            || (request.resource.data.mediaUrl is string
+                && request.resource.data.mediaUrl.size() <= 1000
+                && request.resource.data.mediaUrl.matches('^https://[^ ]+$')))
+        && request.resource.data.archivedAt == request.time;
+      allow update: if false;
+      allow delete: if isActiveUser() && (request.auth.uid == ownerUid || isAdmin());
+    }
+
+    // القصص المميزة: نسخ مستقلة من القصص (حتى 30 في المميزة) تظهر في الملف الشخصي.
+    // يقرؤها صاحبها، وأي مستخدم يحق له رؤية ملفه (عام، أو خاص وأتابعه).
+    match /storyHighlights/{ownerUid}/highlights/{hid} {
+      allow read: if isActiveUser()
+        && (isAdmin()
+            || request.auth.uid == ownerUid
+            || !isPrivateUser(ownerUid)
+            || followsUser(ownerUid));
+      allow create: if isActiveUser()
+        && request.auth.uid == ownerUid
+        && request.resource.data.keys().hasOnly(['title', 'items', 'cover', 'createdAt', 'updatedAt'])
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 24
+        && request.resource.data.items is list
+        && request.resource.data.items.size() >= 1
+        && request.resource.data.items.size() <= 30
+        && request.resource.data.cover is int
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if isActiveUser()
+        && request.auth.uid == ownerUid
+        && request.resource.data.keys().hasOnly(['title', 'items', 'cover', 'createdAt', 'updatedAt'])
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 24
+        && request.resource.data.items is list
+        && request.resource.data.items.size() >= 1
+        && request.resource.data.items.size() <= 30
+        && request.resource.data.cover is int
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isActiveUser() && (request.auth.uid == ownerUid || isAdmin());
+    }
+
+    // مشاهداتي للقصص (تُزامَن بين أجهزتي): خريطة m من معرّف القصة إلى وقت المشاهدة.
+    match /storySeen/{ownerUid} {
+      allow read: if isActiveUser() && request.auth.uid == ownerUid;
+      allow create, update: if isActiveUser()
+        && request.auth.uid == ownerUid
+        && request.resource.data.keys().hasOnly(['m', 'updatedAt'])
+        && request.resource.data.m is map
+        && request.resource.data.m.size() <= 1000
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isActiveUser() && (request.auth.uid == ownerUid || isAdmin());
+    }
+
     match /media/{chunkId} {
       allow read: if isActiveUser();
       allow create: if isActiveUser()
