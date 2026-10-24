@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -29,24 +30,68 @@ import '../route_state.dart';
 import '../l10n.dart';
 import 'close_friends_screen.dart';
 import 'install_stub.dart' if (dart.library.html) 'install_web.dart';
-/// يتذكر القصص التي شوهدت خلال الجلسة (لتحويل الحلقة إلى رمادية).
+/// يتذكر القصص التي شوهدت (لتحويل الحلقة إلى رمادية): على الجهاز، ويُزامَن مع
+/// حسابي في Firestore (storySeen) فتبقى رمادية على كل أجهزتي.
 class StoryViewed {
   static final Set<String> _seen = {};
+  static final Map<String, int> _pending = {}; // مشاهدات لم تُرفع للخادم بعد
   static String? _loadedFor;
+  static Future<void>? _loading;
+  static Timer? _syncTimer;
   static const _maxStored = 400;
+  static const _keepMs = 25 * 3600 * 1000; // القصة تنتهي بعد 24 ساعة
 
   static String get _key => 'seen_stories_${PostService.uidOrEmpty}';
 
-  /// يحمّل القصص المشاهَدة المحفوظة على الجهاز (تبقى رمادية بعد إعادة فتح التطبيق).
-  static Future<void> load() async {
+  /// يحمّل المشاهدات المحفوظة على الجهاز ثم يدمج مشاهدات أجهزتي الأخرى
+  /// (بحد أقصى 3 ثوانٍ كي لا يتأخر الشريط عند ضعف الشبكة).
+  static Future<void> load() {
     final uid = PostService.uidOrEmpty;
-    if (_loadedFor == uid) return;
+    if (_loadedFor == uid && _loading != null) return _loading!;
     _loadedFor = uid;
+    _loading = _doLoad();
+    return _loading!;
+  }
+
+  static Future<void> _doLoad() async {
     _seen.clear();
+    _pending.clear();
+    _syncTimer?.cancel();
     try {
       final prefs = await SharedPreferences.getInstance();
       _seen.addAll(prefs.getStringList(_key) ?? const <String>[]);
     } catch (_) {}
+    try {
+      await _loadRemote().timeout(const Duration(seconds: 3));
+    } catch (_) {}
+  }
+
+  static Future<void> _loadRemote() async {
+    if (PostService.isGuest) return;
+    final remote = await PostService.seenStoriesRemote();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final cutoff = now - _keepMs;
+    final fresh = <String, int>{};
+    var stale = 0;
+    remote.forEach((id, at) {
+      if (at >= cutoff) {
+        fresh[id] = at;
+      } else {
+        stale++;
+      }
+    });
+    _seen.addAll(fresh.keys);
+    // مشاهدات محلية لم تصل للخادم بعد (مثلاً قبل تفعيل المزامنة).
+    for (final id in _seen) {
+      if (!fresh.containsKey(id)) _pending[id] = now;
+    }
+    if (stale > 50) {
+      // تنظيف المستند من المشاهدات المنتهية (قصصها حُذفت).
+      await PostService.saveSeenStories({...fresh, ..._pending}, replace: true);
+      _pending.clear();
+    } else if (_pending.isNotEmpty) {
+      _scheduleSync();
+    }
   }
 
   static Future<void> _persist() async {
@@ -64,14 +109,41 @@ class StoryViewed {
     } catch (_) {}
   }
 
+  static void _scheduleSync() {
+    if (PostService.isGuest) return;
+    _syncTimer?.cancel();
+    _syncTimer = Timer(const Duration(seconds: 4), _syncNow);
+  }
+
+  /// يرفع المشاهدات الجديدة دفعة واحدة (كتابة واحدة مهما كثرت القصص).
+  static Future<void> _syncNow() async {
+    if (_pending.isEmpty || PostService.isGuest) return;
+    final batch = Map<String, int>.from(_pending);
+    try {
+      await PostService.saveSeenStories(batch);
+      for (final id in batch.keys) {
+        _pending.remove(id);
+      }
+    } catch (_) {
+      // تبقى معلّقة وتُرفع مع المشاهدة التالية.
+    }
+  }
+
+  static bool _add(String id) {
+    if (!_seen.add(id)) return false;
+    _pending[id] = DateTime.now().millisecondsSinceEpoch;
+    _persist();
+    _scheduleSync();
+    return true;
+  }
+
   static void mark(String id) {
-    if (_seen.add(id)) _persist();
+    _add(id);
   }
 
   /// يعلّم القصة كمشاهدة ويسجّل المشاهدة في الخادم (مرة واحدة فقط).
   static void markAndRecord(Post story) {
-    if (_seen.add(story.id)) {
-      _persist();
+    if (_add(story.id)) {
       _record(story);
     } else if (_failed.contains(story.id)) {
       // فشل تسجيل المشاهدة سابقاً (انقطاع مثلاً): نعيد المحاولة عند فتحها ثانية.
@@ -416,7 +488,14 @@ class _StoryViewerState extends State<StoryViewer>
       });
     _replyFocus.addListener(() => _setPause('typing', _replyFocus.hasFocus));
     StoryViewed.markAndRecord(_story);
+    _archiveIfMine();
     WidgetsBinding.instance.addPostFrameCallback((_) => _precacheNext());
+  }
+
+  /// قصتي الحية تُنسخ إلى أرشيفي إن لم تكن منسوخة (للقصص القديمة).
+  void _archiveIfMine() {
+    final s = _story;
+    if (s.uid == PostService.uidOrEmpty) PostService.ensureArchived(s);
   }
 
   @override
@@ -512,6 +591,7 @@ class _StoryViewerState extends State<StoryViewer>
       _s = s;
     });
     StoryViewed.markAndRecord(_story);
+    _archiveIfMine();
     _precacheNext();
   }
 
@@ -610,44 +690,9 @@ class _StoryViewerState extends State<StoryViewer>
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => SizedBox(
-        height: MediaQuery.of(ctx).size.height * 0.6,
-        child: Column(
-          children: [
-            const SizedBox(height: 10),
-            Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                    color: Colors.grey, borderRadius: BorderRadius.circular(2))),
-            Padding(
-              padding: EdgeInsets.all(14),
-              child: Text(tr('المشاهدون'),
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-            ),
-            Expanded(
-              child: StreamBuilder<List<StoryViewEntry>>(
-                stream: PostService.storyViewers(story.id),
-                builder: (_, snap) {
-                  final list = snap.data ?? const <StoryViewEntry>[];
-                  if (list.isEmpty) {
-                    return Center(
-                        child: Text(
-                            snap.connectionState == ConnectionState.waiting
-                                ? ''
-                                : tr('لا توجد مشاهدات بعد'),
-                            style:
-                                TextStyle(color: context.appColors.textDim)));
-                  }
-                  return ListView.builder(
-                    itemCount: list.length,
-                    itemBuilder: (_, i) => _ViewerTile(entry: list[i]),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: _ViewersSheet(story: story),
       ),
     );
     _setPause('viewers', false);
@@ -1351,9 +1396,8 @@ class _StoryViewerState extends State<StoryViewer>
         onTap: () => _showViewers(story),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-          child: StreamBuilder<List<StoryViewEntry>>(
-            stream: PostService.storyViewers(story.id),
-            builder: (_, snap) => Row(
+          child: Builder(
+            builder: (_) => Row(
               children: [
                 const Icon(Icons.keyboard_arrow_up_rounded,
                     color: Colors.white, size: 22),
@@ -1361,8 +1405,7 @@ class _StoryViewerState extends State<StoryViewer>
                 const Icon(Icons.visibility_outlined,
                     color: Colors.white, size: 20),
                 const SizedBox(width: 6),
-                Text('${snap.data?.length ?? 0}',
-                    style: const TextStyle(color: Colors.white, fontSize: 15)),
+                _ViewCount(key: ValueKey('vc-${story.id}'), storyId: story.id),
                 const Spacer(),
                 if (!story.closeFriends)
                 StreamBuilder<int>(
@@ -1617,6 +1660,223 @@ class _ViewerTile extends StatelessWidget {
           },
         );
       },
+    );
+  }
+}
+
+/// عدّاد مشاهدات قصتي: استعلام تجميعي (بلا حد 200) يتجدد كل 20 ثانية.
+class _ViewCount extends StatefulWidget {
+  final String storyId;
+  const _ViewCount({super.key, required this.storyId});
+
+  @override
+  State<_ViewCount> createState() => _ViewCountState();
+}
+
+class _ViewCountState extends State<_ViewCount> {
+  int? _n;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    _timer = Timer.periodic(const Duration(seconds: 20), (_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final id = widget.storyId;
+    try {
+      final n = await PostService.storyViewCount(id);
+      if (mounted && id == widget.storyId) setState(() => _n = n);
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) => Text('${_n ?? 0}',
+      style: const TextStyle(color: Colors.white, fontSize: 15));
+}
+
+/// قائمة المشاهدين: العدد الكلي، بحث بالاسم، تصفية التفاعلات، وتحميل المزيد.
+class _ViewersSheet extends StatefulWidget {
+  final Post story;
+  const _ViewersSheet({required this.story});
+
+  @override
+  State<_ViewersSheet> createState() => _ViewersSheetState();
+}
+
+class _ViewersSheetState extends State<_ViewersSheet> {
+  static const _step = 100;
+  static const _maxLimit = 1000;
+  int _limit = _step;
+  late Stream<List<StoryViewEntry>> _stream =
+      PostService.storyViewers(widget.story.id, limit: _limit);
+  late final Future<int> _total = PostService.storyViewCount(widget.story.id);
+  final TextEditingController _q = TextEditingController();
+  String _query = '';
+  bool _reactionsOnly = false;
+  final Map<String, AppUser?> _users = {};
+  final Set<String> _fetching = {};
+
+  @override
+  void dispose() {
+    _q.dispose();
+    super.dispose();
+  }
+
+  void _loadMore() {
+    setState(() {
+      _limit = math.min(_limit + _step, _maxLimit);
+      _stream = PostService.storyViewers(widget.story.id, limit: _limit);
+    });
+  }
+
+  /// يجلب ملفات المشاهدين عند البحث فقط (UserService يخزّنها مؤقتاً).
+  Future<void> _resolve(List<StoryViewEntry> list) async {
+    final missing = [
+      for (final e in list)
+        if (!_users.containsKey(e.uid) && _fetching.add(e.uid)) e.uid
+    ];
+    if (missing.isEmpty) return;
+    final res = await Future.wait(
+        missing.map((u) => UserService.profileOf(u).catchError((_) => null)));
+    if (!mounted) return;
+    setState(() {
+      for (var i = 0; i < missing.length; i++) {
+        _users[missing[i]] = res[i];
+      }
+    });
+  }
+
+  bool _matches(AppUser? u, String q) =>
+      u != null &&
+      (u.username.toLowerCase().contains(q) || u.name.toLowerCase().contains(q));
+
+  List<StoryViewEntry> _filtered(List<StoryViewEntry> all) {
+    var out = all;
+    if (_reactionsOnly) {
+      out = [
+        for (final e in out)
+          if (e.reaction != null) e
+      ];
+    }
+    final q = _query.trim().toLowerCase().replaceAll('@', '');
+    if (q.isEmpty) return out;
+    return [
+      for (final e in out)
+        if (_matches(_users[e.uid], q)) e
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * 0.75,
+      child: Column(
+        children: [
+          const SizedBox(height: 10),
+          Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: Colors.grey, borderRadius: BorderRadius.circular(2))),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 6),
+            child: Row(
+              children: [
+                Text(tr('المشاهدون'),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 16)),
+                const SizedBox(width: 8),
+                FutureBuilder<int>(
+                  future: _total,
+                  builder: (_, s) => Text(s.hasData ? '${s.data}' : '',
+                      style: TextStyle(
+                          color: c.textDim, fontWeight: FontWeight.w600)),
+                ),
+                const Spacer(),
+                FilterChip(
+                  label: Text(tr('التفاعلات')),
+                  selected: _reactionsOnly,
+                  onSelected: (v) => setState(() => _reactionsOnly = v),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 6),
+            child: TextField(
+              controller: _q,
+              textInputAction: TextInputAction.search,
+              onChanged: (v) => setState(() => _query = v),
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: tr('ابحث في المشاهدين'),
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () {
+                          _q.clear();
+                          setState(() => _query = '');
+                        }),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+          Expanded(
+            child: StreamBuilder<List<StoryViewEntry>>(
+              stream: _stream,
+              builder: (_, snap) {
+                final all = snap.data ?? const <StoryViewEntry>[];
+                if (all.isEmpty) {
+                  return Center(
+                      child: Text(
+                          snap.connectionState == ConnectionState.waiting
+                              ? ''
+                              : tr('لا توجد مشاهدات بعد'),
+                          style: TextStyle(color: c.textDim)));
+                }
+                if (_query.trim().isNotEmpty) {
+                  WidgetsBinding.instance
+                      .addPostFrameCallback((_) => _resolve(all));
+                }
+                final list = _filtered(all);
+                final more = all.length >= _limit && _limit < _maxLimit;
+                if (list.isEmpty && !more) {
+                  return Center(
+                      child: Text(tr('لا نتائج'),
+                          style: TextStyle(color: c.textDim)));
+                }
+                return ListView.builder(
+                  itemCount: list.length + (more ? 1 : 0),
+                  itemBuilder: (_, i) {
+                    if (i == list.length) {
+                      return Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: TextButton(
+                            onPressed: _loadMore,
+                            child: Text(tr('عرض المزيد'))),
+                      );
+                    }
+                    return _ViewerTile(entry: list[i]);
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

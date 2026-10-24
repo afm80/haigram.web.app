@@ -21,6 +21,7 @@ import 'video_cover.dart';
 import 'settings_screen.dart';
 import 'social_screens.dart' show ChatScreen;
 import 'story_widgets.dart' show StoryViewer;
+import 'story_archive.dart' show StoryHighlightsRow;
 import '../route_state.dart';
 
 import '../l10n.dart';
@@ -565,6 +566,9 @@ class _Header extends StatelessWidget {
           ],
           const SizedBox(height: 16),
           if (isMe) _myButtons(context, u) else _otherButtons(context, u),
+          // القصص المميزة (ولصاحب الحساب: «جديد» والأرشيف).
+          if (access == _Access.open)
+            StoryHighlightsRow(uid: uid, isMe: isMe),
         ],
       ),
     );
