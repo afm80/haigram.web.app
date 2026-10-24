@@ -2391,7 +2391,43 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _viewOnce = false;
   // وضع الاختفاء: الرسائل الجديدة تُختفي بعد مدة (expiresAt).
   bool _vanish = false;
-  static const _vanishDuration = Duration(hours: 1);
+  // مدة الاختفاء المختارة (الافتراضي ساعة).
+  Duration _vanishFor = const Duration(hours: 1);
+
+  /// اسم المدة بعد كلمة «بعد»: «ساعة واحدة» / «24 ساعة» / «7 أيام».
+  String _vanishLabel() => _vanishFor.inDays >= 7
+      ? tr('7 أيام')
+      : _vanishFor.inHours >= 24
+          ? tr('24 ساعة')
+          : tr('ساعة واحدة');
+
+  Future<Duration?> _pickVanishDuration() {
+    return showModalBottomSheet<Duration>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.visibility_off_outlined),
+              title: Text(tr('وضع الاختفاء')),
+              subtitle: Text(tr('اختر بعد كم من الوقت تختفي رسائلك الجديدة')),
+            ),
+            const Divider(height: 1),
+            for (final option in const [
+              (Duration(hours: 1), 'ساعة واحدة'),
+              (Duration(hours: 24), '24 ساعة'),
+              (Duration(days: 7), '7 أيام'),
+            ])
+              ListTile(
+                title: Text(tr(option.$2)),
+                onTap: () => Navigator.pop(sheetContext, option.$1),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
   Set<String> _hidden = const {};
   StreamSubscription<Set<String>>? _hiddenSub;
 
@@ -3220,7 +3256,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return;
     }
     final replyTarget = _replyTarget;
-    final expiresAt = _vanish ? DateTime.now().add(_vanishDuration) : null;
+    final expiresAt = _vanish ? DateTime.now().add(_vanishFor) : null;
     setState(() => _sending = true);
     try {
       final clip = await recorder.stop();
@@ -3265,7 +3301,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
     if (gif == null || !mounted) return;
     final replyTarget = _replyTarget;
-    final expiresAt = _vanish ? DateTime.now().add(_vanishDuration) : null;
+    final expiresAt = _vanish ? DateTime.now().add(_vanishFor) : null;
     try {
       await SocialService.sendGif(
         widget.conversationId,
@@ -3563,7 +3599,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final images = List<Uint8List>.of(_pendingImages);
     final replyTarget = _replyTarget;
     final viewOnce = _viewOnce;
-    final expiresAt = _vanish ? DateTime.now().add(_vanishDuration) : null;
+    final expiresAt = _vanish ? DateTime.now().add(_vanishFor) : null;
     if (text.isEmpty && images.isEmpty) return;
     final mentions = _mentionsIn(text);
     _text.clear();
@@ -3800,12 +3836,22 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return;
     }
     if (action == 'vanish') {
-      setState(() => _vanish = !_vanish);
+      if (_vanish) {
+        setState(() => _vanish = false);
+      } else {
+        final chosen = await _pickVanishDuration();
+        if (chosen == null || !mounted) return;
+        setState(() {
+          _vanishFor = chosen;
+          _vanish = true;
+        });
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(_vanish
-                ? tr('تم تفعيل وضع الاختفاء: الرسائل الجديدة تختفي بعد ساعة')
+                ? trf('تم تفعيل وضع الاختفاء: الرسائل الجديدة تختفي بعد {0}',
+                    [_vanishLabel()])
                 : tr('تم إيقاف وضع الاختفاء')),
           ),
         );
@@ -4926,9 +4972,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                   title: Text(_vanish
                                       ? tr('إيقاف وضع الاختفاء')
                                       : tr('وضع الاختفاء')),
-                                  subtitle: _vanish
-                                      ? null
-                                      : Text(tr('تختفي الرسائل بعد ساعة')),
+                                  subtitle: Text(_vanish
+                                      ? trf('تختفي الرسائل بعد {0}',
+                                          [_vanishLabel()])
+                                      : tr('تختفي الرسائل بعد مدة تختارها')),
                                 ),
                               ),
                             PopupMenuItem(
@@ -5911,12 +5958,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             Expanded(
                               child: Text(
                                 _viewOnce && _vanish
-                                    ? tr(
-                                        'الصورة ستُعرض مرة واحدة · والرسائل تختفي بعد ساعة')
+                                    ? trf(
+                                        'الصورة ستُعرض مرة واحدة · والرسائل تختفي بعد {0}',
+                                        [_vanishLabel()])
                                     : _viewOnce
                                         ? tr('الصورة التالية ستُعرض مرة واحدة')
-                                        : tr(
-                                            'وضع الاختفاء: الرسائل تختفي بعد ساعة'),
+                                        : trf(
+                                            'وضع الاختفاء: الرسائل تختفي بعد {0}',
+                                            [_vanishLabel()]),
                                 style: TextStyle(
                                     color: colors.textDim, fontSize: 12),
                               ),
