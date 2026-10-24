@@ -51,6 +51,22 @@ class PostCard extends StatefulWidget {
 class _PostCardState extends State<PostCard> {
   bool _liked = false;
   bool _heart = false;
+  Timer? _viewTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // تُحتسب المشاهدة إذا بقي المنشور ظاهراً أكثر من لحظة.
+    _viewTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (mounted) PostService.recordPostView(widget.post);
+    });
+  }
+
+  @override
+  void dispose() {
+    _viewTimer?.cancel();
+    super.dispose();
+  }
 
   void _doubleTapLike() {
     if (needsLogin(context)) return;
@@ -1326,9 +1342,27 @@ class _ShortsViewerState extends State<ShortsViewer> {
   DateTime _lastMove = DateTime.fromMillisecondsSinceEpoch(0);
   // أثناء فتح القائمة نخفي مشغّل يوتيوب (iframe) لأنه يلتقط النقرات فوقه في الويب.
   bool _menuOpen = false;
+  Timer? _viewTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleView();
+  }
+
+  /// تسجيل مشاهدة المقطع الحالي بعد بقائه لحظة على الشاشة.
+  void _scheduleView() {
+    _viewTimer?.cancel();
+    if (widget.shorts.isEmpty) return;
+    final p = widget.shorts[_current.clamp(0, widget.shorts.length - 1)];
+    _viewTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (mounted) PostService.recordPostView(p);
+    });
+  }
 
   @override
   void dispose() {
+    _viewTimer?.cancel();
     _pages.dispose();
     super.dispose();
   }
@@ -1341,6 +1375,7 @@ class _ShortsViewerState extends State<ShortsViewer> {
     if (next == _current) return;
     _lastMove = now;
     setState(() => _current = next);
+    _scheduleView();
     _pages.animateToPage(next,
         duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
   }

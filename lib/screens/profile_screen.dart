@@ -2395,6 +2395,10 @@ class _CardStats extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _item(
+                    const Icon(Icons.visibility_rounded,
+                        size: size, color: Colors.white, shadows: shadow),
+                    post.views),
+                _item(
                     const Icon(Icons.favorite_rounded,
                         size: size, color: Colors.white, shadows: shadow),
                     post.likes),
