@@ -1092,8 +1092,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
                 children: [
                   TextButton.icon(
                     onPressed: _busy ? null : _editPhoto,
-                    icon: const Icon(Icons.crop_rotate_rounded),
-                    label: Text(tr('قص وتدوير')),
+                    icon: const Icon(Icons.tune_rounded),
+                    label: Text(tr('تعديل الصورة')),
                   ),
                   TextButton.icon(
                     onPressed: _busy
