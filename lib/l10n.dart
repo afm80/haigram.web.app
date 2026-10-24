@@ -23,6 +23,20 @@ String trf(String ar, List<Object?> args) {
 }
 
 const Map<String, String> _en = {
+  'مراسلة...': "Message...",
+  'إرسال موقعي': "Send my location",
+  'تعذر تحديد موقعك، اسمح به من المتصفح': "Couldn't get your location. Allow it in your browser",
+  'تعذر إرسال الموقع': "Couldn't send the location",
+  // الرسائل الصوتية
+  '🎤 رسالة صوتية': "🎤 Voice message",
+  'رسالة صوتية': "Voice message",
+  'إرسال': "Send",
+  'تعذر الوصول إلى الميكروفون، اسمح به من المتصفح': "Couldn't access the microphone. Allow it in your browser",
+  'تعذر إرسال الرسالة الصوتية': "Couldn't send the voice message",
+  'تعذر تشغيل الرسالة الصوتية': "Couldn't play the voice message",
+  'الرسالة الصوتية كبيرة جداً': "The voice message is too large",
+  'مدة الرسالة الصوتية غير صالحة': "Invalid voice message length",
+  'الرسائل الصوتية تتطلب تفعيل Cloudinary أو Storage': "Voice messages require Cloudinary or Storage",
   // خصوصية القصص (إبلاغ، كتم، إخفاء)
   'إبلاغ عن القصة': "Report story",
   'إبلاغ عن هذه القصة': "Report this story",

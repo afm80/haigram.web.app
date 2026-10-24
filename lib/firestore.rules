@@ -92,7 +92,7 @@ service cloud.firestore {
       return data.keys().hasOnly([
           'conversationId', 'senderUid', 'text', 'kind', 'createdAt', 'savedAt',
           'imageUrl', 'shareType', 'shareId', 'shareSubtitle', 'shareImage',
-          'shareLink', 'lat', 'lng'
+          'shareLink', 'lat', 'lng', 'audioUrl', 'audioSecs'
         ])
         && data.keys().hasAll([
           'conversationId', 'senderUid', 'text', 'kind', 'createdAt', 'savedAt'
@@ -104,7 +104,7 @@ service cloud.firestore {
         && data.text is string
         && data.text.size() > 0
         && data.text.size() <= 2000
-        && data.kind in ['text', 'sticker', 'image', 'share', 'location']
+        && data.kind in ['text', 'sticker', 'image', 'share', 'location', 'audio']
         && data.createdAt is timestamp
         && data.createdAt <= request.time
         && data.savedAt == request.time
@@ -115,6 +115,10 @@ service cloud.firestore {
             && data.lng >= -180 && data.lng <= 180))
         && (!('imageUrl' in data)
           || (data.imageUrl is string && data.imageUrl.size() <= 1000))
+        && (!('audioUrl' in data)
+          || (data.audioUrl is string && data.audioUrl.size() <= 1000))
+        && (!('audioSecs' in data)
+          || (data.audioSecs is int && data.audioSecs >= 1 && data.audioSecs <= 125))
         && (!('shareType' in data) || data.shareType in ['post', 'profile'])
         && (!('shareId' in data)
           || (data.shareId is string && data.shareId.size() <= 128))
@@ -853,7 +857,7 @@ service cloud.firestore {
             'readBy', 'createdAt', 'replyToMessageId', 'replyToText',
             'replyToSenderUid', 'forwarded', 'shareType', 'shareId',
             'shareSubtitle', 'shareImage', 'shareLink', 'lat', 'lng',
-            'viewOnce', 'expiresAt'
+            'viewOnce', 'expiresAt', 'audioUrl', 'audioSecs'
           ])
           && request.resource.data.keys().hasAll([
             'senderUid', 'text', 'kind', 'deliveredTo', 'readBy', 'createdAt'
@@ -940,6 +944,22 @@ service cloud.firestore {
                 'replyToSenderUid', 'forwarded', 'expiresAt'
               ])
               && ('shareType' in request.resource.data)
+              && request.resource.data.text.size() <= 200)
+            ||
+            // رسالة صوتية: رابط الملف (Cloudinary/Storage) ومدتها بالثواني.
+            (request.resource.data.kind == 'audio'
+              && request.resource.data.keys().hasOnly([
+                'senderUid', 'text', 'kind', 'audioUrl', 'audioSecs',
+                'deliveredTo', 'readBy', 'createdAt', 'replyToMessageId',
+                'replyToText', 'replyToSenderUid', 'forwarded', 'expiresAt'
+              ])
+              && request.resource.data.audioUrl is string
+              && request.resource.data.audioUrl.size() <= 1000
+              && request.resource.data.audioUrl.matches(
+                '^https://(res[.]cloudinary[.]com|firebasestorage[.]googleapis[.]com)/.+$')
+              && request.resource.data.audioSecs is int
+              && request.resource.data.audioSecs >= 1
+              && request.resource.data.audioSecs <= 125
               && request.resource.data.text.size() <= 200)
             ||
             // موقع: إحداثيان صالحان، والنص اسم المكان (قصير).
