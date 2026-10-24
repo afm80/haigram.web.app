@@ -58,6 +58,10 @@ service cloud.firestore {
           && (!('s' in m) || (m.s is number && m.s >= 0.3 && m.s <= 3))
           && (!('ar' in m) || (m.ar is number && m.ar >= 0.1 && m.ar <= 10));
     }
+    // تفاعل المشاهد بإيموجي على القصة (اختياري، نص قصير).
+    function validViewReaction(d) {
+      return !('e' in d) || (d.e is string && d.e.size() > 0 && d.e.size() <= 16);
+    }
     // معلومات القصة (رابط/موقع/عدّ تنازلي/وقت): كلها اختيارية وبحدود صارمة.
     function hasStoryInfo(d) {
       return 'link' in d || 'location' in d || 'countdown' in d || 'time' in d;
@@ -445,8 +449,9 @@ service cloud.firestore {
         allow create, update: if isActiveUser()
           && request.auth.uid == viewerUid
           && get(/databases/$(database)/documents/posts/$(postId)).data.uid != viewerUid
-          && request.resource.data.keys().hasOnly(['at'])
-          && request.resource.data.at == request.time;
+          && request.resource.data.keys().hasOnly(['at', 'e'])
+          && request.resource.data.at == request.time
+          && validViewReaction(request.resource.data);
         // لوحة التحكم: قراءة/حذف المشاهدات عند حذف منشور (قصة).
         allow read: if isAdmin();
         allow delete: if isAdmin();
@@ -1324,8 +1329,9 @@ service cloud.firestore {
           && request.auth.uid == viewerUid
           && closeStoryReadable(storyId)
           && get(/databases/$(database)/documents/closeStories/$(storyId)).data.uid != viewerUid
-          && request.resource.data.keys().hasOnly(['at'])
-          && request.resource.data.at == request.time;
+          && request.resource.data.keys().hasOnly(['at', 'e'])
+          && request.resource.data.at == request.time
+          && validViewReaction(request.resource.data);
         allow read, delete: if isAdmin();
         allow delete: if isActiveUser()
           && get(/databases/$(database)/documents/closeStories/$(storyId)).data.uid == request.auth.uid;
