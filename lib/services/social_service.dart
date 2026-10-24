@@ -1076,6 +1076,24 @@ class SocialService {
         .toList();
   }
 
+  /// رسائل المحادثة من نوع [kind] (الأحدث أولاً): للروابط (text) والصوتيات (audio)
+  /// في تفاصيل المحادثة. يستعمل الفهرس نفسه (kind + createdAt) كالصور.
+  static Future<List<ChatMessage>> chatMessagesOfKind(
+      String conversationId, String kind,
+      {int limit = 60}) async {
+    final snapshot = await _chats
+        .doc(conversationId)
+        .collection('messages')
+        .where('kind', isEqualTo: kind)
+        .orderBy('createdAt', descending: true)
+        .limit(limit)
+        .get();
+    return snapshot.docs
+        .map(ChatMessage.tryFromDoc)
+        .whereType<ChatMessage>()
+        .toList();
+  }
+
   static Future<bool> areMutualFriends(String otherUid) async {
     if (otherUid.isEmpty || otherUid == _uid) return false;
     final snapshots = await Future.wait([
