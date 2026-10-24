@@ -81,6 +81,10 @@ service cloud.firestore {
       return /databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid);
     }
 
+    function viewDocPath(postId) {
+      return /databases/$(database)/documents/posts/$(postId)/views/$(request.auth.uid);
+    }
+
     // رسالة محفوظة: نسخة من رسالة حقيقية في محادثة يشارك فيها الحافظ.
     // الحقول اختيارية (حسب نوع الرسالة) والمعرّف = معرّف الرسالة الأصلية.
     function validSavedMessageCreate() {
@@ -310,7 +314,14 @@ service cloud.firestore {
             && (request.resource.data.comments == resource.data.get('comments', 0) + 1
               || request.resource.data.comments < resource.data.get('comments', 0))) ||
           (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['shares'])
-            && request.resource.data.shares == resource.data.get('shares', 0) + 1)
+            && request.resource.data.shares == resource.data.get('shares', 0) + 1) ||
+          // مشاهدة منشور: +1 مرة واحدة لكل مشاهد (بالتزامن مع مستند مشاهدته)، لا لصاحبه ولا للقصص.
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views'])
+            && resource.data.uid != request.auth.uid
+            && resource.data.type in ['photo', 'text']
+            && request.resource.data.views == resource.data.get('views', 0) + 1
+            && !exists(viewDocPath(postId))
+            && existsAfter(viewDocPath(postId)))
         )) ||
         // لوحة التحكم: تنقيص عدّاد التعليقات عند حذف تعليق مُبلَّغ عنه.
         (isAdmin()
