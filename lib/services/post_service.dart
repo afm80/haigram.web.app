@@ -1104,7 +1104,23 @@ class PostService {
         .doc(story.id)
         .collection('views')
         .doc(_user.uid)
-        .set({'at': FieldValue.serverTimestamp()});
+        // دمج: حتى لا تُمحى الإيموجي التي تفاعلتُ بها عند مشاهدة القصة مجدداً.
+        .set({'at': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+  }
+
+  /// يسجّل تفاعلي بإيموجي على القصة ليراه صاحبها في قائمة المشاهدين.
+  /// (الرسالة الخاصة تُرسل منفصلة.) لا يسجّل لصاحب القصة.
+  static Future<void> reactToStory(Post story, String emoji) async {
+    if (isGuest || story.uid == _user.uid || emoji.isEmpty || emoji.length > 16) {
+      return;
+    }
+    await _db
+        .collection(_colOf(story.id))
+        .doc(story.id)
+        .collection('views')
+        .doc(_user.uid)
+        .set({'at': FieldValue.serverTimestamp(), 'e': emoji},
+            SetOptions(merge: true));
   }
 
   // ---- استطلاع القصة ----
@@ -1249,7 +1265,13 @@ class PostService {
       .map((s) => [
             for (final d in s.docs)
               if (d.data()['at'] is Timestamp)
-                StoryViewEntry(d.id, (d.data()['at'] as Timestamp).toDate()),
+                StoryViewEntry(
+                    d.id,
+                    (d.data()['at'] as Timestamp).toDate(),
+                    d.data()['e'] is String &&
+                            (d.data()['e'] as String).isNotEmpty
+                        ? d.data()['e'] as String
+                        : null),
           ]);
 
   static Future<void> toggleLike(String postId, bool liked) async {
@@ -2146,7 +2168,8 @@ class Comment {
 class StoryViewEntry {
   final String uid;
   final DateTime at;
-  StoryViewEntry(this.uid, this.at);
+  final String? reaction; // إيموجي تفاعل المشاهد (إن وُجد)
+  StoryViewEntry(this.uid, this.at, [this.reaction]);
 }
 
 class StoryGroup {
