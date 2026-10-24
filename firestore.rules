@@ -1007,7 +1007,8 @@ service cloud.firestore {
             'readBy', 'createdAt', 'replyToMessageId', 'replyToText',
             'replyToSenderUid', 'forwarded', 'shareType', 'shareId',
             'shareSubtitle', 'shareImage', 'shareLink', 'lat', 'lng',
-            'viewOnce', 'expiresAt', 'audioUrl', 'audioSecs', 'audioWave'
+            'viewOnce', 'expiresAt', 'audioUrl', 'audioSecs', 'audioWave',
+            'gifUrl', 'gifW', 'gifH'
           ])
           && request.resource.data.keys().hasAll([
             'senderUid', 'text', 'kind', 'deliveredTo', 'readBy', 'createdAt'
@@ -1115,6 +1116,25 @@ service cloud.firestore {
                   && request.resource.data.audioWave.size() <= 64
                   && request.resource.data.audioWave.matches('^[0-9]+$')))
               && request.resource.data.text.size() <= 200)
+            ||
+            // صورة متحركة (GIF): رابط GIPHY وأبعاد معقولة، بلا رفع ملفات.
+            (request.resource.data.kind == 'gif'
+              && request.resource.data.keys().hasOnly([
+                'senderUid', 'text', 'kind', 'gifUrl', 'gifW', 'gifH',
+                'deliveredTo', 'readBy', 'createdAt', 'replyToMessageId',
+                'replyToText', 'replyToSenderUid', 'forwarded', 'expiresAt'
+              ])
+              && request.resource.data.gifUrl is string
+              && request.resource.data.gifUrl.size() <= 500
+              && request.resource.data.gifUrl.matches(
+                '^https://(media[0-9]*|i)[.]giphy[.]com/.+$')
+              && request.resource.data.gifW is int
+              && request.resource.data.gifW >= 1
+              && request.resource.data.gifW <= 2000
+              && request.resource.data.gifH is int
+              && request.resource.data.gifH >= 1
+              && request.resource.data.gifH <= 2000
+              && request.resource.data.text.size() <= 24)
             ||
             // موقع: إحداثيان صالحان، والنص اسم المكان (قصير).
             (request.resource.data.kind == 'location'
