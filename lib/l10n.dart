@@ -687,6 +687,7 @@ const Map<String, String> _en = {
   'حذف لدى الجميع': "Delete for everyone",
   'تُحذف الرسالة من المحادثة عند الطرفين':
       "The message is deleted from the chat for both sides",
+  'يظهر عند الطرفين أنها حُذفت': "Both sides will see it was deleted",
   'تعذر حذف الرسالة': "Couldn't delete the message",
   'حذف لدي فقط': "Delete for me only",
   'تبقى الرسالة ظاهرة للطرف الآخر':

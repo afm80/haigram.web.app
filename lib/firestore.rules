@@ -1034,6 +1034,26 @@ service cloud.firestore {
               && request.resource.data.editedAt == request.time
               && request.time < resource.data.createdAt + duration.value(15, 'm')
               && !chatPairBlocked())
+            ||
+            // «حذف لدى الجميع»: رسالتي تتحول إلى أثر محذوف (kind = deleted)
+            // يُمسح محتواها وتبقى بيانات الإيصال والوقت كما هي.
+            (resource.data.senderUid == request.auth.uid
+              && resource.data.kind != 'deleted'
+              && request.resource.data.kind == 'deleted'
+              && request.resource.data.keys().hasOnly([
+                'senderUid', 'text', 'kind', 'deliveredTo', 'readBy',
+                'createdAt', 'expiresAt', 'deletedAt'
+              ])
+              && request.resource.data.senderUid == resource.data.senderUid
+              && request.resource.data.createdAt == resource.data.createdAt
+              && request.resource.data.deliveredTo == resource.data.deliveredTo
+              && request.resource.data.readBy == resource.data.readBy
+              && request.resource.data.get('expiresAt', null)
+                == resource.data.get('expiresAt', null)
+              && request.resource.data.text is string
+              && request.resource.data.text.size() > 0
+              && request.resource.data.text.size() <= 60
+              && request.resource.data.deletedAt == request.time)
           );
         allow delete: if isChatParticipant()
           && resource.data.senderUid == request.auth.uid;
