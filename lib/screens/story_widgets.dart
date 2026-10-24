@@ -18,6 +18,7 @@ import 'profile_screen.dart';
 import 'story_backgrounds.dart';
 import 'story_mentions.dart';
 import 'story_poll.dart';
+import 'story_question.dart';
 import '../route_state.dart';
 
 import '../l10n.dart';
@@ -834,6 +835,17 @@ class _StoryViewerState extends State<StoryViewer>
                                 child: StoryMentionsRow(
                                     mentions: story.mentions,
                                     onOpen: _openUser),
+                              ),
+                            if (story.question != null)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                                child: StoryQuestionCard(
+                                    key: ValueKey('question-${story.id}'),
+                                    story: story,
+                                    question: story.question!,
+                                    mine: mine,
+                                    onPause: (v) => _setPause('question', v)),
                               ),
                             if (story.poll != null)
                               Padding(

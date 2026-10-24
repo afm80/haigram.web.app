@@ -9,6 +9,7 @@ import 'close_friends_screen.dart';
 import 'story_backgrounds.dart';
 import 'story_mentions.dart';
 import 'story_poll.dart';
+import 'story_question.dart';
 
 /// قصة نصية بخلفية ملونة (مثل إنستغرام): اكتب نصاً واختر لون الخلفية.
 class TextStoryScreen extends StatefulWidget {
@@ -23,6 +24,7 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
   final _text = TextEditingController();
   int _bg = 0;
   StoryPoll? _poll;
+  StoryQuestion? _question;
   final List<StoryMention> _mentions = [];
   bool _closeFriends = false; // القصة للأصدقاء المقربين فقط
   bool _busy = false;
@@ -32,6 +34,11 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
   void dispose() {
     _text.dispose();
     super.dispose();
+  }
+
+  Future<void> _editQuestion() async {
+    final q = await showQuestionDialog(context, initial: _question);
+    if (q != null && mounted) setState(() => _question = q);
   }
 
   Future<void> _editPoll() async {
@@ -54,6 +61,7 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
     try {
       await PostService.publishTextStory(text, _bg,
           poll: _poll,
+          question: _question,
           mentions: List.of(_mentions),
           closeFriends: _closeFriends);
       if (_mentions.isNotEmpty) {
@@ -90,6 +98,12 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
                           size: 28, color: Colors.white),
                     ),
                     const Spacer(),
+                    IconButton(
+                      onPressed: _busy ? null : _editQuestion,
+                      tooltip: tr('صندوق أسئلة'),
+                      icon: const Icon(Icons.help_outline_rounded,
+                          size: 26, color: Colors.white),
+                    ),
                     IconButton(
                       onPressed: _busy ? null : _editPoll,
                       tooltip: tr('استطلاع'),
@@ -179,6 +193,18 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
                       if (mounted) setState(() {});
                     }),
               ),
+              if (_question != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: InputChip(
+                    avatar: const Icon(Icons.help_outline_rounded, size: 18),
+                    label: Text(_question!.q,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    onPressed: _busy ? null : _editQuestion,
+                    onDeleted:
+                        _busy ? null : () => setState(() => _question = null),
+                  ),
+                ),
               if (_poll != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
