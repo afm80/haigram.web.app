@@ -2507,6 +2507,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _text.addListener(_syncTypingState);
     _text.addListener(_scheduleDraftSave);
     _text.addListener(_syncMicButton);
+    _text.addListener(_updateMentionSuggestions);
     _restoreDraft();
     _scroll.addListener(_onScroll);
     _chatSub = SocialService.chatStream(widget.conversationId).listen(
@@ -2568,6 +2569,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
     _text.removeListener(_scheduleDraftSave);
     _text.removeListener(_syncMicButton);
+    _text.removeListener(_updateMentionSuggestions);
     _voiceTimer?.cancel();
     _voice?.cancel();
     _draftTimer?.cancel();
@@ -2963,6 +2965,137 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _hadContent = false;
 
   /// يبدّل الكاميرا/الإرسال وإخفاء الميكروفون عند تغيّر فراغ الحقل فقط.
+  // ---- الإشارة بـ @ في المجموعات ----
+  /// اسم المستخدم (بحروف صغيرة) → معرّفه، لمن اخترتهم من القائمة.
+  final Map<String, String> _mentionMap = {};
+  List<AppUser>? _members;
+  bool _membersLoading = false;
+  List<AppUser> _mentionSuggestions = const [];
+  static final RegExp _mentionQuery = RegExp(r'(?:^|\s)@([^\s@]{0,30})$');
+
+  /// أعضاء المجموعة (بلا أنا): يُحمَّلون عند أول @ فقط.
+  Future<void> _loadMembers() async {
+    if (_membersLoading) return;
+    final ids = (_chatData?['participants'] as List? ?? const [])
+        .whereType<String>()
+        .where((uid) => uid != SocialService.currentUid)
+        .toList();
+    if (ids.isEmpty) return;
+    _membersLoading = true;
+    try {
+      final users = await Future.wait(ids.map(UserService.profileOf));
+      _members = users
+          .whereType<AppUser>()
+          .where((user) => user.username.isNotEmpty)
+          .toList();
+    } catch (_) {
+      // يُعاد المحاولة عند الضغط على @ مرة أخرى.
+    } finally {
+      _membersLoading = false;
+    }
+    if (mounted) _updateMentionSuggestions();
+  }
+
+  /// نص @ الجاري كتابته عند المؤشر (أو null).
+  RegExpMatch? _activeMention(String text, int cursor) {
+    final end = cursor.clamp(0, text.length);
+    return _mentionQuery.firstMatch(text.substring(0, end));
+  }
+
+  void _updateMentionSuggestions() {
+    List<AppUser> next = const [];
+    if (_isGroup && _editTarget == null && !_recording) {
+      final text = _text.text;
+      final selection = _text.selection;
+      final cursor = selection.isValid ? selection.baseOffset : text.length;
+      final match = _activeMention(text, cursor);
+      if (match != null) {
+        final members = _members;
+        if (members == null) {
+          _loadMembers();
+        } else {
+          final query = match.group(1)!.toLowerCase();
+          next = members
+              .where((user) =>
+                  query.isEmpty ||
+                  user.username.toLowerCase().startsWith(query) ||
+                  user.name.toLowerCase().contains(query))
+              .take(6)
+              .toList();
+        }
+      }
+    }
+    final same = next.length == _mentionSuggestions.length &&
+        [for (var i = 0; i < next.length; i++) next[i].uid == _mentionSuggestions[i].uid]
+            .every((e) => e);
+    if (!same && mounted) setState(() => _mentionSuggestions = next);
+  }
+
+  void _pickMention(AppUser user) {
+    final text = _text.text;
+    final selection = _text.selection;
+    final cursor = (selection.isValid ? selection.baseOffset : text.length)
+        .clamp(0, text.length);
+    final match = _activeMention(text, cursor);
+    if (match == null) return;
+    final atIndex = match.end - match.group(1)!.length - 1;
+    final insert = '@${user.username} ';
+    _mentionMap[user.username.toLowerCase()] = user.uid;
+    _text.value = TextEditingValue(
+      text: text.substring(0, atIndex) + insert + text.substring(cursor),
+      selection: TextSelection.collapsed(offset: atIndex + insert.length),
+    );
+    _messageFocus.requestFocus();
+  }
+
+  /// من بقيت إشارتهم @ داخل النص فعلاً (يُهمَل من حُذف اسمه بعد اختياره).
+  List<String> _mentionsIn(String text) {
+    if (!_isGroup || _mentionMap.isEmpty) return const [];
+    final out = <String>[];
+    _mentionMap.forEach((username, uid) {
+      final pattern = RegExp(
+          '(?:^|\\s)@${RegExp.escape(username)}(?![A-Za-z0-9_.])',
+          caseSensitive: false);
+      if (pattern.hasMatch(text)) out.add(uid);
+    });
+    return out.take(10).toList();
+  }
+
+  Widget _buildMentionList() {
+    final colors = context.appColors;
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 230),
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      decoration: BoxDecoration(
+        color: colors.surfaceHigh,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        children: [
+          for (final user in _mentionSuggestions)
+            ListTile(
+              dense: true,
+              leading: UserAvatar(
+                uid: user.uid,
+                fallbackName: user.username,
+                profile: user,
+                radius: 16,
+              ),
+              title: Text(user.displayName,
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text('@${user.username}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: colors.textDim)),
+              onTap: () => _pickMention(user),
+            ),
+        ],
+      ),
+    );
+  }
+
   void _syncMicButton() {
     final now = _hasContent;
     if (now != _hadContent && mounted) setState(() => _hadContent = now);
@@ -3374,6 +3507,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final viewOnce = _viewOnce;
     final expiresAt = _vanish ? DateTime.now().add(_vanishDuration) : null;
     if (text.isEmpty && images.isEmpty) return;
+    final mentions = _mentionsIn(text);
     _text.clear();
     setState(() {
       _pendingImages.clear();
@@ -3432,9 +3566,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               replyToText: replyTarget?.text,
               replyToSenderUid: replyTarget?.senderUid,
               expiresAt: expiresAt,
+              mentions: mentions,
             );
       try {
         await sending;
+        _mentionMap.clear();
         if (mounted) {
           setState(() {
             _replyTarget = null;
@@ -4439,13 +4575,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  Widget _messageBody(String text, {required bool mine}) {
+  Widget _messageBody(String text,
+      {required bool mine, bool mentions = false}) {
     final style = TextStyle(
       color: mine ? Colors.white : context.appColors.text,
       fontSize: 15,
       height: 1.35,
     );
-    final linkPattern = RegExp(r'https?://\S+|www\.\S+');
+    // رسالة فيها إشارات @: تُبرَز الأسماء مع الروابط.
+    final linkPattern = mentions
+        ? RegExp(r'https?://\S+|www\.\S+|(?<![A-Za-z0-9_])@[A-Za-z0-9_.]{2,30}')
+        : RegExp(r'https?://\S+|www\.\S+');
     final matches = linkPattern.allMatches(text);
     if (matches.isEmpty) {
       return Text.rich(
@@ -4462,7 +4602,24 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         spans.addAll(
             inlineEmojiSpans(text.substring(cursor, match.start), style));
       }
-      final url = text.substring(match.start, match.end);
+      var matchEnd = match.end;
+      final isMention = text[match.start] == '@';
+      if (isMention) {
+        // النقطة الأخيرة علامة ترقيم لا من الاسم.
+        while (matchEnd > match.start + 1 && text[matchEnd - 1] == '.') {
+          matchEnd--;
+        }
+        spans.add(TextSpan(
+          text: text.substring(match.start, matchEnd),
+          style: style.copyWith(
+            color: mine ? Colors.white : AppColors.brandPurple,
+            fontWeight: FontWeight.w700,
+          ),
+        ));
+        cursor = matchEnd;
+        continue;
+      }
+      final url = text.substring(match.start, matchEnd);
       spans.add(TextSpan(
         text: url,
         style: style.copyWith(
@@ -4472,7 +4629,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         recognizer: TapGestureRecognizer()
           ..onTap = () => launchUrl(Uri.parse(url)),
       ));
-      cursor = match.end;
+      cursor = matchEnd;
     }
     if (cursor < text.length) {
       spans.addAll(inlineEmojiSpans(text.substring(cursor), style));
@@ -5190,7 +5347,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                         onTap: () => _openLocation(message),
                                       )
                                     else
-                                      _messageBody(message.text, mine: mine),
+                                      _messageBody(message.text,
+                                          mine: mine,
+                                          mentions: message.mentions.isNotEmpty),
                                     // نص مصاحب للصورة: فقاعة ملتصقة أسفلها.
                                     if (caption.isNotEmpty)
                                       Container(
@@ -5562,6 +5721,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                           ],
                         ),
                       ),
+                    if (_mentionSuggestions.isNotEmpty) _buildMentionList(),
                     if (_pendingImages.isNotEmpty)
                       _PendingImagesStrip(
                         images: _pendingImages,
