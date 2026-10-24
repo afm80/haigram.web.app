@@ -10,6 +10,7 @@ import 'story_backgrounds.dart';
 import 'story_mentions.dart';
 import 'story_poll.dart';
 import 'story_question.dart';
+import 'story_info.dart';
 import 'story_slider.dart';
 
 /// قصة نصية بخلفية ملونة (مثل إنستغرام): اكتب نصاً واختر لون الخلفية.
@@ -27,6 +28,7 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
   StoryPoll? _poll;
   StoryQuestion? _question;
   StorySlider? _slider;
+  final StoryInfo _info = StoryInfo();
   final List<StoryMention> _mentions = [];
   bool _closeFriends = false; // القصة للأصدقاء المقربين فقط
   bool _busy = false;
@@ -70,6 +72,7 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
           poll: _poll,
           question: _question,
           slider: _slider,
+          info: _info.isEmpty ? null : _info,
           mentions: List.of(_mentions),
           closeFriends: _closeFriends);
       if (_mentions.isNotEmpty) {
@@ -106,6 +109,10 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
                           size: 28, color: Colors.white),
                     ),
                     const Spacer(),
+                    StoryInfoMenu(
+                        info: _info,
+                        color: Colors.white,
+                        onChanged: () => setState(() {})),
                     IconButton(
                       onPressed: _busy ? null : _editSlider,
                       tooltip: tr('شريط إيموجي'),
@@ -207,6 +214,14 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
                       if (mounted) setState(() {});
                     }),
               ),
+              if (!_info.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: StoryInfoChips(
+                      info: _info,
+                      enabled: !_busy,
+                      onChanged: () => setState(() {})),
+                ),
               if (_slider != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),

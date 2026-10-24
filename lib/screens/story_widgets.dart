@@ -19,6 +19,7 @@ import 'story_backgrounds.dart';
 import 'story_mentions.dart';
 import 'story_poll.dart';
 import 'story_question.dart';
+import 'story_info.dart';
 import 'story_slider.dart';
 import '../route_state.dart';
 
@@ -836,6 +837,14 @@ class _StoryViewerState extends State<StoryViewer>
                                 child: StoryMentionsRow(
                                     mentions: story.mentions,
                                     onOpen: _openUser),
+                              ),
+                            if (story.info != null)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                                child: StoryInfoRow(
+                                    info: story.info!,
+                                    createdAt: story.createdAt),
                               ),
                             if (story.slider != null)
                               Padding(

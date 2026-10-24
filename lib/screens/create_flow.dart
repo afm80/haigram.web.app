@@ -18,6 +18,7 @@ import 'story_drawing.dart';
 import 'story_photo_editor.dart';
 import 'story_poll.dart';
 import 'story_question.dart';
+import 'story_info.dart';
 import 'story_slider.dart';
 import 'story_stickers.dart';
 import 'story_text_editor.dart';
@@ -476,6 +477,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
   StoryPoll? _poll; // استطلاع القصة (اختياري)
   StoryQuestion? _question; // صندوق أسئلة القصة (اختياري)
   StorySlider? _slider; // شريط إيموجي القصة (اختياري)
+  final StoryInfo _info = StoryInfo(); // رابط/موقع/عدّ تنازلي/وقت
   final List<StoryMention> _mentions = []; // مذكورون في القصة (حتى 3)
   bool _closeFriends = false; // القصة للأصدقاء المقربين فقط
   Timer? _linkDebounce;
@@ -867,6 +869,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
                 if (first && _question != null)
                   'question': _question!.toMap(),
                 if (first && _slider != null) 'slider': _slider!.toMap(),
+                if (first && !_info.isEmpty) ..._info.toExtra(),
                 if (first && _mentions.isNotEmpty)
                   'mentions': [for (final u in _mentions) u.toMap()],
               });
@@ -1137,6 +1140,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
                     icon: const Icon(Icons.poll_outlined),
                     label: Text(tr('استطلاع')),
                   ),
+                  StoryInfoMenu(info: _info, onChanged: () => setState(() {})),
                   TextButton.icon(
                     onPressed: _busy ? null : _editSlider,
                     icon: const Icon(Icons.linear_scale_rounded),
@@ -1156,6 +1160,11 @@ class _ComposeScreenState extends State<ComposeScreen> {
                   onChanged: () {
                     if (mounted) setState(() {});
                   }),
+            if (_canSticker && !_info.isEmpty)
+              StoryInfoChips(
+                  info: _info,
+                  enabled: !_busy,
+                  onChanged: () => setState(() {})),
             if (_canSticker && _slider != null)
               Align(
                 alignment: AlignmentDirectional.centerStart,
