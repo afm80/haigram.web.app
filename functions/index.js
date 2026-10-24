@@ -401,6 +401,32 @@ exports.adminSetUserBlocked = onCall(
   },
 );
 
+// نص الإشعار بحسب نوع الرسالة (بدل عرض النص الخام لكل الأنواع).
+function chatNotificationBody(message) {
+  switch (message.kind) {
+    case 'image':
+      return '📷 صورة جديدة';
+    case 'audio':
+      return '🎤 رسالة صوتية';
+    case 'location':
+      return '📍 موقع';
+    case 'share':
+      return '🔗 مشاركة';
+    case 'sticker':
+      return String(message.text || '🙂').slice(0, 40);
+    default:
+      return String(message.text || 'رسالة جديدة').slice(0, 160);
+  }
+}
+
+// الكتم: دائم (muted = true) أو مؤقت (mutedUntil لم ينتهِ بعد).
+function isChatMutedFor(chat, uid, nowMs) {
+  if (chat?.muted?.[uid] === true) return true;
+  const until = chat?.mutedUntil?.[uid];
+  const untilMs = typeof until?.toMillis === 'function' ? until.toMillis() : 0;
+  return untilMs > nowMs;
+}
+
 exports.notifyChatMessage = onDocumentCreated(
   {
     document: 'chats/{chatId}/messages/{messageId}',
@@ -409,34 +435,58 @@ exports.notifyChatMessage = onDocumentCreated(
   async (event) => {
     const message = event.data?.data();
     if (!message || typeof message.senderUid !== 'string') return;
+    // أثر «تم حذف الرسالة» لا يُشعِر أحداً.
+    if (message.kind === 'deleted') return;
 
     const db = getFirestore();
     const chatSnapshot = await db.doc(`chats/${event.params.chatId}`).get();
-    const participants = chatSnapshot.data()?.participants;
-    if (!Array.isArray(participants) || participants.length !== 2) return;
+    const chat = chatSnapshot.data();
+    const participants = chat?.participants;
+    if (!Array.isArray(participants) || participants.length < 2) return;
 
-    const recipientUid = participants.find((uid) => uid !== message.senderUid);
-    if (!recipientUid) return;
+    // محادثة فردية أو مجموعة: كل الأعضاء ما عدا المرسل، بعد استثناء من كتم.
+    const nowMs = Date.now();
+    const recipients = participants.filter(
+      (uid) =>
+        typeof uid === 'string' &&
+        uid !== message.senderUid &&
+        !isChatMutedFor(chat, uid, nowMs),
+    );
+    if (recipients.length === 0) return;
 
-    // المحادثة مكتومة عند المستلم: لا نرسل له إشعاراً.
-    if (chatSnapshot.data()?.muted?.[recipientUid] === true) return;
-
-    const tokenCollection = db
-      .collection('users')
-      .doc(recipientUid)
-      .collection('pushTokens');
-    const tokenSnapshot = await tokenCollection.get();
-    if (tokenSnapshot.empty) return;
+    const tokenRefs = [];
+    const tokens = [];
+    await Promise.all(
+      recipients.map(async (uid) => {
+        const snapshot = await db
+          .collection('users')
+          .doc(uid)
+          .collection('pushTokens')
+          .get();
+        snapshot.docs.forEach((doc) => {
+          const token = doc.data().token;
+          if (typeof token === 'string' && token) {
+            tokens.push(token);
+            tokenRefs.push(doc.ref);
+          }
+        });
+      }),
+    );
+    if (tokens.length === 0) return;
 
     const senderSnapshot = await db.doc(`users/${message.senderUid}`).get();
-    const title = String(
-      senderSnapshot.data()?.name || senderSnapshot.data()?.username || 'Haigram',
+    const senderName = String(
+      senderSnapshot.data()?.name ||
+        senderSnapshot.data()?.username ||
+        'Haigram',
     );
-    const body = message.kind === 'image'
-      ? '📷 صورة جديدة'
-      : String(message.text || 'رسالة جديدة').slice(0, 160);
-    const response = await getMessaging().sendEachForMulticast({
-      tokens: tokenSnapshot.docs.map((doc) => doc.data().token),
+    const isGroup = chat?.isGroup === true;
+    // المجموعة: عنوان الإشعار اسمها، والمرسل يسبق النص.
+    const title = isGroup ? String(chat?.groupName || 'Haigram') : senderName;
+    const content = chatNotificationBody(message);
+    const body = isGroup ? `${senderName}: ${content}` : content;
+
+    const payload = {
       // بلا حقل notification على مستوى الرسالة: على الويب يعرض الـ service worker
       // الإشعار بنفسه (وإلا ظهر إشعاران: تلقائي + يدوي). أندرويد يعرضه من
       // android.notification.
@@ -454,20 +504,28 @@ exports.notifyChatMessage = onDocumentCreated(
         priority: 'high',
         notification: { title, body, tag: `chat_${event.params.chatId}` },
       },
-    });
+    };
 
+    // حد FCM: 500 توكن في الطلب الواحد (المجموعة قد تصل إلى 250 عضواً).
     const staleTokens = [];
-    response.responses.forEach((result, index) => {
-      if (
-        !result.success &&
-        ['messaging/invalid-registration-token',
-          'messaging/registration-token-not-registered'].includes(
-            result.error?.code,
-          )
-      ) {
-        staleTokens.push(tokenSnapshot.docs[index].ref);
-      }
-    });
+    for (let start = 0; start < tokens.length; start += 500) {
+      const chunk = tokens.slice(start, start + 500);
+      const response = await getMessaging().sendEachForMulticast({
+        ...payload,
+        tokens: chunk,
+      });
+      response.responses.forEach((result, index) => {
+        if (
+          !result.success &&
+          ['messaging/invalid-registration-token',
+            'messaging/registration-token-not-registered'].includes(
+              result.error?.code,
+            )
+        ) {
+          staleTokens.push(tokenRefs[start + index]);
+        }
+      });
+    }
     if (staleTokens.length > 0) {
       const batch = db.batch();
       staleTokens.forEach((ref) => batch.delete(ref));
