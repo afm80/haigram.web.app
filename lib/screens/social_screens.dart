@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'image_save_stub.dart' if (dart.library.html) 'image_save_web.dart';
-import 'dart:ui' show ImageFilter;
+import 'voice_stub.dart' if (dart.library.html) 'voice_web.dart';
+import 'location_stub.dart' if (dart.library.html) 'location_web.dart';
+import 'dart:ui' show FontFeature, ImageFilter;
 
 import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -2361,6 +2363,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   DateTime? _readAtWhenOpened;
   bool _capturedReadAtWhenOpened = false;
   bool _sending = false;
+
+  // تسجيل الرسالة الصوتية (كإنستغرام): ميكروفون بدل زر الإرسال عند فراغ الحقل.
+  VoiceRecorder? _voice;
+  Timer? _voiceTimer;
+  bool _recording = false;
+  int _recSecs = 0;
   bool _draftRestored = false;
   String? _failedText;
   List<Uint8List> _failedImages = const [];
@@ -2492,6 +2500,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _messageFocus.addListener(_hideStickersOnFocus);
     _text.addListener(_syncTypingState);
     _text.addListener(_scheduleDraftSave);
+    _text.addListener(_syncMicButton);
     _restoreDraft();
     _scroll.addListener(_onScroll);
     _chatSub = SocialService.chatStream(widget.conversationId).listen(
@@ -2552,6 +2561,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           .catchError((_) {});
     }
     _text.removeListener(_scheduleDraftSave);
+    _text.removeListener(_syncMicButton);
+    _voiceTimer?.cancel();
+    _voice?.cancel();
     _draftTimer?.cancel();
     _saveDraft();
     _messageFocus.dispose();
@@ -2940,6 +2952,289 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ),
     );
     controller.dispose();
+  }
+
+  bool _hadContent = false;
+
+  /// يبدّل الكاميرا/الإرسال وإخفاء الميكروفون عند تغيّر فراغ الحقل فقط.
+  void _syncMicButton() {
+    final now = _hasContent;
+    if (now != _hadContent && mounted) setState(() => _hadContent = now);
+  }
+
+  bool get _canRecordVoice =>
+      VoiceRecorder.supported &&
+      !_sending &&
+      _editTarget == null &&
+      !_firstMessageToStranger &&
+      _pendingImages.isEmpty &&
+      _text.text.trim().isEmpty;
+
+  Future<void> _startRecording() async {
+    if (_recording || !_canRecordVoice) return;
+    final recorder = VoiceRecorder();
+    try {
+      await recorder.start();
+    } catch (_) {
+      recorder.cancel();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(tr('تعذر الوصول إلى الميكروفون، اسمح به من المتصفح'))),
+        );
+      }
+      return;
+    }
+    if (!mounted) {
+      recorder.cancel();
+      return;
+    }
+    setState(() {
+      _voice = recorder;
+      _recording = true;
+      _recSecs = 0;
+    });
+    _voiceTimer?.cancel();
+    _voiceTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _recSecs++);
+      // الحد الأقصى دقيقتان: يُرسل التسجيل تلقائياً عند بلوغه.
+      if (_recSecs >= voiceMaxSeconds) _finishRecording(send: true);
+    });
+  }
+
+  Future<void> _finishRecording({required bool send}) async {
+    final recorder = _voice;
+    if (recorder == null || !_recording) return;
+    _voiceTimer?.cancel();
+    setState(() {
+      _recording = false;
+      _voice = null;
+    });
+    if (!send) {
+      recorder.cancel();
+      return;
+    }
+    final replyTarget = _replyTarget;
+    final expiresAt = _vanish ? DateTime.now().add(_vanishDuration) : null;
+    setState(() => _sending = true);
+    try {
+      final clip = await recorder.stop();
+      if (clip == null || clip.seconds < 1) return;
+      await SocialService.sendAudio(
+        widget.conversationId,
+        clip.bytes,
+        mime: clip.mime,
+        ext: clip.ext,
+        seconds: clip.seconds,
+        replyToMessageId: replyTarget?.id,
+        replyToText: replyTarget?.text,
+        replyToSenderUid: replyTarget?.senderUid,
+        expiresAt: expiresAt,
+      );
+      if (mounted) setState(() => _replyTarget = null);
+    } catch (e) {
+      _showError(tr('تعذر إرسال الرسالة الصوتية'), e);
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  String _fmtSecs(int s) =>
+      '${(s ~/ 60)}:${(s % 60).toString().padLeft(2, '0')}';
+
+  bool get _hasContent =>
+      _text.text.trim().isNotEmpty || _pendingImages.isNotEmpty;
+
+  bool get _attachBlocked =>
+      _sending || _firstMessageToStranger || _editTarget != null;
+
+  /// قائمة «+»: الخيارات غير الظاهرة في الشريط (مرة واحدة، الموقع).
+  Future<void> _showPlusMenu() async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(_viewOnce
+                  ? Icons.visibility_off_rounded
+                  : Icons.visibility_outlined),
+              title: Text(_viewOnce
+                  ? tr('إلغاء الإرسال مرة واحدة')
+                  : tr('إرسال صورة مرة واحدة')),
+              onTap: () => Navigator.pop(sheetContext, 'viewOnce'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.location_on_outlined),
+              title: Text(tr('إرسال موقعي')),
+              onTap: () => Navigator.pop(sheetContext, 'location'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (action == 'viewOnce') {
+      setState(() => _viewOnce = !_viewOnce);
+    } else if (action == 'location') {
+      final place = await currentChatLocation();
+      if (!mounted) return;
+      if (place == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(tr('تعذر تحديد موقعك، اسمح به من المتصفح'))),
+        );
+        return;
+      }
+      try {
+        await SocialService.sendLocation(widget.conversationId,
+            lat: place.lat, lng: place.lng);
+      } catch (e) {
+        _showError(tr('تعذر إرسال الموقع'), e);
+      }
+    }
+  }
+
+  /// شريط الإدخال على ترتيب إنستغرام: [كاميرا/إرسال] [حقل النص] [ميكروفون]
+  /// [معرض] [ملصقات] [+] داخل كبسولة واحدة.
+  Widget _buildComposerPill() {
+    final colors = context.appColors;
+    final hasContent = _hasContent;
+    final blocked = _attachBlocked;
+    Widget small(IconData icon, String tip, VoidCallback? onTap,
+            {Color? color}) =>
+        IconButton(
+          tooltip: tip,
+          visualDensity: VisualDensity.compact,
+          color: color,
+          onPressed: onTap,
+          icon: Icon(icon),
+        );
+    return Container(
+      padding: const EdgeInsetsDirectional.fromSTEB(5, 4, 4, 4),
+      decoration: BoxDecoration(
+        color: colors.surfaceHigh,
+        borderRadius: BorderRadius.circular(26),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          IconButton.filled(
+            tooltip: hasContent ? tr('إرسال') : tr('التقاط صورة'),
+            onPressed: _sending
+                ? null
+                : (hasContent
+                    ? _send
+                    : (blocked ? null : () => _pickImage(ImageSource.camera))),
+            style: IconButton.styleFrom(backgroundColor: AppColors.accent),
+            icon: _sending
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
+                : Icon(
+                    hasContent
+                        ? Icons.send_rounded
+                        : Icons.photo_camera_rounded,
+                    color: Colors.white),
+          ),
+          Expanded(
+            child: TextField(
+              controller: _text,
+              focusNode: _messageFocus,
+              minLines: 1,
+              maxLines: 4,
+              maxLength: 2000,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => _send(),
+              decoration: InputDecoration(
+                hintText: tr('مراسلة...'),
+                counterText: '',
+                isDense: true,
+                filled: false,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              ),
+            ),
+          ),
+          if (!hasContent && VoiceRecorder.supported)
+            small(Icons.mic_none_rounded, tr('رسالة صوتية'),
+                _canRecordVoice ? _startRecording : null),
+          if (!hasContent)
+            small(Icons.image_outlined, tr('إرسال صورة'),
+                blocked ? null : () => _pickImage(ImageSource.gallery)),
+          small(
+              _showStickers
+                  ? Icons.keyboard_alt_outlined
+                  : Icons.emoji_emotions_outlined,
+              tr('الملصقات والرموز التعبيرية'),
+              _toggleStickers),
+          small(Icons.add_circle_outline_rounded, tr('إضافة'),
+              blocked ? null : _showPlusMenu,
+              color: _viewOnce ? AppColors.accent : null),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecordingBar() {
+    final colors = context.appColors;
+    return Row(
+      children: [
+        IconButton(
+          tooltip: tr('إلغاء'),
+          onPressed: () => _finishRecording(send: false),
+          icon: const Icon(Icons.delete_outline_rounded),
+        ),
+        Expanded(
+          child: Container(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: colors.surfaceHigh,
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.fiber_manual_record_rounded,
+                    color: Colors.redAccent, size: 14),
+                const SizedBox(width: 8),
+                Text(
+                  _fmtSecs(_recSecs),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontFeatures: [FontFeature.tabularFigures()]),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: LinearProgressIndicator(
+                      value: _recSecs / voiceMaxSeconds,
+                      minHeight: 3,
+                      backgroundColor: colors.surface,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 5),
+        IconButton.filled(
+          tooltip: tr('إرسال'),
+          onPressed: () => _finishRecording(send: true),
+          style: IconButton.styleFrom(backgroundColor: AppColors.accent),
+          icon: const Icon(Icons.send_rounded, color: Colors.white),
+        ),
+      ],
+    );
   }
 
   /// يرسل الصورة المرفقة ثم النص (بهذا الترتيب) عند ضغط زر الإرسال فقط.
@@ -3687,6 +3982,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       message.kind == 'sticker' ||
       (message.kind == 'image' &&
           (message.imageUrl != null || message.imageBytes != null)) ||
+      (message.kind == 'audio' &&
+          message.audioUrl != null &&
+          message.audioSecs != null) ||
       (message.kind == 'location' &&
           message.lat != null &&
           message.lng != null);
@@ -4326,6 +4624,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                         .contains(SocialService.currentUid));
                             // مشاركة غنية (بطاقة منشور/ملف شخصي): بلا فقاعة.
                             final isShare = message.kind == 'share';
+                            final isAudio = message.kind == 'audio' &&
+                                message.audioUrl != null;
                             // موقع مُرسل: بطاقة بلا فقاعة (كإنستغرام).
                             final isLocation = message.kind == 'location' &&
                                 message.lat != null &&
@@ -4547,6 +4847,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                             )
                                     else if (sticker)
                                       StickerMessage(message.text)
+                                    else if (isAudio)
+                                      _VoiceBubble(
+                                        key: ValueKey('voice-${message.id}'),
+                                        url: message.audioUrl!,
+                                        seconds: message.audioSecs ?? 0,
+                                        mine: mine,
+                                      )
                                     else if (isShare)
                                       _ShareCard(
                                         message: message,
@@ -5044,86 +5351,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       bottom: !_showStickers,
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(8, 7, 8, 8),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            // الأزرار تستدعي المنتقي مباشرة داخل الضغطة (شرط المتصفحات).
-                            IconButton(
-                              tooltip: _viewOnce
-                                  ? tr('إلغاء الإرسال مرة واحدة')
-                                  : tr('إرسال صورة مرة واحدة'),
-                              visualDensity: VisualDensity.compact,
-                              color: _viewOnce ? AppColors.accent : null,
-                              onPressed: (_sending ||
-                                      _firstMessageToStranger ||
-                                      _editTarget != null)
-                                  ? null
-                                  : () =>
-                                      setState(() => _viewOnce = !_viewOnce),
-                              icon: Icon(_viewOnce
-                                  ? Icons.visibility_off_rounded
-                                  : Icons.visibility_outlined),
-                            ),
-                            IconButton(
-                              tooltip: tr('التقاط صورة'),
-                              visualDensity: VisualDensity.compact,
-                              onPressed: (_sending ||
-                                      _firstMessageToStranger ||
-                                      _editTarget != null)
-                                  ? null
-                                  : () => _pickImage(ImageSource.camera),
-                              icon: const Icon(Icons.photo_camera_outlined),
-                            ),
-                            IconButton(
-                              tooltip: tr('إرسال صورة'),
-                              visualDensity: VisualDensity.compact,
-                              onPressed: (_sending ||
-                                      _firstMessageToStranger ||
-                                      _editTarget != null)
-                                  ? null
-                                  : () => _pickImage(ImageSource.gallery),
-                              icon: const Icon(Icons.image_outlined),
-                            ),
-                            IconButton(
-                              tooltip: tr('الملصقات والرموز التعبيرية'),
-                              visualDensity: VisualDensity.compact,
-                              onPressed: _toggleStickers,
-                              icon: Icon(_showStickers
-                                  ? Icons.keyboard_alt_outlined
-                                  : Icons.emoji_emotions_outlined),
-                            ),
-                            Expanded(
-                              child: TextField(
-                                controller: _text,
-                                focusNode: _messageFocus,
-                                minLines: 1,
-                                maxLines: 4,
-                                maxLength: 2000,
-                                textInputAction: TextInputAction.send,
-                                onSubmitted: (_) => _send(),
-                                decoration: InputDecoration(
-                                  hintText: tr('اكتب رسالة...'),
-                                  counterText: '',
-                                  isDense: true,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 5),
-                            IconButton.filled(
-                              onPressed: _sending ? null : _send,
-                              style: IconButton.styleFrom(
-                                  backgroundColor: AppColors.accent),
-                              icon: _sending
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2, color: Colors.white))
-                                  : const Icon(Icons.send_rounded,
-                                      color: Colors.white),
-                            ),
-                          ],
-                        ),
+                        child: _recording
+                            ? _buildRecordingBar()
+                            : _buildComposerPill(),
                       ),
                     ),
                     if (_showStickers)
@@ -8035,6 +8265,122 @@ class _TypingBubbleState extends State<_TypingBubble>
           ),
         ),
       ],
+    );
+  }
+}
+
+
+/// فقاعة رسالة صوتية: زر تشغيل/إيقاف + شريط تقدم + المدة.
+class _VoiceBubble extends StatefulWidget {
+  final String url;
+  final int seconds;
+  final bool mine;
+  const _VoiceBubble({
+    super.key,
+    required this.url,
+    required this.seconds,
+    required this.mine,
+  });
+
+  @override
+  State<_VoiceBubble> createState() => _VoiceBubbleState();
+}
+
+class _VoiceBubbleState extends State<_VoiceBubble> {
+  VoicePlayer? _player;
+
+  VoicePlayer _ensurePlayer() {
+    var player = _player;
+    if (player == null) {
+      player = VoicePlayer(widget.url);
+      player.addListener(_onTick);
+      _player = player;
+    }
+    return player;
+  }
+
+  void _onTick() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _toggle() async {
+    if (!VoicePlayer.supported) {
+      await launchUrl(Uri.parse(widget.url),
+          mode: LaunchMode.externalApplication);
+      return;
+    }
+    try {
+      await _ensurePlayer().toggle();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(tr('تعذر تشغيل الرسالة الصوتية'))),
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _player?.removeListener(_onTick);
+    _player?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final fg = widget.mine ? Colors.white : colors.text;
+    final total = widget.seconds < 1 ? 1 : widget.seconds;
+    final player = _player;
+    final playing = player?.playing ?? false;
+    final pos = player?.position ?? 0.0;
+    final progress = (pos / total).clamp(0.0, 1.0);
+    final shown = playing || pos > 0 ? pos.floor() : total;
+    final label =
+        '${shown ~/ 60}:${(shown % 60).toString().padLeft(2, '0')}';
+    return SizedBox(
+      width: 210,
+      child: Row(
+        children: [
+          InkWell(
+            customBorder: const CircleBorder(),
+            onTap: _toggle,
+            child: Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: widget.mine
+                    ? Colors.white.withOpacity(0.2)
+                    : colors.surface,
+              ),
+              child: Icon(
+                  playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  color: fg),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 4,
+                color: fg,
+                backgroundColor: fg.withOpacity(0.25),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(label,
+              style: TextStyle(
+                  color: fg,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  fontFeatures: const [FontFeature.tabularFigures()])),
+        ],
+      ),
     );
   }
 }
