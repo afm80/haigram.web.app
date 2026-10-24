@@ -208,10 +208,22 @@ class _HomeFeedScreenState extends State<HomeFeedScreen> {
         builder: (context, shortsSnap) {
           final following = _mode == _FeedMode.following;
           final followSet = {...?_followIds};
-          final shorts = [
+          final pubShorts = [
             for (final p in shortsSnap.data ?? const <Post>[])
               if (!following || followSet.contains(p.uid)) p
           ];
+          // ريلز الحسابات الخاصة التي أتابعها: تأتي مع منشوراتها (لا مع الاستعلام العام).
+          final privShorts = following
+              ? [
+                  for (final p in _privPosts)
+                    if (p.isShort && !_hiddenBase.contains(p.id)) p
+                ]
+              : const <Post>[];
+          final seenShorts = <String>{};
+          final shorts = [
+            for (final p in [...pubShorts, ...privShorts])
+              if (seenShorts.add(p.id)) p
+          ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
           // شورتز تظهر في شريط أفقي، والبقية منشورات عادية.
           final loaded = _photos != null && _texts != null;
           final posts = !loaded
