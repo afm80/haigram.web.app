@@ -1331,35 +1331,7 @@ Future<void> _showChatMenu(
   }
   try {
     if (action == 'mute') {
-      if (muted) {
-        await SocialService.setChatMuted(conversation.id, muted: false);
-        if (context.mounted) {
-          _chatMenuToast(context, tr('تم إلغاء كتم المحادثة'));
-        }
-      } else {
-        final choice = await _pickMuteDuration(context);
-        if (choice == null || !context.mounted) return;
-        final now = DateTime.now();
-        final until = choice == '1h'
-            ? now.add(const Duration(hours: 1))
-            : choice == '8h'
-                ? now.add(const Duration(hours: 8))
-                : choice == '24h'
-                    ? now.add(const Duration(hours: 24))
-                    : null;
-        await SocialService.setChatMuted(conversation.id,
-            muted: true, until: until);
-        if (context.mounted) {
-          _chatMenuToast(
-            context,
-            choice == 'forever'
-                ? tr('تم كتم المحادثة')
-                : tr('تم كتم المحادثة مؤقتاً'),
-            onUndo: () =>
-                SocialService.setChatMuted(conversation.id, muted: false),
-          );
-        }
-      }
+      await _toggleChatMute(context, conversation.id, muted);
     } else if (action == 'archive') {
       await SocialService.setChatArchived(conversation.id, !archived);
     } else {
@@ -1379,6 +1351,39 @@ Future<void> _showChatMenu(
                 friendlyError(error, fallback: tr('تعذر تحديث المحادثة')))),
       );
     }
+  }
+}
+
+/// كتم المحادثة أو إلغاء كتمها (يُستعمل من صندوق الرسائل ومن قائمة المحادثة).
+/// يرمي الخطأ إلى المستدعي ليعرضه.
+Future<void> _toggleChatMute(
+    BuildContext context, String conversationId, bool muted) async {
+  if (muted) {
+    await SocialService.setChatMuted(conversationId, muted: false);
+    if (context.mounted) {
+      _chatMenuToast(context, tr('تم إلغاء كتم المحادثة'));
+    }
+    return;
+  }
+  final choice = await _pickMuteDuration(context);
+  if (choice == null || !context.mounted) return;
+  final now = DateTime.now();
+  final until = choice == '1h'
+      ? now.add(const Duration(hours: 1))
+      : choice == '8h'
+          ? now.add(const Duration(hours: 8))
+          : choice == '24h'
+              ? now.add(const Duration(hours: 24))
+              : null;
+  await SocialService.setChatMuted(conversationId, muted: true, until: until);
+  if (context.mounted) {
+    _chatMenuToast(
+      context,
+      choice == 'forever'
+          ? tr('تم كتم المحادثة')
+          : tr('تم كتم المحادثة مؤقتاً'),
+      onUndo: () => SocialService.setChatMuted(conversationId, muted: false),
+    );
   }
 }
 
@@ -1423,7 +1428,7 @@ Future<String?> _pickMuteDuration(BuildContext context) {
             onTap: () => Navigator.pop(sheetContext, '24h'),
           ),
           ListTile(
-            title: Text(tr('كتم حتى إعادة التشغيل')),
+            title: Text(tr('كتم حتى أعيد تفعيله')),
             onTap: () => Navigator.pop(sheetContext, 'forever'),
           ),
         ],
@@ -2428,6 +2433,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   /// لون فقاعاتي في هذه المحادثة.
   Color get _mineColor => _look.bubble;
+
+  /// هل كتمتُ هذه المحادثة (دائماً أو مؤقتاً لم ينتهِ)؟
+  bool get _mutedByMe {
+    final me = SocialService.currentUid;
+    final forever = _chatData?['muted'];
+    if (forever is Map && forever[me] == true) return true;
+    final until = _chatData?['mutedUntil'];
+    final at = until is Map ? until[me] : null;
+    return at is Timestamp && at.toDate().isAfter(DateTime.now());
+  }
   bool? _friends; // null = لم يُعرف بعد (لا نقيّد الواجهة حتى يُعرف)
 
   /// محادثة جماعية (من الواجهة أو من مستند المحادثة بعد التحميل).
@@ -3768,6 +3783,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ));
       return;
     }
+    if (action == 'mute') {
+      try {
+        await _toggleChatMute(context, widget.conversationId, _mutedByMe);
+      } catch (error) {
+        _showError(tr('تعذر تحديث المحادثة'), error);
+      }
+      return;
+    }
     if (action == 'nickname') {
       await _editNickname();
       return;
@@ -4878,6 +4901,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                         ? null
                                         : _look.bubble),
                                 title: Text(tr('ألوان المحادثة')),
+                              ),
+                            ),
+                            PopupMenuItem(
+                              value: 'mute',
+                              child: ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: Icon(_mutedByMe
+                                    ? Icons.notifications_active_outlined
+                                    : Icons.notifications_off_outlined),
+                                title: Text(_mutedByMe
+                                    ? tr('إلغاء الكتم')
+                                    : tr('كتم المحادثة')),
                               ),
                             ),
                             if (!_isGroup)
