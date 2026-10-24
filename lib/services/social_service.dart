@@ -216,6 +216,9 @@ class ChatMessage {
   final String? replyToSenderUid;
   final Map<String, String> reactions;
 
+  /// حُذفت لدى الجميع: يظهر أثر «تم حذف الرسالة» بدل المحتوى.
+  bool get deleted => kind == 'deleted';
+
   /// عُدّلت الرسالة بعد إرسالها (يظهر وسم «معدّلة»).
   final bool edited;
 
@@ -237,6 +240,9 @@ class ChatMessage {
   /// رسالة صوتية (kind == 'audio'): رابط الملف ومدته بالثواني.
   final String? audioUrl;
   final int? audioSecs;
+
+  /// شكل موجة الرسالة الصوتية (أرقام 0-9، ارتفاع كل عمود).
+  final String? audioWave;
 
   /// موقع مُرسل (kind == 'location').
   final double? lat;
@@ -274,6 +280,7 @@ class ChatMessage {
     this.imageUrl,
     this.audioUrl,
     this.audioSecs,
+    this.audioWave,
     this.lat,
     this.lng,
     this.viewOnce = false,
@@ -300,6 +307,7 @@ class ChatMessage {
         imageUrl: data['imageUrl'] as String?,
         audioUrl: data['audioUrl'] as String?,
         audioSecs: (data['audioSecs'] as num?)?.toInt(),
+        audioWave: data['audioWave'] as String?,
         lat: (data['lat'] as num?)?.toDouble(),
         lng: (data['lng'] as num?)?.toDouble(),
         replyToMessageId: data['replyToMessageId'] as String?,
@@ -1256,6 +1264,7 @@ class SocialService {
     required String mime,
     required String ext,
     required int seconds,
+    String wave = '',
     String? replyToMessageId,
     String? replyToText,
     String? replyToSenderUid,
@@ -1274,6 +1283,7 @@ class SocialService {
       kind: 'audio',
       audioUrl: url,
       audioSecs: seconds,
+      audioWave: wave.isEmpty ? null : wave,
       replyToMessageId: replyToMessageId,
       replyToText: replyToText,
       replyToSenderUid: replyToSenderUid,
@@ -1328,6 +1338,7 @@ class SocialService {
         kind: 'audio',
         audioUrl: url,
         audioSecs: secs,
+        audioWave: message.audioWave,
         forwarded: true,
       );
       return;
@@ -1474,6 +1485,7 @@ class SocialService {
       if (message.imageUrl != null) 'imageUrl': message.imageUrl,
       if (message.audioUrl != null) 'audioUrl': message.audioUrl,
       if (message.audioSecs != null) 'audioSecs': message.audioSecs,
+      if (message.audioWave != null) 'audioWave': message.audioWave,
       if (message.shareType != null) 'shareType': message.shareType,
       if (message.shareId != null) 'shareId': message.shareId,
       if (message.shareSubtitle != null) 'shareSubtitle': message.shareSubtitle,
@@ -1568,7 +1580,8 @@ class SocialService {
     await batch.commit();
   }
 
-  /// «حذف لدى الجميع»: يحذف رسالتي (نصاً أو صورة أو ملصقاً) من المحادثة نهائياً.
+  /// «حذف لدى الجميع»: تتحول رسالتي (نص/صورة/صوت/ملصق...) إلى أثر
+  /// «تم حذف الرسالة» عند الطرفين، ويُمسح محتواها وملفاتها من المستند.
   static Future<void> deleteMessage(
       String conversationId, String messageId) async {
     final chat = _chats.doc(conversationId);
@@ -1579,38 +1592,34 @@ class SocialService {
     if (!chatSnapshot.exists || !messageSnapshot.exists) {
       throw StateError(tr('الرسالة غير موجودة'));
     }
-    if (messageSnapshot.data()?['senderUid'] != _uid) {
+    final data = messageSnapshot.data() ?? const <String, dynamic>{};
+    if (data['senderUid'] != _uid) {
       throw StateError(tr('يمكنك حذف رسائلك فقط'));
     }
+    if (data['kind'] == 'deleted') return;
 
+    final label = tr('تم حذف الرسالة');
     final batch = _db.batch();
+    batch.update(message, {
+      'kind': 'deleted',
+      'text': label,
+      'deletedAt': FieldValue.serverTimestamp(),
+      for (final field in _deletedClearFields) field: FieldValue.delete(),
+    });
+    // ملخّص المحادثة لا يكشف النص المحذوف (ولا يغيّر وقتها فلا تقفز للأعلى).
     if (chatSnapshot.data()?['lastMessageId'] == messageId) {
-      final recentMessages = await chat
-          .collection('messages')
-          .orderBy('createdAt', descending: true)
-          .limit(2)
-          .get();
-      final previousMessages =
-          recentMessages.docs.where((document) => document.id != messageId);
-      final previous = previousMessages.isEmpty ? null : previousMessages.first;
-      // يعود updatedAt إلى وقت الرسالة السابقة نفسه (Timestamp الخام بلا تحويل
-      // إلى DateTime حتى لا تضيع الميكروثواني)، وإلا ظهرت المحادثة «غير مقروءة»
-      // وقفزت لأعلى القائمة بعد الحذف. إن لم تبقَ رسائل يُستعمل وقت الخادم.
-      final previousCreatedAt = previous?.data()['createdAt'];
-      if (previous != null && previousCreatedAt is! Timestamp) {
-        throw StateError(tr('تعذر حذف الرسالة الآن، حاول بعد لحظات'));
-      }
-      batch.update(chat, {
-        'lastMessage': previous?.data()['text'] ?? '',
-        'lastSenderUid': previous?.data()['senderUid'] ?? '',
-        'lastMessageId': previous?.id ?? '',
-        'updatedAt':
-            previous == null ? FieldValue.serverTimestamp() : previousCreatedAt,
-      });
+      batch.update(chat, {'lastMessage': label});
     }
-    batch.delete(message);
     await batch.commit();
   }
+
+  /// الحقول التي تُمسح من الرسالة عند حذفها لدى الجميع.
+  static const _deletedClearFields = [
+    'image', 'imageUrl', 'audioUrl', 'audioSecs', 'audioWave', 'lat', 'lng',
+    'shareType', 'shareId', 'shareSubtitle', 'shareImage', 'shareLink',
+    'replyToMessageId', 'replyToText', 'replyToSenderUid', 'reactions',
+    'viewOnce', 'viewedBy', 'forwarded', 'editedAt',
+  ];
 
   static Future<void> _sendChatMessage(
     String conversationId, {
@@ -1620,6 +1629,7 @@ class SocialService {
     String? imageUrl,
     String? audioUrl,
     int? audioSecs,
+    String? audioWave,
     String? replyToMessageId,
     String? replyToText,
     String? replyToSenderUid,
@@ -1695,6 +1705,7 @@ class SocialService {
         if (audioUrl != null) {
           messageData['audioUrl'] = audioUrl;
           messageData['audioSecs'] = audioSecs;
+          if (audioWave != null) messageData['audioWave'] = audioWave;
         }
         if (imageUrl != null) {
           messageData['imageUrl'] = imageUrl;
