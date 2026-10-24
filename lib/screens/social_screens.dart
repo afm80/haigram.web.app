@@ -4247,6 +4247,62 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   /// يطلب موقع الجهاز الحالي ويرسله كبطاقة في المحادثة.
   /// يضع تفاعلاً على الرسالة؛ والضغط على نفس تفاعلي الحالي يزيله.
+  /// من تفاعل على الرسالة وبماذا؛ ضغطة على تفاعلي تزيله (كإنستغرام).
+  Future<void> _showReactions(ChatMessage message) async {
+    if (message.reactions.isEmpty) return;
+    final me = SocialService.currentUid;
+    final entries = message.reactions.entries.toList()
+      ..sort((a, b) => a.key == me ? -1 : (b.key == me ? 1 : 0));
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: context.appColors.surface,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.6),
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text(tr('التفاعلات'),
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w700)),
+              ),
+              for (final entry in entries)
+                FutureBuilder<AppUser?>(
+                  future: UserService.profileOf(entry.key),
+                  builder: (context, snapshot) {
+                    final user = snapshot.data;
+                    final isMe = entry.key == me;
+                    return ListTile(
+                      leading: UserAvatar(
+                        uid: entry.key,
+                        fallbackName: user?.name ?? '',
+                        radius: 20,
+                        profile: user,
+                      ),
+                      title: Text(
+                          isMe ? tr('أنت') : (user?.displayName ?? '...')),
+                      subtitle: isMe ? Text(tr('اضغط لإزالة تفاعلك')) : null,
+                      trailing: StickerGlyph(entry.value, size: 28),
+                      onTap: isMe
+                          ? () {
+                              Navigator.pop(sheetContext);
+                              _reactToMessage(message, entry.value);
+                            }
+                          : null,
+                    );
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _reactToMessage(ChatMessage message, String reaction) async {
     final same = message.reactions[SocialService.currentUid] == reaction;
     HapticFeedback.lightImpact();
@@ -5041,7 +5097,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                             _messageBody(caption, mine: mine),
                                       ),
                                     if (reactionCounts.isNotEmpty)
-                                      Padding(
+                                      GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onTap: () => _showReactions(message),
+                                        child: Padding(
                                         padding: const EdgeInsets.only(top: 5),
                                         child: Wrap(
                                           spacing: 4,
@@ -5071,6 +5130,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                               ),
                                           ],
                                         ),
+                                      ),
                                       ),
                                   ],
                                 ),
