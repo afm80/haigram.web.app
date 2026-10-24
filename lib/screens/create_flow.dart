@@ -13,6 +13,7 @@ import '../net_error.dart';
 import '../video_source.dart';
 import 'sticker_sheet.dart' show StickerPanel;
 import 'close_friends_screen.dart';
+import 'freeze_when_covered.dart';
 import 'story_mentions.dart';
 import 'story_drawing.dart';
 import 'story_photo_editor.dart';
@@ -1425,7 +1426,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
   }
 
   Widget _storyEditor(BuildContext context) {
-    return Scaffold(
+    return FreezeWhenCovered(
+        child: Scaffold(
       backgroundColor: Colors.black,
       resizeToAvoidBottomInset: false,
       body: SafeArea(
@@ -1472,7 +1474,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
           ],
         ),
       ),
-    );
+    ));
   }
 
   @override

@@ -6,6 +6,7 @@ import '../l10n.dart';
 import '../net_error.dart';
 import '../services/post_service.dart';
 import 'close_friends_screen.dart';
+import 'freeze_when_covered.dart';
 import 'story_backgrounds.dart';
 import 'story_mentions.dart';
 import 'story_movable.dart';
@@ -107,7 +108,8 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return FreezeWhenCovered(
+        child: Scaffold(
       resizeToAvoidBottomInset: !_dialogOpen,
       body: Container(
         decoration: BoxDecoration(gradient: storyGradient(_bg)),
@@ -324,6 +326,6 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
           ],
         ),
       ),
-    );
+    ));
   }
 }
