@@ -22,6 +22,7 @@ import 'create_flow.dart';
 import 'common_widgets.dart' show UserAvatar;
 import 'explore_screen.dart';
 import 'home_feed_screen.dart';
+import 'story_privacy_screen.dart';
 import 'social_screens.dart';
 import 'post_widgets.dart' show PostDetailScreen, stopInlineVideos;
 import 'profile_screen.dart';
@@ -319,6 +320,9 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
       case 'blockedUsers':
         return appRoute<void>(
             'blockedUsers', const {}, (_) => const BlockedUsersScreen());
+      case 'storyPrivacy':
+        return appRoute<void>(
+            'storyPrivacy', const {}, (_) => const StoryPrivacyScreen());
       case 'savedPosts':
         return appRoute<void>(
             'savedPosts', const {}, (_) => const SavedPostsScreen());

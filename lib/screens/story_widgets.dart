@@ -108,6 +108,20 @@ class StoriesBar extends StatefulWidget {
 }
 
 class _StoriesBarState extends State<StoriesBar> {
+  Stream<List<StoryGroup>>? _groupsStream;
+  String? _groupsUid;
+
+  /// تدفّق واحد يُعاد استخدامه بين إعادات البناء (يُنشأ من جديد عند تغيّر
+  /// الحساب). يستثني قصص المحظورين والمكتومين ومن أخفوا قصصهم عني.
+  Stream<List<StoryGroup>> get _groups {
+    final uid = PostService.uidOrEmpty;
+    if (_groupsStream == null || _groupsUid != uid) {
+      _groupsUid = uid;
+      _groupsStream = PostService.storyGroups(applyMutes: true);
+    }
+    return _groupsStream!;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -135,7 +149,7 @@ class _StoriesBarState extends State<StoriesBar> {
     return SizedBox(
       height: 106,
       child: StreamBuilder<List<StoryGroup>>(
-        stream: PostService.storyGroups(),
+        stream: _groups,
         builder: (context, snap) {
           final groups = snap.data ?? const <StoryGroup>[];
           return StreamBuilder<List<String>>(
@@ -1069,9 +1083,11 @@ class _StoryViewerState extends State<StoryViewer>
             ),
           ),
           const Spacer(),
-          if (mine)
+          if (mine || isLoggedIn)
             IconButton(
-                onPressed: () => _showStoryMenu(story),
+                onPressed: () => mine
+                    ? _showStoryMenu(story)
+                    : _showOthersStoryMenu(group, story),
                 icon: const Icon(Icons.more_horiz, color: Colors.white)),
           IconButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -1081,8 +1097,9 @@ class _StoryViewerState extends State<StoryViewer>
     );
   }
 
-  void _showStoryMenu(Post story) {
-    showModalBottomSheet(
+  Future<void> _showStoryMenu(Post story) async {
+    _setPause('menu', true);
+    await showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1A1A1A),
       shape: const RoundedRectangleBorder(
@@ -1130,6 +1147,170 @@ class _StoryViewerState extends State<StoryViewer>
         ),
       ),
     );
+    _setPause('menu', false);
+  }
+
+  /// قائمة قصة غيري: إبلاغ، كتم قصص صاحبها، إخفاء قصصي عنه.
+  Future<void> _showOthersStoryMenu(StoryGroup group, Post story) async {
+    if (needsLogin(context)) return;
+    _setPause('menu', true);
+    var muted = false, hiding = false;
+    try {
+      final r = await Future.wait([
+        PostService.isStoryMuted(group.uid),
+        PostService.isHidingStoriesFrom(group.uid),
+      ]);
+      muted = r[0];
+      hiding = r[1];
+    } catch (_) {}
+    if (!mounted) return;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        Widget item(IconData icon, String label, String value,
+                {Color color = Colors.white}) =>
+            ListTile(
+              leading: Icon(icon, color: color),
+              title: Text(label, style: TextStyle(color: color, fontSize: 16)),
+              onTap: () => Navigator.pop(ctx, value),
+            );
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[600],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              item(Icons.flag_outlined, tr('إبلاغ عن القصة'), 'report',
+                  color: const Color(0xFFFF6B6B)),
+              item(
+                  muted
+                      ? Icons.volume_up_outlined
+                      : Icons.volume_off_outlined,
+                  muted
+                      ? trf('إلغاء كتم قصص @{0}', [group.username])
+                      : trf('كتم قصص @{0}', [group.username]),
+                  'mute'),
+              item(
+                  hiding
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                  hiding
+                      ? trf('إظهار قصصي لـ @{0}', [group.username])
+                      : trf('إخفاء قصصي عن @{0}', [group.username]),
+                  'hide'),
+              item(Icons.close, tr('إلغاء'), 'cancel'),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+    if (!mounted) return;
+    switch (action) {
+      case 'report':
+        await _reportStory(group, story);
+      case 'mute':
+        await _toggleMute(group, muted);
+      case 'hide':
+        await _toggleHide(group, hiding);
+    }
+    if (mounted) _setPause('menu', false);
+  }
+
+  Future<void> _reportStory(StoryGroup group, Post story) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final reason = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: context.appColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(tr('إبلاغ عن هذه القصة'),
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: context.appColors.text)),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(
+                    tr('اختر السبب الأقرب. لن يعرف صاحب القصة أنك من أبلغ.'),
+                    style: TextStyle(
+                        fontSize: 12, color: context.appColors.textDim)),
+              ),
+            ),
+            for (final r in SocialService.reportReasons.entries)
+              ListTile(
+                title: Text(tr(r.value)),
+                trailing: const Icon(Icons.chevron_left_rounded),
+                onTap: () => Navigator.pop(ctx, r.key),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (reason == null || !mounted) return;
+    try {
+      await SocialService.reportStory(story.id, story.uid, reason);
+      messenger.showSnackBar(
+          SnackBar(content: Text(tr('تم إرسال البلاغ، شكراً لك'))));
+      if (mounted) _next();
+    } catch (_) {
+      messenger.showSnackBar(
+          SnackBar(content: Text(tr('تعذر إرسال البلاغ'))));
+    }
+  }
+
+  Future<void> _toggleMute(StoryGroup group, bool wasMuted) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final nav = Navigator.of(context);
+    try {
+      await PostService.setStoryMuted(group.uid, !wasMuted);
+      messenger.showSnackBar(SnackBar(
+          content: Text(wasMuted
+              ? trf('أُلغي كتم قصص @{0}', [group.username])
+              : trf('تم كتم قصص @{0}. تجدها دائماً من ملفه الشخصي',
+                  [group.username]))));
+      if (!wasMuted && mounted) nav.pop(); // تختفي من الشريط
+    } catch (_) {
+      messenger.showSnackBar(SnackBar(content: Text(tr('تعذّر تنفيذ الإجراء'))));
+    }
+  }
+
+  Future<void> _toggleHide(StoryGroup group, bool wasHiding) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await PostService.setStoriesHiddenFrom(group.uid, !wasHiding);
+      messenger.showSnackBar(SnackBar(
+          content: Text(wasHiding
+              ? trf('ستظهر قصصك لـ @{0}', [group.username])
+              : trf('أُخفيت قصصك عن @{0}', [group.username]))));
+    } catch (_) {
+      messenger.showSnackBar(SnackBar(content: Text(tr('تعذّر تنفيذ الإجراء'))));
+    }
   }
 
   /// «من @صاحب الصورة» للقصة المشاركة من منشور.

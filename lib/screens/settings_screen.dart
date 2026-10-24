@@ -15,6 +15,7 @@ import '../theme.dart';
 import '../route_state.dart';
 import 'profile_screen.dart' show SavedPostsScreen;
 import 'social_screens.dart' show ProfileVisitsScreen, BlockedUsersScreen;
+import 'story_privacy_screen.dart';
 
 /// صفحة الإعدادات: المظهر والخصوصية وتسجيل الخروج.
 class SettingsScreen extends StatelessWidget {
@@ -422,6 +423,19 @@ class _PrivacySectionState extends State<_PrivacySection> {
                     'blockedUsers',
                     const {},
                     (_) => const BlockedUsersScreen())),
+              ),
+              Divider(height: 1, color: colors.text.withOpacity(0.08)),
+              ListTile(
+                leading: const Icon(Icons.visibility_off_outlined),
+                title: Text(tr('خصوصية القصص')),
+                subtitle: Text(
+                    tr('القصص التي كتمتها، ومن أخفيت قصصك عنهم'),
+                    style: dim()),
+                trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                onTap: () => Navigator.of(context).push(appRoute<void>(
+                    'storyPrivacy',
+                    const {},
+                    (_) => const StoryPrivacyScreen())),
               ),
               Divider(height: 1, color: colors.text.withOpacity(0.08)),
               ListTile(
