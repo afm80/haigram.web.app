@@ -138,7 +138,7 @@ class _StoryCardsLayerState extends State<StoryCardsLayer> {
               onScaleStart: widget.enabled
                   ? (_) {
                       _base = p.s;
-                      setState(() => _active = kind);
+                      if (_active != kind) setState(() => _active = kind);
                     }
                   : null,
               onScaleUpdate: widget.enabled
@@ -153,13 +153,18 @@ class _StoryCardsLayerState extends State<StoryCardsLayer> {
                       })
                   : null,
               onScaleEnd: widget.enabled
-                  ? (_) {
+                  ? (e) {
+                      // رفع أحد الإصبعين فقط لا ينهي التحريك.
+                      if (e.pointerCount > 0) return;
                       final remove = p.y > _trashY;
                       setState(() => _active = null);
                       _commit(kind, remove);
                     }
                   : null,
-              child: SizedBox(width: cardW, child: IgnorePointer(child: child)),
+              // RepaintBoundary: تُرسم البطاقة مرة واحدة وتُحرَّك كطبقة جاهزة بلا إعادة رسم.
+              child: SizedBox(
+                  width: cardW,
+                  child: IgnorePointer(child: RepaintBoundary(child: child))),
             ),
           ),
         ),

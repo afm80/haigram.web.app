@@ -28,6 +28,10 @@ String stickerImageUrl(String emoji) {
 
 /// إيموجي ملوّن: صورة Noto Emoji المحلية فتظهر بألوانها على كل الأجهزة.
 /// (خط الإيموجي في canvaskit كان يظهر أبيض وأسود). يرجع إلى النص إن تعذر التحميل.
+/// عرض الفك بدرجات ثابتة (مضاعفات 96): تغيّره مع كل بكسل أثناء التكبير
+/// كان يعيد تحميل الصورة فيختفي الملصق ويظهر (وميض).
+int _cacheW(double size) => (((size * 3) / 96).ceil() * 96).clamp(96, 960);
+
 class StickerGlyph extends StatelessWidget {
   final String emoji;
   final double size;
@@ -52,7 +56,7 @@ class StickerGlyph extends StatelessWidget {
             stickerImageUrl(emoji),
             width: size,
             height: size,
-            cacheWidth: (size * 3).round(),
+            cacheWidth: _cacheW(size),
             fit: BoxFit.contain,
             filterQuality: FilterQuality.medium,
             gaplessPlayback: true,
@@ -64,7 +68,7 @@ class StickerGlyph extends StatelessWidget {
             imageUrl: stickerImageUrl(emoji),
             width: size,
             height: size,
-            memCacheWidth: (size * 3).round(),
+            memCacheWidth: _cacheW(size),
             fit: BoxFit.contain,
             filterQuality: FilterQuality.medium,
             fadeInDuration: Duration.zero,

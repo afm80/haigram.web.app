@@ -153,7 +153,7 @@ class _StickerLayerState extends State<StickerLayer> {
         onScaleStart: widget.enabled
             ? (_) {
                 it.baseScale = it.scale;
-                setState(() => _active = it);
+                if (_active != it) setState(() => _active = it);
               }
             : null,
         onScaleUpdate: widget.enabled
@@ -171,7 +171,10 @@ class _StickerLayerState extends State<StickerLayer> {
               }
             : null,
         onScaleEnd: widget.enabled
-            ? (_) {
+            ? (e) {
+                // رفع أحد الإصبعين فقط لا ينهي التحريك (كان يسبّب وميض السلة
+                // وحذفاً غير مقصود)؛ ننهي عند رفع آخر إصبع.
+                if (e.pointerCount > 0) return;
                 final remove = it.dy > _trashY;
                 setState(() {
                   _active = null;

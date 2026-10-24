@@ -739,15 +739,25 @@ class _ComposeScreenState extends State<ComposeScreen> {
           StickerPanel(onPick: (s) => Navigator.of(ctx).pop(s), height: 320),
     );
     if (emoji == null || !mounted) return;
-    setState(() => _stickers.add(StoryStickerItem(emoji)));
+    setState(() {
+      final n = _stickers.length;
+      _stickers.add(StoryStickerItem(emoji,
+          dx: 0.5 + ((n % 3) - 1) * 0.12, dy: 0.22 + (n % 4) * 0.06));
+    });
   }
 
   /// كتابة نص فوق صورة القصة.
   Future<void> _addText() async {
     final r = await showStoryTextEditor(context);
     if (r == null || r.text.isEmpty || !mounted) return;
-    setState(() =>
-        _stickers.add(StoryStickerItem.text(r.text, color: r.color, style: r.style)));
+    setState(() {
+      final n = _stickers.length;
+      _stickers.add(StoryStickerItem.text(r.text,
+          color: r.color,
+          style: r.style,
+          dx: 0.5,
+          dy: 0.2 + (n % 4) * 0.06));
+    });
   }
 
   /// تعديل نص موجود (نص فارغ = حذفه).
@@ -1207,29 +1217,37 @@ class _ComposeScreenState extends State<ComposeScreen> {
           child: ConstrainedBox(
             constraints: BoxConstraints(
                 maxWidth: c.maxWidth, maxHeight: c.maxHeight),
-            child: GestureDetector(
-              onHorizontalDragEnd: (_busy || _drawing)
-                  ? null
-                  : (d) {
-                      final v = d.primaryVelocity ?? 0;
-                      if (v < -200) _swipeFilter(1);
-                      if (v > 200) _swipeFilter(-1);
-                    },
-              child: Stack(
+            child: Stack(
               children: [
                 RepaintBoundary(
                   key: _captureKey,
                   child: Stack(
                     children: [
-                      _filterOf(img) == 0
-                          ? Image.memory(img.bytes,
-                              key: ValueKey(img), fit: BoxFit.contain)
-                          : ColorFiltered(
-                              colorFilter: ColorFilter.matrix(
-                                  storyFilterMatrix(_filterOf(img))),
-                              child: Image.memory(img.bytes,
-                                  key: ValueKey(img), fit: BoxFit.contain),
-                            ),
+                      // الصورة في طبقة مستقلة: تحريك ملصق لا يعيد رسمها.
+                      RepaintBoundary(
+                        child: _filterOf(img) == 0
+                            ? Image.memory(img.bytes,
+                                key: ValueKey(img), fit: BoxFit.contain)
+                            : ColorFiltered(
+                                colorFilter: ColorFilter.matrix(
+                                    storyFilterMatrix(_filterOf(img))),
+                                child: Image.memory(img.bytes,
+                                    key: ValueKey(img), fit: BoxFit.contain),
+                              ),
+                      ),
+                      // سحب أفقي على الخلفية فقط لتبديل الفلتر. كان موضوعاً
+                      // فوق كل شيء فيسرق السحب الأفقي من الملصقات والبطاقات.
+                      if (!_busy && !_drawing)
+                        Positioned.fill(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onHorizontalDragEnd: (d) {
+                              final v = d.primaryVelocity ?? 0;
+                              if (v < -200) _swipeFilter(1);
+                              if (v > 200) _swipeFilter(-1);
+                            },
+                          ),
+                        ),
                       Positioned.fill(
                         child: StrokesLayer(
                             key: ValueKey('strokes-${img.hashCode}'),
@@ -1293,7 +1311,6 @@ class _ComposeScreenState extends State<ComposeScreen> {
                     ),
                   ),
               ],
-            ),
             ),
           ),
         ),
