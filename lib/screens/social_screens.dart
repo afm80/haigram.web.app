@@ -6302,22 +6302,7 @@ class ChatInfoScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 22),
-              Padding(
-                padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 8),
-                child: Row(
-                  children: [
-                    Icon(Icons.photo_library_outlined,
-                        size: 18, color: colors.textDim),
-                    const SizedBox(width: 8),
-                    Text(
-                      tr('الصور في المحادثة'),
-                      style: TextStyle(
-                          color: colors.text, fontWeight: FontWeight.w700),
-                    ),
-                  ],
-                ),
-              ),
-              _ChatMediaGrid(conversationId: conversationId),
+              _ChatSharedContent(conversationId: conversationId),
               const SizedBox(height: 24),
             ],
           );
@@ -6929,6 +6914,299 @@ class _ChatMediaGridState extends State<_ChatMediaGrid> {
               ),
             );
           },
+        );
+      },
+    );
+  }
+}
+
+/// محتوى المحادثة المشترك (كإنستغرام): الصور والروابط والرسائل الصوتية.
+class _ChatSharedContent extends StatefulWidget {
+  final String conversationId;
+  const _ChatSharedContent({required this.conversationId});
+
+  @override
+  State<_ChatSharedContent> createState() => _ChatSharedContentState();
+}
+
+class _ChatSharedContentState extends State<_ChatSharedContent> {
+  int _tab = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final labels = [tr('الصور'), tr('الروابط'), tr('الصوتيات')];
+    const icons = [
+      Icons.photo_library_outlined,
+      Icons.link_rounded,
+      Icons.mic_none_rounded,
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 10),
+          child: Wrap(
+            spacing: 8,
+            children: [
+              for (var i = 0; i < labels.length; i++)
+                ChoiceChip(
+                  avatar: Icon(icons[i],
+                      size: 16,
+                      color: _tab == i ? Colors.white : colors.textDim),
+                  label: Text(labels[i]),
+                  selected: _tab == i,
+                  showCheckmark: false,
+                  selectedColor: AppColors.brandPurple,
+                  labelStyle: TextStyle(
+                    color: _tab == i ? Colors.white : colors.text,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  onSelected: (_) => setState(() => _tab = i),
+                ),
+            ],
+          ),
+        ),
+        if (_tab == 0)
+          _ChatMediaGrid(conversationId: widget.conversationId)
+        else if (_tab == 1)
+          _ChatLinksList(
+              key: const ValueKey('shared-links'),
+              conversationId: widget.conversationId)
+        else
+          _ChatVoiceList(
+              key: const ValueKey('shared-voice'),
+              conversationId: widget.conversationId),
+      ],
+    );
+  }
+}
+
+/// يُخرج الرسائل التي حذفتُها/أخفيتُها لديّ أو التي قبل «حذف المحادثة لديّ»،
+/// أو المنتهية صلاحيتها، حتى لا تعود للظهور في المحتوى المشترك.
+Future<List<ChatMessage>> _visibleForMe(
+    String conversationId, List<ChatMessage> items) async {
+  var hidden = const <String>{};
+  DateTime? cleared;
+  try {
+    hidden = await SocialService.hiddenMessageIds(conversationId).first;
+  } catch (_) {}
+  try {
+    final chat = await SocialService.chatStream(conversationId).first;
+    final raw = chat?['clearedAt'];
+    final value = raw is Map ? raw[SocialService.currentUid] : null;
+    if (value is Timestamp) cleared = value.toDate();
+  } catch (_) {}
+  final now = DateTime.now();
+  return items
+      .where((m) =>
+          !hidden.contains(m.id) &&
+          (cleared == null || m.createdAt.isAfter(cleared)) &&
+          (m.expiresAt == null || m.expiresAt!.isAfter(now)))
+      .toList();
+}
+
+String _sharedDate(DateTime d) =>
+    '${d.year}/${d.month.toString().padLeft(2, '0')}/${d.day.toString().padLeft(2, '0')}';
+
+class _SharedLink {
+  final ChatMessage message;
+  final String url;
+  const _SharedLink(this.message, this.url);
+}
+
+/// الروابط المرسلة في المحادثة، من آخر 150 رسالة نصية (لا يمكن البحث بمحتوى
+/// الرسالة في Firestore فتُصفّى على الجهاز). لا طلبات شبكة إضافية.
+class _ChatLinksList extends StatefulWidget {
+  final String conversationId;
+  const _ChatLinksList({super.key, required this.conversationId});
+
+  @override
+  State<_ChatLinksList> createState() => _ChatLinksListState();
+}
+
+class _ChatLinksListState extends State<_ChatLinksList> {
+  late final Future<List<_SharedLink>> _future = _load();
+
+  Future<List<_SharedLink>> _load() async {
+    final messages = await SocialService.chatMessagesOfKind(
+        widget.conversationId, 'text',
+        limit: 150);
+    final visible = await _visibleForMe(widget.conversationId, messages);
+    final out = <_SharedLink>[];
+    for (final m in visible) {
+      final url = firstLink(m.text);
+      if (url != null) out.add(_SharedLink(m, url));
+    }
+    return out;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return FutureBuilder<List<_SharedLink>>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Center(
+              child: Text(tr('تعذر تحميل الوسائط'),
+                  style: TextStyle(color: colors.textDim)),
+            ),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          );
+        }
+        final links = snapshot.data!;
+        if (links.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Center(
+              child: Text(tr('لا توجد روابط بعد'),
+                  style: TextStyle(color: colors.textDim)),
+            ),
+          );
+        }
+        return Column(
+          children: [
+            for (final item in links)
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: colors.surfaceHigh,
+                  child: Icon(Icons.link_rounded, color: colors.text),
+                ),
+                title: Text(
+                  item.url.replaceFirst(RegExp(r'^https?://(www\.)?'), ''),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textDirection: TextDirection.ltr,
+                  textAlign: TextAlign.start,
+                  style: const TextStyle(
+                      color: AppColors.brandPurple,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14),
+                ),
+                subtitle: Text(
+                  _sharedDate(item.message.createdAt),
+                  style: TextStyle(color: colors.textDim, fontSize: 12),
+                ),
+                onTap: () => launchUrl(Uri.parse(item.url),
+                    mode: LaunchMode.externalApplication),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Text(
+                tr('تُعرض الروابط من آخر 150 رسالة نصية'),
+                textAlign: TextAlign.center,
+                style: TextStyle(color: colors.textDim, fontSize: 11),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// الرسائل الصوتية في المحادثة (الأحدث أولاً) مع تشغيلها مباشرة.
+class _ChatVoiceList extends StatefulWidget {
+  final String conversationId;
+  const _ChatVoiceList({super.key, required this.conversationId});
+
+  @override
+  State<_ChatVoiceList> createState() => _ChatVoiceListState();
+}
+
+class _ChatVoiceListState extends State<_ChatVoiceList> {
+  late final Future<List<ChatMessage>> _future = _load();
+
+  Future<List<ChatMessage>> _load() async {
+    final messages = await SocialService.chatMessagesOfKind(
+        widget.conversationId, 'audio',
+        limit: 60);
+    final visible = await _visibleForMe(widget.conversationId, messages);
+    return visible
+        .where((m) => m.audioUrl != null && m.audioUrl!.isNotEmpty)
+        .toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return FutureBuilder<List<ChatMessage>>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Center(
+              child: Text(tr('تعذر تحميل الوسائط'),
+                  style: TextStyle(color: colors.textDim)),
+            ),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          );
+        }
+        final voices = snapshot.data!;
+        if (voices.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Center(
+              child: Text(tr('لا توجد رسائل صوتية بعد'),
+                  style: TextStyle(color: colors.textDim)),
+            ),
+          );
+        }
+        return Column(
+          children: [
+            for (final m in voices)
+              Container(
+                margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                decoration: BoxDecoration(
+                  color: colors.surfaceHigh,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: m.senderUid == SocialService.currentUid
+                              ? Text(tr('أنت'),
+                                  style: TextStyle(
+                                      color: colors.text,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13))
+                              : _SenderName(uid: m.senderUid),
+                        ),
+                        Text(_sharedDate(m.createdAt),
+                            style: TextStyle(
+                                color: colors.textDim, fontSize: 11)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    _VoiceBubble(
+                      key: ValueKey('shared-voice-${m.id}'),
+                      url: m.audioUrl!,
+                      seconds: m.audioSecs ?? 0,
+                      wave: m.audioWave,
+                      mine: false,
+                    ),
+                  ],
+                ),
+              ),
+          ],
         );
       },
     );
