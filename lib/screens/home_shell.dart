@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:app_links/app_links.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemNavigator;
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -10,6 +12,7 @@ import '../auth_gate.dart';
 import '../l10n.dart';
 import '../net_error.dart';
 import '../route_state.dart';
+import '../share_links.dart';
 import '../services/post_service.dart';
 import '../services/presence_service.dart';
 import '../services/social_service.dart';
@@ -171,8 +174,30 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
       // حذف قصصي المنتهية (أقدم من 24 ساعة) لتوفير الحصة المجانية.
       PostService.cleanupMyExpiredStories().catchError((_) {});
     }
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) => _restoreOrOpenDeepLink());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _restoreOrOpenDeepLink();
+      _listenAppLinks();
+    });
+  }
+
+  StreamSubscription<Uri>? _linkSub;
+
+  /// أندرويد: فتح روابط haigram.web.app/p/ID و/@username داخل التطبيق.
+  Future<void> _listenAppLinks() async {
+    if (kIsWeb || !mounted) return;
+    try {
+      final links = AppLinks();
+      final initial = await links.getInitialLink();
+      if (initial != null && mounted) await _openDeepLink(initial);
+      _linkSub = links.uriLinkStream.listen(
+        (uri) {
+          if (mounted) _openDeepLink(uri);
+        },
+        onError: (Object _) {},
+      );
+    } catch (error) {
+      debugPrint('App links unavailable: $error');
+    }
   }
 
   @override
@@ -180,6 +205,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _presenceHeartbeat?.cancel();
     _pushOpenedSub?.cancel();
+    _linkSub?.cancel();
     _exitTimer?.cancel();
     _updatePresence(false);
     _selectedTab.dispose();
@@ -312,9 +338,14 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     return null;
   }
 
-  Future<void> _openDeepLink() async {
-    final chatId = Uri.base.queryParameters['chat'];
-    final senderUid = Uri.base.queryParameters['from'];
+  Future<void> _openDeepLink([Uri? link]) async {
+    final uri = link ?? Uri.base;
+    if (link != null && _index != 0) {
+      setState(() => _index = 0);
+      _selectedTab.value = 0;
+    }
+    final chatId = uri.queryParameters['chat'];
+    final senderUid = uri.queryParameters['from'];
     if (chatId != null &&
         chatId.isNotEmpty &&
         senderUid != null &&
@@ -322,7 +353,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
       _pushChatRoute(chatId, senderUid);
       return;
     }
-    final u = Uri.base.queryParameters['u'];
+    final u = usernameFromUri(uri);
     if (u != null && u.isNotEmpty) {
       final user = await UserService.byUsername(u);
       if (!mounted || user == null) return;
@@ -332,7 +363,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
           );
       return;
     }
-    final postId = Uri.base.queryParameters['p'];
+    final postId = postIdFromUri(uri);
     if (postId != null && postId.isNotEmpty) {
       final post = await PostService.postById(postId);
       if (!mounted || post == null) return;
