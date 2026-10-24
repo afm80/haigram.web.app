@@ -180,7 +180,8 @@ jobs:
             --dart-define=FB_ANDROID_API_KEY=${{ secrets.FB_ANDROID_API_KEY }} \
             --dart-define=GOOGLE_SERVER_CLIENT_ID=${{ secrets.GOOGLE_SERVER_CLIENT_ID }} \
             --dart-define=CLOUDINARY_CLOUD_NAME=${{ secrets.CLOUDINARY_CLOUD_NAME }} \
-            --dart-define=CLOUDINARY_UPLOAD_PRESET=${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
+            --dart-define=CLOUDINARY_UPLOAD_PRESET=${{ secrets.CLOUDINARY_UPLOAD_PRESET }} \
+            --dart-define=GIPHY_API_KEY=${{ secrets.GIPHY_API_KEY }}
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4

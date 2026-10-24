@@ -76,7 +76,8 @@ jobs:
             --dart-define=FB_STORAGE_BUCKET=${{ secrets.FB_STORAGE_BUCKET }} \
             --dart-define=FB_WEB_PUSH_VAPID_KEY=${{ secrets.FB_WEB_PUSH_VAPID_KEY }} \
             --dart-define=CLOUDINARY_CLOUD_NAME=${{ secrets.CLOUDINARY_CLOUD_NAME }} \
-            --dart-define=CLOUDINARY_UPLOAD_PRESET=${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
+            --dart-define=CLOUDINARY_UPLOAD_PRESET=${{ secrets.CLOUDINARY_UPLOAD_PRESET }} \
+            --dart-define=GIPHY_API_KEY=${{ secrets.GIPHY_API_KEY }}
 
       - name: Deploy
         uses: FirebaseExtended/action-hosting-deploy@v0
