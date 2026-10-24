@@ -73,6 +73,59 @@ class StorySlider {
   }
 }
 
+/// معلومات مضافة للقصة: رابط، موقع، عدّ تنازلي، ملصق وقت. كلها اختيارية.
+class StoryInfo {
+  String? linkUrl;
+  String? linkLabel;
+  String? location;
+  String? countdownTitle;
+  int? countdownAt; // بالميلي ثانية (UTC)
+  int? timeMode; // 0 الساعة، 1 التاريخ، 2 الاثنان
+
+  StoryInfo(
+      {this.linkUrl,
+      this.linkLabel,
+      this.location,
+      this.countdownTitle,
+      this.countdownAt,
+      this.timeMode});
+
+  bool get isEmpty =>
+      linkUrl == null &&
+      location == null &&
+      countdownAt == null &&
+      timeMode == null;
+
+  /// الحقول التي تُكتب مع مستند القصة.
+  Map<String, dynamic> toExtra() => {
+        if (linkUrl != null)
+          'link': {'u': linkUrl, 'l': linkLabel ?? ''},
+        if (location != null) 'location': {'n': location},
+        if (countdownAt != null)
+          'countdown': {'t': countdownTitle ?? '', 'at': countdownAt},
+        if (timeMode != null) 'time': {'m': timeMode},
+      };
+
+  static StoryInfo? fromMap(Map<String, dynamic> m) {
+    final info = StoryInfo();
+    final l = m['link'];
+    if (l is Map && l['u'] is String) {
+      info.linkUrl = l['u'] as String;
+      info.linkLabel = l['l'] is String ? l['l'] as String : '';
+    }
+    final loc = m['location'];
+    if (loc is Map && loc['n'] is String) info.location = loc['n'] as String;
+    final c = m['countdown'];
+    if (c is Map && c['at'] is num) {
+      info.countdownAt = (c['at'] as num).toInt();
+      info.countdownTitle = c['t'] is String ? c['t'] as String : '';
+    }
+    final t = m['time'];
+    if (t is Map && t['m'] is num) info.timeMode = (t['m'] as num).toInt();
+    return info.isEmpty ? null : info;
+  }
+}
+
 /// إجابة مشاهد على صندوق أسئلة القصة (يقرؤها صاحب القصة).
 class StoryAnswer {
   final String uid;
@@ -129,6 +182,7 @@ class Post {
   final StoryPoll? poll; // استطلاع داخل القصة (اختياري)
   final StoryQuestion? question; // صندوق أسئلة داخل القصة (اختياري)
   final StorySlider? slider; // شريط إيموجي داخل القصة (اختياري)
+  final StoryInfo? info; // رابط/موقع/عدّ تنازلي/وقت (اختياري)
   final List<StoryMention> mentions; // مستخدمون مذكورون في القصة
   final bool authorPrivate; // حساب صاحب المنشور خاص (تفرضه قواعد Firestore)
   final bool closeFriends; // قصة للأصدقاء المقربين فقط (مجموعة closeStories)
@@ -165,6 +219,7 @@ class Post {
     this.poll,
     this.question,
     this.slider,
+    this.info,
     this.mentions = const [],
     this.authorPrivate = false,
     this.closeFriends = false,
@@ -207,6 +262,7 @@ class Post {
       poll: StoryPoll.fromMap(m['poll']),
       question: StoryQuestion.fromMap(m['question']),
       slider: StorySlider.fromMap(m['slider']),
+      info: StoryInfo.fromMap(m),
       mentions: StoryMention.listFrom(m['mentions']),
       authorPrivate: m['authorPrivate'] == true,
       closeFriends: m['closeFriends'] == true,
@@ -911,6 +967,7 @@ class PostService {
           {StoryPoll? poll,
           StoryQuestion? question,
           StorySlider? slider,
+          StoryInfo? info,
           List<StoryMention> mentions = const [],
           bool closeFriends = false}) =>
       _create(PostType.story, text, null, closeFriends: closeFriends, extra: {
@@ -918,6 +975,7 @@ class PostService {
         if (poll != null) 'poll': poll.toMap(),
         if (question != null) 'question': question.toMap(),
         if (slider != null) 'slider': slider.toMap(),
+        if (info != null) ...info.toExtra(),
         if (mentions.isNotEmpty)
           'mentions': [for (final m in mentions) m.toMap()],
       });
