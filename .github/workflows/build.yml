@@ -73,6 +73,25 @@ jobs:
           grep -n "applicationId\|minSdk" "$GRADLE"
           grep -n "INTERNET\|android:label" "$MANIFEST"
 
+          # فتح روابط المشاركة داخل التطبيق: haigram.web.app/p/ID و /@username
+          python3 - <<'PY'
+          p = 'android/app/src/main/AndroidManifest.xml'
+          s = open(p, encoding='utf-8').read()
+          block = """
+                  <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
+                  <intent-filter android:autoVerify="true">
+                      <action android:name="android.intent.action.VIEW" />
+                      <category android:name="android.intent.category.DEFAULT" />
+                      <category android:name="android.intent.category.BROWSABLE" />
+                      <data android:scheme="https" android:host="haigram.web.app" android:pathPrefix="/p/" />
+                      <data android:scheme="https" android:host="haigram.web.app" android:pathPrefix="/@" />
+                  </intent-filter>
+              """
+          assert "</activity>" in s, "activity not found"
+          s = s.replace("</activity>", block + "</activity>", 1)
+          open(p, 'w', encoding='utf-8').write(s)
+          PY
+
       # توقيع ثابت للـ APK: بصمة SHA-1 يجب أن تبقى نفسها ليعمل تسجيل Google.
       # الأسرار المطلوبة: ANDROID_KEYSTORE_BASE64 و ANDROID_KEYSTORE_PASSWORD
       # و ANDROID_KEY_ALIAS و ANDROID_KEY_PASSWORD
