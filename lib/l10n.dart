@@ -25,6 +25,12 @@ String trf(String ar, List<Object?> args) {
 const Map<String, String> _en = {
   'GIF': "GIF",
   // ميزات المحادثة الجديدة
+  'الصور': "Photos",
+  'الروابط': "Links",
+  'الصوتيات': "Voice messages",
+  'لا توجد روابط بعد': "No links yet",
+  'لا توجد رسائل صوتية بعد': "No voice messages yet",
+  'تُعرض الروابط من آخر 150 رسالة نصية': "Links are shown from the last 150 text messages",
   'كتم المحادثة': "Mute chat",
   'لن تصلك إشعارات من هذه المحادثة': "You won't get notifications from this chat",
   'كتم لساعة واحدة': "Mute for 1 hour",
