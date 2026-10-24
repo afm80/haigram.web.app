@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'social_service.dart';
 import 'user_service.dart';
@@ -1101,6 +1102,35 @@ class PostService {
         ((s.data()?['likes'] ?? 0) as num).toInt();
     if (isGuest) return Stream.fromFuture(ref.get().then(n));
     return ref.snapshots().map(n);
+  }
+
+  // ---- مشاهدات المنشورات (صور ونصوص وفيديو وريلز) ----
+  static final Set<String> _viewedPosts = {};
+  static bool _viewedLoaded = false;
+
+  /// يسجّل مشاهدة منشور مرة واحدة لكل مستخدم (مستند مشاهدة + زيادة العدّاد معاً).
+  /// لا يسجّل للزائر ولا لصاحب المنشور ولا للقصص. أي فشل يُتجاهل.
+  static Future<void> recordPostView(Post p) async {
+    if (isGuest || p.uid == _user.uid || p.type == PostType.story) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!_viewedLoaded) {
+        _viewedPosts.addAll(prefs.getStringList('viewedPosts') ?? const []);
+        _viewedLoaded = true;
+      }
+      if (!_viewedPosts.add(p.id)) return;
+      try {
+        final ref = _db.collection('posts').doc(p.id);
+        final batch = _db.batch();
+        batch.set(ref.collection('views').doc(_user.uid),
+            {'at': FieldValue.serverTimestamp()});
+        batch.update(ref, {'views': FieldValue.increment(1)});
+        await batch.commit();
+      } catch (_) {}
+      final list = _viewedPosts.toList();
+      await prefs.setStringList('viewedPosts',
+          list.length > 400 ? list.sublist(list.length - 400) : list);
+    } catch (_) {}
   }
 
   // ---- مشاهدات القصص ----
