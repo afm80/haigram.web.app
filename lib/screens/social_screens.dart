@@ -21,6 +21,7 @@ import '../services/social_service.dart';
 import '../services/user_service.dart';
 import '../theme.dart';
 import '../services/gif_service.dart';
+import 'chat_extras.dart';
 import 'common_widgets.dart';
 import 'gif_picker.dart';
 import 'note_widgets.dart';
@@ -2421,6 +2422,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   StreamSubscription<Map<String, dynamic>?>? _chatSub;
   Map<String, dynamic>? _chatData;
   AppUser? _otherUser; // ملف الطرف الآخر (لاسمه في «شوهد بواسطة»)
+  // خيارات خاصة بي (محلية): كنية الطرف الآخر ولون/خلفية المحادثة.
+  String _nickname = '';
+  ChatLook _look = const ChatLook();
+
+  /// لون فقاعاتي في هذه المحادثة.
+  Color get _mineColor => _look.bubble;
   bool? _friends; // null = لم يُعرف بعد (لا نقيّد الواجهة حتى يُعرف)
 
   /// محادثة جماعية (من الواجهة أو من مستند المحادثة بعد التحميل).
@@ -2509,6 +2516,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _text.addListener(_syncMicButton);
     _text.addListener(_updateMentionSuggestions);
     _restoreDraft();
+    _loadChatPrefs();
     _scroll.addListener(_onScroll);
     _chatSub = SocialService.chatStream(widget.conversationId).listen(
       (data) {
@@ -2532,6 +2540,41 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }).catchError((Object _) {});
     }
     _subscribeMessages();
+  }
+
+  Future<void> _loadChatPrefs() async {
+    final me = SocialService.currentUid;
+    final look = await ChatPrefs.loadLook(me, widget.conversationId);
+    final nick = (_isGroup || widget.otherUid.isEmpty)
+        ? ''
+        : await ChatPrefs.loadNickname(me, widget.otherUid);
+    if (!mounted) return;
+    setState(() {
+      _look = look;
+      _nickname = nick;
+    });
+  }
+
+  Future<void> _editNickname() async {
+    final real = _otherUser?.displayName ?? '';
+    final result = await showNicknameDialog(context,
+        current: _nickname, realName: real);
+    if (result == null || !mounted) return;
+    setState(() => _nickname = result);
+    await ChatPrefs.saveNickname(
+        SocialService.currentUid, widget.otherUid, result);
+  }
+
+  Future<void> _editChatLook() async {
+    await showChatLookSheet(
+      context,
+      initial: _look,
+      onChanged: (look) {
+        if (mounted) setState(() => _look = look);
+        ChatPrefs.saveLook(
+            SocialService.currentUid, widget.conversationId, look);
+      },
+    );
   }
 
   /// عند الضغط على خانة الكتابة تُغلق لوحة الملصقات ويظهر الكيبورد.
@@ -3725,6 +3768,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ));
       return;
     }
+    if (action == 'nickname') {
+      await _editNickname();
+      return;
+    }
+    if (action == 'look') {
+      await _editChatLook();
+      return;
+    }
     if (action == 'vanish') {
       setState(() => _vanish = !_vanish);
       if (mounted) {
@@ -4050,7 +4101,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         }),
                         subtitle: receipt == 'read' && _otherUser != null
                             ? Text('${tr('شوهد بواسطة')} '
-                                '${_otherUser!.displayName}')
+                                '${_nickname.isNotEmpty ? _nickname : _otherUser!.displayName}')
                             : null,
                       ),
                     ListTile(
@@ -4109,6 +4160,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         }
                       },
                     ),
+                    if (message.kind == 'text' && message.text.trim().isNotEmpty)
+                      ListTile(
+                        leading: const Icon(Icons.translate_rounded),
+                        title: Text(tr('ترجمة')),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          if (mounted) {
+                            showTranslationSheet(context, message.text);
+                          }
+                        },
+                      ),
                     if (_canForward(message))
                       ListTile(
                         leading: const Icon(Icons.shortcut_rounded),
@@ -4698,7 +4760,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           Text(
-                                            user?.displayName ?? tr('محادثة'),
+                                            _nickname.isNotEmpty
+                                                ? _nickname
+                                                : (user?.displayName ??
+                                                    tr('محادثة')),
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                           ),
@@ -4721,7 +4786,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                                 } else if (online) {
                                                   label = tr('نشط الآن');
                                                 } else {
-                                                  label = '@${user.username}';
+                                                  // غير متصل: «نشط قبل 5 دقائق».
+                                                  return LastActiveText(
+                                                    uid: widget.otherUid,
+                                                    fallback:
+                                                        '@${user.username}',
+                                                    style: TextStyle(
+                                                      color: context
+                                                          .appColors.textDim,
+                                                      fontSize: 12,
+                                                    ),
+                                                  );
                                                 }
                                                 return Text(
                                                   label,
@@ -4782,6 +4857,31 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             ),
                             if (!_isGroup)
                               PopupMenuItem(
+                                value: 'nickname',
+                                child: ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: const Icon(Icons.badge_outlined),
+                                  title: Text(tr('الكنية')),
+                                  subtitle: _nickname.isEmpty
+                                      ? null
+                                      : Text(_nickname,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis),
+                                ),
+                              ),
+                            PopupMenuItem(
+                              value: 'look',
+                              child: ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: Icon(Icons.palette_outlined,
+                                    color: _look.isDefault
+                                        ? null
+                                        : _look.bubble),
+                                title: Text(tr('ألوان المحادثة')),
+                              ),
+                            ),
+                            if (!_isGroup)
+                              PopupMenuItem(
                                 value: 'vanish',
                                 child: ListTile(
                                   contentPadding: EdgeInsets.zero,
@@ -4835,7 +4935,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         ),
                       ],
                     ),
-              body: Column(
+              body: DecoratedBox(
+                decoration: _look.backgroundDecoration(colors.bg) ??
+                    BoxDecoration(color: colors.bg),
+                child: Column(
                 children: [
                   if (blockState.blocked)
                     Container(
@@ -4981,7 +5084,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                 messages[messages.length - 1 - messageIndex];
                             final mine =
                                 message.senderUid == SocialService.currentUid;
-                            final sticker = message.kind == 'sticker';
+                            // رمز تعبيري واحد فقط: يُعرض كبيراً بلا فقاعة كالملصق.
+                            final bigEmoji = message.kind == 'text' &&
+                                !message.deleted &&
+                                singleEmoji(message.text) != null;
+                            final sticker =
+                                message.kind == 'sticker' || bigEmoji;
                             final isGif = message.kind == 'gif' &&
                                 message.gifUrl != null &&
                                 !message.deleted;
@@ -5118,7 +5226,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                     ? null
                                     : BoxDecoration(
                                         color: mine
-                                            ? AppColors.brandPurple
+                                            ? _mineColor
                                             : colors.surfaceHigh,
                                         borderRadius:
                                             BorderRadiusDirectional.only(
@@ -5316,7 +5424,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                         ),
                                       )
                                     else if (sticker)
-                                      StickerMessage(message.text)
+                                      StickerMessage(
+                                        bigEmoji
+                                            ? message.text.trim()
+                                            : message.text,
+                                        base: bigEmoji ? 72 : 56,
+                                      )
                                     else if (isGif)
                                       _GifBubble(
                                         url: message.gifUrl!,
@@ -5347,9 +5460,26 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                         onTap: () => _openLocation(message),
                                       )
                                     else
-                                      _messageBody(message.text,
-                                          mine: mine,
-                                          mentions: message.mentions.isNotEmpty),
+                                      Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
+                                        children: [
+                                          _messageBody(message.text,
+                                              mine: mine,
+                                              mentions:
+                                                  message.mentions.isNotEmpty),
+                                          // الرابط يتحول إلى بطاقة بعنوان وصورة.
+                                          if (message.kind == 'text' &&
+                                              firstLink(message.text) != null)
+                                            LinkPreviewCard(
+                                              key: ValueKey(
+                                                  'lp-${message.id}'),
+                                              url: firstLink(message.text)!,
+                                              mine: mine,
+                                            ),
+                                        ],
+                                      ),
                                     // نص مصاحب للصورة: فقاعة ملتصقة أسفلها.
                                     if (caption.isNotEmpty)
                                       Container(
@@ -5358,7 +5488,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                             horizontal: 12, vertical: 8),
                                         decoration: BoxDecoration(
                                           color: mine
-                                              ? AppColors.brandPurple
+                                              ? _mineColor
                                               : colors.surfaceHigh,
                                           borderRadius:
                                               BorderRadiusDirectional.only(
@@ -5850,6 +5980,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       ),
                   ],
                 ],
+              ),
               ),
             ));
       },
