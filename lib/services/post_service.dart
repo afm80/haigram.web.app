@@ -335,10 +335,13 @@ class Post {
     required this.createdAt,
   });
 
-  factory Post.fromDoc(DocumentSnapshot<Map<String, dynamic>> d) {
-    final m = d.data() ?? const <String, dynamic>{};
+  factory Post.fromDoc(DocumentSnapshot<Map<String, dynamic>> d) =>
+      Post.fromData(d.id, d.data() ?? const <String, dynamic>{});
+
+  /// بناء منشور/قصة من خريطة بيانات (مستند، أو عنصر داخل قصة مميزة).
+  factory Post.fromData(String id, Map<String, dynamic> m) {
     return Post(
-      id: d.id,
+      id: id,
       type: PostType.values
           .firstWhere((t) => t.name == m['type'], orElse: () => PostType.text),
       uid: m['uid'] ?? '',
@@ -852,10 +855,12 @@ class PostService {
       data['allowed'] = allowed;
       final id = '$_closeIdPrefix${_db.collection('closeStories').doc().id}';
       await _db.collection('closeStories').doc(id).set(data);
+      if (type == PostType.story) _archiveStory(id, data);
       notifyStatsChanged();
       return;
     }
-    await _db.collection('posts').add(data);
+    final ref = await _db.collection('posts').add(data);
+    if (type == PostType.story) _archiveStory(ref.id, data);
     notifyStatsChanged();
   }
 
@@ -1258,12 +1263,25 @@ class PostService {
           ]);
 
   /// من شاهدوا قصتي (الأحدث أولاً). يقرؤها صاحب القصة فقط.
-  static Stream<List<StoryViewEntry>> storyViewers(String postId) => _db
+  /// العدد الكلي لمشاهدات القصة (استعلام تجميعي: قراءة واحدة لكل 1000 مشاهدة).
+  static Future<int> storyViewCount(String storyId) async {
+    final r = await _db
+        .collection(_colOf(storyId))
+        .doc(storyId)
+        .collection('views')
+        .count()
+        .get();
+    return r.count ?? 0;
+  }
+
+  static Stream<List<StoryViewEntry>> storyViewers(String postId,
+          {int limit = 100}) =>
+      _db
       .collection(_colOf(postId))
       .doc(postId)
       .collection('views')
       .orderBy('at', descending: true)
-      .limit(200)
+      .limit(limit)
       .snapshots()
       .map((s) => [
             for (final d in s.docs)
@@ -1696,6 +1714,7 @@ class PostService {
     final sharesOriginalFile = p.sharedFromUid != null;
     if (p.type == PostType.story) {
       await _deleteStoryExtras(p.id);
+      if (p.uid == _user.uid) await deleteFromArchive(p.id);
     }
     if (isCloseId(p.id)) {
       // قصة أصدقاء مقربين: مجموعة منفصلة ولا ملفات مشتركة.
@@ -1742,6 +1761,169 @@ class PostService {
         }
       } catch (_) {}
     }
+  }
+
+  // ---- أرشيف القصص ----
+  // كل قصة أنشرها تُنسخ إلى storyArchive/{uid}/stories/{id} فتبقى لي بعد
+  // انتهاء الـ24 ساعة (والنسخة خاصة بي وحدي).
+  static CollectionReference<Map<String, dynamic>> _archiveCol(String uid) =>
+      _db.collection('storyArchive').doc(uid).collection('stories');
+
+  static CollectionReference<Map<String, dynamic>> _highlightsCol(String uid) =>
+      _db.collection('storyHighlights').doc(uid).collection('highlights');
+
+  static const maxHighlightItems = 30;
+  static const maxHighlights = 20;
+  static final Set<String> _archiveChecked = {};
+
+  static Map<String, dynamic> _archiveCopy(Map<String, dynamic> src) {
+    final c = Map<String, dynamic>.from(src);
+    for (final k in const [
+      'allowed',
+      'expireAt',
+      'likes',
+      'views',
+      'comments',
+      'shares'
+    ]) {
+      c.remove(k);
+    }
+    c['archivedAt'] = FieldValue.serverTimestamp();
+    return c;
+  }
+
+  static Future<void> _archiveStory(String id, Map<String, dynamic> data) async {
+    try {
+      _archiveChecked.add(id);
+      await _archiveCol(_user.uid).doc(id).set(_archiveCopy(data));
+    } catch (_) {
+      // الأرشفة أفضل جهد: فشلها لا يوقف نشر القصة.
+      _archiveChecked.remove(id);
+    }
+  }
+
+  /// يضمن وجود نسخة أرشيف لقصتي الحية (للقصص المنشورة قبل تفعيل الأرشيف).
+  static Future<void> ensureArchived(Post story) async {
+    if (isGuest || story.uid != _user.uid) return;
+    if (!_archiveChecked.add(story.id)) return;
+    try {
+      final ref = _archiveCol(_user.uid).doc(story.id);
+      if ((await ref.get()).exists) return;
+      final src = await _db.collection(_colOf(story.id)).doc(story.id).get();
+      final m = src.data();
+      if (m == null) return;
+      await ref.set(_archiveCopy(m));
+    } catch (_) {
+      _archiveChecked.remove(story.id);
+    }
+  }
+
+  /// صفحة من أرشيفي (الأحدث أولاً).
+  static Future<PostPage> archivePage(
+      {DocumentSnapshot<Map<String, dynamic>>? cursor, int limit = 30}) async {
+    var q = _archiveCol(_user.uid)
+        .orderBy('createdAt', descending: true)
+        .limit(limit);
+    if (cursor != null) q = q.startAfterDocument(cursor);
+    final s = await q.get();
+    return PostPage([for (final d in s.docs) Post.fromDoc(d)],
+        s.docs.isEmpty ? null : s.docs.last, s.docs.length == limit);
+  }
+
+  static Future<void> deleteFromArchive(String storyId) async {
+    try {
+      _archiveChecked.add(storyId); // لا نعيد نسخها تلقائياً بعد حذفها
+      await _archiveCol(_user.uid).doc(storyId).delete();
+    } catch (_) {}
+  }
+
+  // ---- القصص المميزة ----
+  static Map<String, dynamic> _highlightItem(Post p) => {
+        'id': p.id,
+        'type': 'story',
+        'uid': p.uid,
+        'username': p.username,
+        'name': p.name,
+        'caption': p.caption,
+        'mediaUrl': p.mediaUrl,
+        'mediaId': p.mediaId,
+        'chunks': p.chunks,
+        'mime': p.mime,
+        'bg': p.bg,
+        'sharedFromUsername': p.sharedFromUsername,
+        'sharedFromUid': p.sharedFromUid,
+        'createdAt': Timestamp.fromDate(p.createdAt),
+      };
+
+  /// القصص المميزة لمستخدم (الأقدم أولاً).
+  static Stream<List<StoryHighlight>> highlightsOf(String uid) {
+    if (isGuest || uid.isEmpty) return Stream.value(const <StoryHighlight>[]);
+    return _highlightsCol(uid)
+        .orderBy('createdAt')
+        .limit(maxHighlights)
+        .snapshots()
+        .map((s) => [
+              for (final d in s.docs)
+                if (StoryHighlight.fromDoc(d).stories.isNotEmpty)
+                  StoryHighlight.fromDoc(d)
+            ]);
+  }
+
+  /// ينشئ قصة مميزة (id فارغ) أو يحدّث موجودة. قصص الأصدقاء المقربين لا تُضاف
+  /// لأن المميزة تظهر لكل من يرى ملفي.
+  static Future<void> saveHighlight(
+      {String? id,
+      required String title,
+      required List<Post> stories,
+      int cover = 0}) async {
+    if (isGuest) throw StateError(tr('سجّل الدخول أولاً'));
+    if (stories.any((p) => p.closeFriends)) {
+      throw StateError(tr('قصص الأصدقاء المقربين لا تُضاف إلى المميزة'));
+    }
+    final items = [
+      for (final p in stories.take(maxHighlightItems)) _highlightItem(p)
+    ];
+    if (items.isEmpty) throw StateError(tr('اختر قصة واحدة على الأقل'));
+    final t = title.trim();
+    final data = <String, dynamic>{
+      'title': t.isEmpty ? tr('مميزة') : (t.length > 24 ? t.substring(0, 24) : t),
+      'items': items,
+      'cover': cover.clamp(0, items.length - 1).toInt(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    if (id == null) {
+      data['createdAt'] = FieldValue.serverTimestamp();
+      await _highlightsCol(_user.uid).add(data);
+    } else {
+      await _highlightsCol(_user.uid).doc(id).update(data);
+    }
+  }
+
+  static Future<void> deleteHighlight(String id) =>
+      _highlightsCol(_user.uid).doc(id).delete();
+
+  // ---- مزامنة «شوهدت» بين الأجهزة ----
+  // مستند واحد storySeen/{uid} فيه خريطة m: معرّف القصة -> وقت المشاهدة (ms).
+  static Future<Map<String, int>> seenStoriesRemote() async {
+    if (isGuest) return {};
+    final s = await _db.collection('storySeen').doc(_user.uid).get();
+    final m = s.data()?['m'];
+    final out = <String, int>{};
+    if (m is Map) {
+      m.forEach((k, v) {
+        if (k is String && v is num) out[k] = v.toInt();
+      });
+    }
+    return out;
+  }
+
+  /// يكتب المشاهدات الجديدة (دمج)، أو يستبدل المستند كله عند [replace] للتنظيف.
+  static Future<void> saveSeenStories(Map<String, int> m,
+      {bool replace = false}) {
+    if (isGuest) return Future.value();
+    return _db.collection('storySeen').doc(_user.uid).set(
+        {'m': m, 'updatedAt': FieldValue.serverTimestamp()},
+        replace ? null : SetOptions(merge: true));
   }
 
   // ---- المحفوظات ----
@@ -2359,4 +2541,38 @@ class StoryGroup {
 
   /// هل فيها قصة للأصدقاء المقربين؟
   bool get hasClose => stories.any((s) => s.closeFriends);
+}
+
+/// قصة مميزة: مجموعة قصص محفوظة بعنوان وغلاف تظهر في الملف الشخصي.
+class StoryHighlight {
+  final String id;
+  final String title;
+  final int cover; // فهرس قصة الغلاف
+  final List<Post> stories;
+  StoryHighlight(
+      {required this.id,
+      required this.title,
+      required this.cover,
+      required this.stories});
+
+  Post? get coverStory =>
+      stories.isEmpty ? null : stories[cover.clamp(0, stories.length - 1).toInt()];
+
+  factory StoryHighlight.fromDoc(DocumentSnapshot<Map<String, dynamic>> d) {
+    final m = d.data() ?? const <String, dynamic>{};
+    final raw = m['items'] is List ? m['items'] as List : const [];
+    final stories = <Post>[];
+    for (final it in raw) {
+      if (it is Map) {
+        final map = Map<String, dynamic>.from(it);
+        final id = map['id'];
+        if (id is String) stories.add(Post.fromData(id, map));
+      }
+    }
+    return StoryHighlight(
+        id: d.id,
+        title: (m['title'] is String) ? m['title'] as String : '',
+        cover: (m['cover'] as num?)?.toInt() ?? 0,
+        stories: stories);
+  }
 }
