@@ -6,17 +6,35 @@ import 'package:flutter/rendering.dart';
 import 'package:image/image.dart' as img;
 
 import 'sticker_sheet.dart';
+import 'story_text_editor.dart' show storyTextWidget;
 
 /// ملصق إيموجي موضوع فوق صورة القصة.
 /// [dx] و[dy] موضع مركزه كنسبة (0 إلى 1) من عرض الصورة وارتفاعها.
 class StoryStickerItem {
   final String emoji;
+  // نص مكتوب فوق الصورة (بدل الإيموجي): النص ولونه ونمطه (0 ظل، 1 مربع، 2 إطار).
+  String? text;
+  Color color;
+  int style;
   double dx;
   double dy;
   double scale;
   double baseScale;
   StoryStickerItem(this.emoji,
-      {this.dx = 0.5, this.dy = 0.45, this.scale = 1, this.baseScale = 1});
+      {this.dx = 0.5, this.dy = 0.45, this.scale = 1, this.baseScale = 1})
+      : text = null,
+        color = Colors.white,
+        style = 0;
+  StoryStickerItem.text(String this.text,
+      {this.color = Colors.white,
+      this.style = 0,
+      this.dx = 0.5,
+      this.dy = 0.45,
+      this.scale = 1,
+      this.baseScale = 1})
+      : emoji = '';
+
+  bool get isText => text != null;
 }
 
 /// طبقة الملصقات فوق الصورة: سحب للتحريك، وإصبعان للتكبير،
@@ -27,6 +45,9 @@ class StickerLayer extends StatefulWidget {
   final bool enabled;
   final VoidCallback? onChanged;
 
+  /// يُستدعى عند الضغط على نص (لتعديله).
+  final ValueChanged<StoryStickerItem>? onEditText;
+
   /// يُستدعى عند لمس ملصق (true) وعند رفع الإصبع (false)،
   /// ليوقف الشاشة التمرير أثناء تحريك الملصق.
   final ValueChanged<bool>? onTouching;
@@ -35,6 +56,7 @@ class StickerLayer extends StatefulWidget {
       required this.items,
       this.enabled = true,
       this.onChanged,
+      this.onEditText,
       this.onTouching});
 
   @override
@@ -59,13 +81,40 @@ class _StickerLayerState extends State<StickerLayer> {
 
   Widget _sticker(StoryStickerItem it, double w, double h) {
     final size = w * 0.25 * it.scale;
+    final box = it.isText
+        ? Positioned(
+            key: ObjectKey(it),
+            left: it.dx * w,
+            top: it.dy * h,
+            child: FractionalTranslation(
+              translation: const Offset(-0.5, -0.5),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: w * 0.92),
+                child: _gestures(
+                  it,
+                  w,
+                  h,
+                  storyTextWidget(
+                      it.text!, it.color, it.style, w * 0.07 * it.scale),
+                ),
+              ),
+            ),
+          )
+        : null;
+    if (box != null) return box;
     return Positioned(
       key: ObjectKey(it),
       left: it.dx * w - size / 2,
       top: it.dy * h - size / 2,
       width: size,
       height: size,
-      child: Listener(
+      child: _gestures(it, w, h, StickerGlyph(it.emoji, size: size)),
+    );
+  }
+
+  Widget _gestures(StoryStickerItem it, double w, double h, Widget child) {
+    return Builder(builder: (context) {
+      return Listener(
         onPointerDown: (_) => _down(),
         onPointerUp: (_) => _up(),
         onPointerCancel: (_) => _up(),
@@ -101,10 +150,13 @@ class _StickerLayerState extends State<StickerLayer> {
                 if (remove) widget.onChanged?.call();
               }
             : null,
-        child: StickerGlyph(it.emoji, size: size),
+        onTap: widget.enabled && it.isText
+            ? () => widget.onEditText?.call(it)
+            : null,
+        child: child,
         ),
-      ),
-    );
+      );
+    });
   }
 
   @override

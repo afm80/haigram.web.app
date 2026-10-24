@@ -16,6 +16,7 @@ import 'close_friends_screen.dart';
 import 'story_mentions.dart';
 import 'story_poll.dart';
 import 'story_stickers.dart';
+import 'story_text_editor.dart';
 import 'text_story_screen.dart';
 import 'post_style.dart';
 import 'video_cover.dart';
@@ -652,6 +653,29 @@ class _ComposeScreenState extends State<ComposeScreen> {
     setState(() => _stickers.add(StoryStickerItem(emoji)));
   }
 
+  /// كتابة نص فوق صورة القصة.
+  Future<void> _addText() async {
+    final r = await showStoryTextEditor(context);
+    if (r == null || r.text.isEmpty || !mounted) return;
+    setState(() =>
+        _stickers.add(StoryStickerItem.text(r.text, color: r.color, style: r.style)));
+  }
+
+  /// تعديل نص موجود (نص فارغ = حذفه).
+  Future<void> _editText(StoryStickerItem it) async {
+    final r = await showStoryTextEditor(context, initial: it);
+    if (r == null || !mounted) return;
+    setState(() {
+      if (r.text.isEmpty) {
+        _stickers.remove(it);
+      } else {
+        it.text = r.text;
+        it.color = r.color;
+        it.style = r.style;
+      }
+    });
+  }
+
   Future<void> _editPoll() async {
     final p = await showPollDialog(context, initial: _poll);
     if (p != null && mounted) setState(() => _poll = p);
@@ -879,6 +903,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
                                   items: _stickers,
                                   enabled: !_busy,
                                   onChanged: () => setState(() {}),
+                                  onEditText: _editText,
                                   onTouching: (v) =>
                                       setState(() => _lockScroll = v)),
                             ),
@@ -902,6 +927,11 @@ class _ComposeScreenState extends State<ComposeScreen> {
               Wrap(
                 spacing: 8,
                 children: [
+                  TextButton.icon(
+                    onPressed: _busy ? null : _addText,
+                    icon: const Icon(Icons.text_fields_rounded),
+                    label: Text(tr('نص')),
+                  ),
                   TextButton.icon(
                     onPressed: _busy ? null : _addSticker,
                     icon: const Icon(Icons.emoji_emotions_outlined),
