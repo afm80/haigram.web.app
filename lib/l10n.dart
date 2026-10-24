@@ -23,6 +23,8 @@ String trf(String ar, List<Object?> args) {
 }
 
 const Map<String, String> _en = {
+  'أنت': "You",
+  'اضغط لإزالة تفاعلك': "Tap to remove your reaction",
   'حرّر للإلغاء': "Release to cancel",
   'اسحب جانباً للإلغاء': "Slide to cancel",
   'لا تشارك كلمة المرور أو رموز التحقق مع أي شخص.': "Never share your password or verification codes.",
