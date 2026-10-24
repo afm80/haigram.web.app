@@ -51,6 +51,38 @@ service cloud.firestore {
             || request.resource.data.name == myProfile().username);
     }
 
+    // معلومات القصة (رابط/موقع/عدّ تنازلي/وقت): كلها اختيارية وبحدود صارمة.
+    function hasStoryInfo(d) {
+      return 'link' in d || 'location' in d || 'countdown' in d || 'time' in d;
+    }
+    function validStoryInfo(d) {
+      return (!('link' in d)
+              || (d.link is map
+                  && d.link.keys().hasOnly(['u', 'l'])
+                  && d.link.u is string
+                  && d.link.u.size() <= 300
+                  && d.link.u.matches('^https?://[^ ]+$')
+                  && d.link.l is string
+                  && d.link.l.size() <= 40))
+          && (!('location' in d)
+              || (d.location is map
+                  && d.location.keys().hasOnly(['n'])
+                  && d.location.n is string
+                  && d.location.n.size() > 0
+                  && d.location.n.size() <= 60))
+          && (!('countdown' in d)
+              || (d.countdown is map
+                  && d.countdown.keys().hasOnly(['t', 'at'])
+                  && d.countdown.t is string
+                  && d.countdown.t.size() > 0
+                  && d.countdown.t.size() <= 60
+                  && d.countdown.at is int))
+          && (!('time' in d)
+              || (d.time is map
+                  && d.time.keys().hasOnly(['m'])
+                  && d.time.m in [0, 1, 2]));
+    }
+
     // هل أتابع هذا المستخدم؟
     function followsUser(targetUid) {
       return exists(/databases/$(database)/documents/users/$(request.auth.uid)/following/$(targetUid));
@@ -297,6 +329,10 @@ service cloud.firestore {
                 && request.resource.data.slider.e is string
                 && request.resource.data.slider.e.size() > 0
                 && request.resource.data.slider.e.size() <= 16))
+        // معلومات القصة: للقصص فقط.
+        && validStoryInfo(request.resource.data)
+        && (request.resource.data.type == 'story'
+            || !hasStoryInfo(request.resource.data))
         // ذكر المستخدمين في القصة: حتى 3، للقصص فقط.
         && (!('mentions' in request.resource.data)
             || (request.resource.data.type == 'story'
@@ -1264,6 +1300,7 @@ service cloud.firestore {
                 && request.resource.data.slider.e is string
                 && request.resource.data.slider.e.size() > 0
                 && request.resource.data.slider.e.size() <= 16))
+        && validStoryInfo(request.resource.data)
         && (!('mentions' in request.resource.data)
             || (request.resource.data.mentions is list
                 && request.resource.data.mentions.size() <= 3));
