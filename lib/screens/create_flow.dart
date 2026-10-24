@@ -16,6 +16,7 @@ import 'close_friends_screen.dart';
 import 'story_mentions.dart';
 import 'story_drawing.dart';
 import 'story_photo_editor.dart';
+import 'story_movable.dart';
 import 'story_poll.dart';
 import 'story_question.dart';
 import 'story_info.dart';
@@ -761,6 +762,17 @@ class _ComposeScreenState extends State<ComposeScreen> {
     });
   }
 
+  Future<double?> _aspectOf(Uint8List bytes) async {
+    try {
+      final im = await decodeImageFromList(bytes);
+      final r = im.width / im.height;
+      im.dispose();
+      return r;
+    } catch (_) {
+      return null;
+    }
+  }
+
   void _setDialogOpen(bool v) {
     if (!mounted || _dialogOpen == v) return;
     setState(() {
@@ -773,19 +785,25 @@ class _ComposeScreenState extends State<ComposeScreen> {
   Future<void> _editSlider() async {
     final r = await showSliderDialog(context,
         initial: _slider, onOpen: _setDialogOpen);
-    if (r != null && mounted) setState(() => _slider = r);
+    if (r != null && mounted) {
+      setState(() => _slider = r.placedLike(_slider, kSliderDefY));
+    }
   }
 
   Future<void> _editQuestion() async {
     final q = await showQuestionDialog(context,
         initial: _question, onOpen: _setDialogOpen);
-    if (q != null && mounted) setState(() => _question = q);
+    if (q != null && mounted) {
+      setState(() => _question = q.placedLike(_question, kQuestionDefY));
+    }
   }
 
   Future<void> _editPoll() async {
     final p = await showPollDialog(context,
         initial: _poll, onOpen: _setDialogOpen);
-    if (p != null && mounted) setState(() => _poll = p);
+    if (p != null && mounted) {
+      setState(() => _poll = p.placedLike(_poll, kPollDefY));
+    }
   }
 
   /// الصورة رقم [index] التي ستُرفع: الأصلية، أو بعد دمج ملصقاتها فيها.
@@ -869,6 +887,11 @@ class _ComposeScreenState extends State<ComposeScreen> {
       } else if (_isStory) {
         // كل صورة تُنشر كقصة مستقلة بالترتيب. الاستطلاع والذكر على أول قصة فقط.
         final total = _images.length + _publishedCount;
+        // نسبة عرض الصورة إلى ارتفاعها: ليضع العارض الاستطلاع في مكانه الصحيح.
+        final ar = (_poll != null || _question != null || _slider != null) &&
+                _images.isNotEmpty
+            ? await _aspectOf(_images.first.bytes)
+            : null;
         while (_images.isNotEmpty) {
           final first = !_extrasSent;
           final m = await _mediaToPublish(0);
@@ -879,10 +902,11 @@ class _ComposeScreenState extends State<ComposeScreen> {
               onProgress: (p) => onProgress((_publishedCount + p) / total),
               closeFriends: _closeFriends,
               extra: <String, dynamic>{
-                if (first && _poll != null) 'poll': _poll!.toMap(),
+                if (first && _poll != null) 'poll': _poll!.withAspect(ar).toMap(),
                 if (first && _question != null)
-                  'question': _question!.toMap(),
-                if (first && _slider != null) 'slider': _slider!.toMap(),
+                  'question': _question!.withAspect(ar).toMap(),
+                if (first && _slider != null)
+                  'slider': _slider!.withAspect(ar).toMap(),
                 if (first && !_info.isEmpty) ..._info.toExtra(),
                 if (first && _mentions.isNotEmpty)
                   'mentions': [for (final u in _mentions) u.toMap()],
@@ -1039,7 +1063,9 @@ class _ComposeScreenState extends State<ComposeScreen> {
                     constraints: BoxConstraints(
                         maxHeight: _frozenImgH ??
                         MediaQuery.of(context).size.height * 0.5),
-                    child: RepaintBoundary(
+                    child: Stack(
+                     children: [
+                      RepaintBoundary(
                       key: _captureKey,
                       child: Stack(
                         children: [
@@ -1093,6 +1119,25 @@ class _ComposeScreenState extends State<ComposeScreen> {
                             ),
                         ],
                       ),
+                    ),
+                      // الاستطلاع والأسئلة والشريط فوق الصورة (لا تُدمج في الصورة).
+                      if (_isStory && _canSticker)
+                        Positioned.fill(
+                          child: StoryCardsLayer(
+                            poll: _poll,
+                            question: _question,
+                            slider: _slider,
+                            enabled: !_busy && !_drawing,
+                            onPoll: (v) => setState(() => _poll = v),
+                            onQuestion: (v) => setState(() => _question = v),
+                            onSlider: (v) => setState(() => _slider = v),
+                            onEditPoll: _editPoll,
+                            onEditQuestion: _editQuestion,
+                            onEditSlider: _editSlider,
+                            onTouching: (v) => setState(() => _lockScroll = v),
+                          ),
+                        ),
+                     ],
                     ),
                   ),
                 ),

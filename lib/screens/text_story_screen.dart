@@ -8,6 +8,7 @@ import '../services/post_service.dart';
 import 'close_friends_screen.dart';
 import 'story_backgrounds.dart';
 import 'story_mentions.dart';
+import 'story_movable.dart';
 import 'story_poll.dart';
 import 'story_question.dart';
 import 'story_info.dart';
@@ -48,19 +49,25 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
   Future<void> _editSlider() async {
     final r = await showSliderDialog(context,
         initial: _slider, onOpen: _setDialogOpen);
-    if (r != null && mounted) setState(() => _slider = r);
+    if (r != null && mounted) {
+      setState(() => _slider = r.placedLike(_slider, kSliderDefY));
+    }
   }
 
   Future<void> _editQuestion() async {
     final q = await showQuestionDialog(context,
         initial: _question, onOpen: _setDialogOpen);
-    if (q != null && mounted) setState(() => _question = q);
+    if (q != null && mounted) {
+      setState(() => _question = q.placedLike(_question, kQuestionDefY));
+    }
   }
 
   Future<void> _editPoll() async {
     final p = await showPollDialog(context,
         initial: _poll, onOpen: _setDialogOpen);
-    if (p != null && mounted) setState(() => _poll = p);
+    if (p != null && mounted) {
+      setState(() => _poll = p.placedLike(_poll, kPollDefY));
+    }
   }
 
   Future<void> _publish() async {
@@ -104,7 +111,9 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
       resizeToAvoidBottomInset: !_dialogOpen,
       body: Container(
         decoration: BoxDecoration(gradient: storyGradient(_bg)),
-        child: SafeArea(
+        child: Stack(
+          children: [
+            SafeArea(
           child: Column(
             children: [
               Padding(
@@ -296,6 +305,23 @@ class _TextStoryScreenState extends State<TextStoryScreen> {
               const SizedBox(height: 14),
             ],
           ),
+            ),
+            // الاستطلاع والأسئلة والشريط: اسحبها لتضعها أينما تريد على القصة.
+            Positioned.fill(
+              child: StoryCardsLayer(
+                poll: _poll,
+                question: _question,
+                slider: _slider,
+                enabled: !_busy,
+                onPoll: (v) => setState(() => _poll = v),
+                onQuestion: (v) => setState(() => _question = v),
+                onSlider: (v) => setState(() => _slider = v),
+                onEditPoll: _editPoll,
+                onEditQuestion: _editQuestion,
+                onEditSlider: _editSlider,
+              ),
+            ),
+          ],
         ),
       ),
     );

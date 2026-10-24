@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -17,6 +18,7 @@ import 'post_widgets.dart';
 import 'profile_screen.dart';
 import 'story_backgrounds.dart';
 import 'story_mentions.dart';
+import 'story_movable.dart' show storyCardWidth;
 import 'story_poll.dart';
 import 'story_question.dart';
 import 'story_info.dart';
@@ -846,7 +848,7 @@ class _StoryViewerState extends State<StoryViewer>
                                     info: story.info!,
                                     createdAt: story.createdAt),
                               ),
-                            if (story.slider != null)
+                            if (story.slider != null && !story.slider!.placed)
                               Padding(
                                 padding:
                                     const EdgeInsets.fromLTRB(20, 0, 20, 12),
@@ -856,7 +858,8 @@ class _StoryViewerState extends State<StoryViewer>
                                     slider: story.slider!,
                                     mine: mine),
                               ),
-                            if (story.question != null)
+                            if (story.question != null &&
+                                !story.question!.placed)
                               Padding(
                                 padding:
                                     const EdgeInsets.fromLTRB(20, 0, 20, 12),
@@ -867,7 +870,7 @@ class _StoryViewerState extends State<StoryViewer>
                                     mine: mine,
                                     onPause: (v) => _setPause('question', v)),
                               ),
-                            if (story.poll != null)
+                            if (story.poll != null && !story.poll!.placed)
                               Padding(
                                 padding:
                                     const EdgeInsets.fromLTRB(20, 0, 20, 12),
@@ -884,6 +887,7 @@ class _StoryViewerState extends State<StoryViewer>
                           ],
                         ),
                       ),
+                      _placedCards(story, mine, active),
                     ],
                   ),
                 ),
@@ -896,6 +900,102 @@ class _StoryViewerState extends State<StoryViewer>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// مستطيل الوسائط داخل الإطار: الصورة تُعرض كاملة (contain) فنحسب مكانها من
+  /// نسبتها [ar]؛ القصة النصية أو بدون نسبة = الإطار كله.
+  Rect _mediaRect(Size frame, double? ar, bool textStory) {
+    if (textStory || ar == null || frame.isEmpty) return Offset.zero & frame;
+    final fa = frame.width / frame.height;
+    if (ar >= fa) {
+      final h = frame.width / ar;
+      return Rect.fromLTWH(0, (frame.height - h) / 2, frame.width, h);
+    }
+    final w = frame.height * ar;
+    return Rect.fromLTWH((frame.width - w) / 2, 0, w, frame.height);
+  }
+
+  /// الاستطلاع وصندوق الأسئلة وشريط الإيموجي التي وضعها صاحب القصة في مكان
+  /// محدد (القصص القديمة بلا موضع تبقى أسفل الشاشة).
+  Widget _placedCards(Post story, bool mine, bool active) {
+    final poll = story.poll, q = story.question, sl = story.slider;
+    final hasPoll = poll != null && poll.placed;
+    final hasQ = q != null && q.placed;
+    final hasSl = sl != null && sl.placed;
+    if (!hasPoll && !hasQ && !hasSl) return const SizedBox.shrink();
+    return Positioned.fill(
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 150),
+        opacity: (_hideUi && active) ? 0 : 1,
+        child: LayoutBuilder(builder: (context, c) {
+          final frame = Size(c.maxWidth, c.maxHeight);
+          final kb = MediaQuery.of(context).viewInsets.bottom;
+          // يُكتب في صندوق الأسئلة: نرفعه فوق الكيبورد كي لا يختفي خلفه.
+          final lift = kb > 0 && _pauseReasons.contains('question');
+          Widget place(double x, double y, double s, double? ar, Widget card,
+              {bool avoidKeyboard = false}) {
+            final r = _mediaRect(frame, ar, story.bg != null);
+            var cy = r.top + y * r.height;
+            if (avoidKeyboard && lift) {
+              cy = math.min(cy, frame.height - kb - 70 * s - 8);
+            }
+            return AnimatedPositioned(
+              duration: const Duration(milliseconds: 160),
+              left: r.left + x * r.width,
+              top: cy,
+              child: FractionalTranslation(
+                translation: const Offset(-0.5, -0.5),
+                child: Transform.scale(
+                  scale: s,
+                  child: SizedBox(width: storyCardWidth(r.width), child: card),
+                ),
+              ),
+            );
+          }
+
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              if (hasSl)
+                place(
+                    sl!.x!,
+                    sl.y!,
+                    sl.s ?? 1,
+                    sl.ar,
+                    StorySliderCard(
+                        key: ValueKey('slider-${story.id}'),
+                        story: story,
+                        slider: sl,
+                        mine: mine)),
+              if (hasQ)
+                place(
+                    q!.x!,
+                    q.y!,
+                    q.s ?? 1,
+                    q.ar,
+                    StoryQuestionCard(
+                        key: ValueKey('question-${story.id}'),
+                        story: story,
+                        question: q,
+                        mine: mine,
+                        onPause: (v) => _setPause('question', v)),
+                    avoidKeyboard: true),
+              if (hasPoll)
+                place(
+                    poll!.x!,
+                    poll.y!,
+                    poll.s ?? 1,
+                    poll.ar,
+                    StoryPollCard(
+                        key: ValueKey('poll-${story.id}'),
+                        story: story,
+                        poll: poll,
+                        mine: mine)),
+            ],
+          );
+        }),
       ),
     );
   }
