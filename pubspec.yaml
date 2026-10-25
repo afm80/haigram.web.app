@@ -28,6 +28,9 @@ dependencies:
   webview_flutter: ^4.8.0
   webview_flutter_android: ^3.16.8
   firebase_messaging: ^15.2.10
+  record: ^5.1.2
+  audioplayers: ^6.1.0
+  path_provider: ^2.1.4
 
 dev_dependencies:
   flutter_test:
