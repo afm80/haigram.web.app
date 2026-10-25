@@ -262,6 +262,51 @@ class StoryPoll {
   }
 }
 
+/// صوت فيديو: كل فيديو مرفوع هو «صوت أصلي» معرّفه معرّف منشوره، ويمكن
+/// لفيديوهات وقصص أخرى استخدامه فتحمل هذه الخريطة في حقل `sound`.
+/// [id] معرّف منشور الفيديو الأصلي، و[uid]/[username] صاحبه.
+class PostSound {
+  /// عنوان الصوت الافتراضي (مفتاح ترجمة يُعرض بـ tr).
+  static const originalTitle = 'الصوت الأصلي';
+
+  final String id;
+  final String title;
+  final String uid;
+  final String username;
+  const PostSound(
+      {required this.id,
+      required this.title,
+      required this.uid,
+      required this.username});
+
+  /// الصوت الأصلي لفيديو مرفوع لم يستخدم صوتاً آخر.
+  factory PostSound.original(Post p) => PostSound(
+      id: p.id,
+      title: originalTitle,
+      uid: p.uid,
+      username: p.username);
+
+  Map<String, dynamic> toMap() =>
+      {'id': id, 'title': title, 'uid': uid, 'username': username};
+
+  static PostSound? fromMap(Object? m) {
+    if (m is! Map) return null;
+    final id = m['id'];
+    final title = m['title'];
+    final uid = m['uid'];
+    final username = m['username'];
+    if (id is String &&
+        id.isNotEmpty &&
+        title is String &&
+        title.isNotEmpty &&
+        uid is String &&
+        username is String) {
+      return PostSound(id: id, title: title, uid: uid, username: username);
+    }
+    return null;
+  }
+}
+
 class Post {
   final String id;
   final PostType type;
@@ -288,6 +333,7 @@ class Post {
   final StorySlider? slider; // شريط إيموجي داخل القصة (اختياري)
   final StoryInfo? info; // رابط/موقع/عدّ تنازلي/وقت (اختياري)
   final List<StoryMention> mentions; // مستخدمون مذكورون في القصة
+  final PostSound? sound; // صوت مستخدم من فيديو آخر (فارغ = صوت الفيديو نفسه)
   final bool authorPrivate; // حساب صاحب المنشور خاص (تفرضه قواعد Firestore)
   final bool closeFriends; // قصة للأصدقاء المقربين فقط (مجموعة closeStories)
   final String? sharedFromUsername; // قصة مشاركة من منشور: صاحب الأصل
@@ -329,6 +375,7 @@ class Post {
     this.slider,
     this.info,
     this.mentions = const [],
+    this.sound,
     this.authorPrivate = false,
     this.closeFriends = false,
     this.sharedFromUsername,
@@ -382,6 +429,7 @@ class Post {
       slider: StorySlider.fromMap(m['slider']),
       info: StoryInfo.fromMap(m),
       mentions: StoryMention.listFrom(m['mentions']),
+      sound: PostSound.fromMap(m['sound']),
       authorPrivate: m['authorPrivate'] == true,
       closeFriends: m['closeFriends'] == true,
       sharedFromUsername: m['sharedFromUsername'] as String?,
@@ -431,6 +479,16 @@ class Post {
           isShort: isShort,
           thumb: videoThumbUrl)
       : null;
+
+  /// صوت هذا الفيديو: الصوت المستخدم إن وُجد، وإلا صوته الأصلي (للفيديو
+  /// المرفوع فقط). null لغير ذلك (صور، يوتيوب...).
+  PostSound? get soundRef {
+    if (sound != null) return sound;
+    if (type == PostType.text && video?.provider == VideoProvider.file) {
+      return PostSound.original(this);
+    }
+    return null;
+  }
 
   /// صورة الفيديو المصغّرة إن وفّرتها المنصة (لا تستهلك أي حصة من Firebase أو
   /// Cloudinary). null للمنصات التي ترسم غلافاً بدلها.
@@ -1084,6 +1142,11 @@ class PostService {
           if (p.hasVideo && p.videoThumbUrl != null)
             'videoThumb': p.videoThumbUrl,
           if (p.isAlbum) 'albumUrls': p.albumUrls,
+          // الفيديو المعاد نشره يحتفظ بصوته (إعادة نشر إعادة نشر قديمة بلا صوت لا تُنسب).
+          if (p.hasVideo &&
+              p.soundRef != null &&
+              (p.sound != null || p.repostedFromPostId == null))
+            'sound': p.soundRef!.toMap(),
           'repostedFromUid': originalUid,
           'repostedFromUsername': originalUsername,
           'repostedFromPostId': originalId,
@@ -1222,9 +1285,15 @@ class PostService {
   static String youtubeWatchUrl(String id) => VideoSource.youtubeWatch(id);
 
   /// منشور نصي، وقد يرافقه (أو يحلّ محلّه) فيديو يوتيوب.
+  /// [sound]: صوت فيديو آخر يستخدمه هذا الفيديو (يُحفظ في الحقل sound).
   static Future<void> publishText(String text,
-          {VideoSource? video, int? tbg, int? tc, String? videoThumb}) =>
+          {VideoSource? video,
+          int? tbg,
+          int? tc,
+          String? videoThumb,
+          PostSound? sound}) =>
       _create(PostType.text, text, null, extra: {
+        if (video != null && sound != null) 'sound': sound.toMap(),
         if (video != null && videoThumb != null) 'videoThumb': videoThumb,
         if (tbg != null) 'tbg': tbg,
         if (tc != null) 'tc': tc,
