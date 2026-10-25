@@ -284,10 +284,13 @@ service cloud.firestore {
         // وبمجرد وجوده ترفض القواعد كل عمليات المستخدم (isActiveUser) ويُخرجه التطبيق فوراً.
         allow create: if isAdmin()
           && uid != request.auth.uid
-          && request.resource.data.keys().hasOnly(['uid', 'blockedBy', 'blockedAt'])
+          && request.resource.data.keys().hasOnly(['uid', 'blockedBy', 'blockedAt', 'until'])
+          && request.resource.data.keys().hasAll(['uid', 'blockedBy', 'blockedAt'])
           && request.resource.data.uid == uid
           && request.resource.data.blockedBy == request.auth.uid
-          && request.resource.data.blockedAt == request.time;
+          && request.resource.data.blockedAt == request.time
+          && (!('until' in request.resource.data)
+              || request.resource.data.until is timestamp);
         allow delete: if isAdmin();
         allow update: if false;
       }
