@@ -3,13 +3,13 @@ import 'package:flutter/material.dart';
 /// لوحة الألوان المشتركة لهوية Haigram.
 class AppColors {
   // البنفسجي الغامق المائل إلى الوردي (اللون الأساسي للأزرار والعناصر الفعّالة)
-  static const brandPurple = Color(0xFF9A1FA8);
+  static const brandPurple = Color(0xFFA61E4D);
   /// أحمر قلب الإعجاب (ثابت في الوضعين الداكن والفاتح).
   static const likeRed = Color(0xFFFF3040);
   /// أحمر شارات الإشعارات (ثابت في الوضعين الداكن والفاتح).
   static const notificationRed = Color(0xFFFF3040);
-  static const brandPurpleDeep = Color(0xFF7E1A9E);
-  static const brandMagenta = Color(0xFFC02C9E);
+  static const brandPurpleDeep = Color(0xFF7A1537);
+  static const brandMagenta = Color(0xFFD6336C);
 
   // البرتقالي (اللون الثانوي للتدرجات والتمييز)
   static const brandOrange = Color(0xFFFF7A1A);
@@ -17,7 +17,7 @@ class AppColors {
 
   static const accent = brandPurple;
   static const accent2 = brandOrange;
-  static const accent3 = brandPurpleDeep;
+  static const accent3 = brandPurple;
   static const success = Color(0xFF34D399);
 
   /// تدرّج حلقة القصص: برتقالي ← وردي ← بنفسجي غامق
