@@ -23,6 +23,20 @@ String trf(String ar, List<Object?> args) {
 }
 
 const Map<String, String> _en = {
+  'الصوت': "Sound",
+  'الصوت الأصلي': "Original sound",
+  'الصوت الأصلي لم يعد متاحاً': "The original sound is no longer available",
+  'تعذر تشغيل الصوت': "Couldn't play the sound",
+  'تم حفظ الصوت': "Sound saved",
+  'أُزيل الصوت من المحفوظات': "Sound removed from saved",
+  'استخدام الصوت': "Use sound",
+  'نشر إلى قصة': "Post to story",
+  '{0} فيديو': "{0} videos",
+  'لا توجد فيديوهات بهذا الصوت بعد': "No videos with this sound yet",
+  'كن أول من يستخدمه.': "Be the first to use it.",
+  'الأصوات المحفوظة': "Saved sounds",
+  'لا توجد أصوات محفوظة': "No saved sounds",
+  'افتح قرص الصوت في أي فيديو واضغط حفظ.': "Open the sound disc on any video and tap Save.",
   'تعذّر تجهيز هذا الفيديو على هذا الجهاز، جرّب فيديو آخر': "Couldn't process this video on this device. Try another one",
   'أي فيديو من جهازك: يُجهَّز تلقائياً ويُقصّ إلى دقيقة كحد أقصى': "Any video from your device: it's prepared automatically and trimmed to one minute max",
   'جارٍ الرفع، انتظر حتى ينتهي': "Uploading, please wait until it finishes",
