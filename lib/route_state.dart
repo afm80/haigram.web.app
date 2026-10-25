@@ -178,3 +178,13 @@ class TabRouteObserver extends NavigatorObserver {
 
 /// مراقب الـ Navigator الجذر: يحفظ الصفحات المفتوحة فوق الشريط السفلي.
 final TabRouteObserver rootRouteObserver = TabRouteObserver(rootStackIndex);
+
+/// جسر بين الغلاف الرئيسي (HomeShell) وعارض الشورتز: يسجّل الغلاف دالة تبني
+/// القائمة السفلية، فيعرضها العارض أسفل الفيديو مثل تيك توك.
+class ShellNavBridge {
+  ShellNavBridge._();
+
+  /// تبني القائمة السفلية بنمط داكن (خلفية سوداء وأيقونات بيضاء)؛ null إذا لم
+  /// يكن الغلاف الرئيسي موجوداً.
+  static Widget Function(BuildContext context)? shortsBar;
+}
