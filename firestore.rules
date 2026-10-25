@@ -1287,8 +1287,10 @@ service cloud.firestore {
               && request.resource.data.text.size() <= 60
               && request.resource.data.deletedAt == request.time)
           );
-        allow delete: if isChatParticipant()
-          && resource.data.senderUid == request.auth.uid;
+        allow delete: if (isChatParticipant()
+            && resource.data.senderUid == request.auth.uid)
+          // [لوحة التحكم] الأدمن يحذف رسائل المحادثة عند حذفها كاملة.
+          || isAdmin();
       }
 
       // رسائل «حذف لديّ فقط»: مستند لكل مستخدم يخص نفسه فقط.
