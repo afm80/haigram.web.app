@@ -103,6 +103,48 @@ service cloud.firestore {
                   && d.time.m in [0, 1, 2]));
     }
 
+    // صوت فيديو (حقل sound في منشور فيديو أو قصة): {id, title, uid, username}.
+    // id هو معرّف منشور الفيديو الأصلي، ويجب أن يكون فيديو مرفوعاً (file) لصاحب
+    // uid نفسه، وأصلياً (لا يحمل صوتاً آخر)، وعاماً أو لي.
+    function validSoundSource(s) {
+      let src = get(/databases/$(database)/documents/posts/$(s.id)).data;
+      return src.uid == s.uid
+        && src.type == 'text'
+        && src.get('videoProvider', '') == 'file'
+        && !('sound' in src)
+        && (src.get('authorPrivate', false) == false
+            || src.uid == request.auth.uid);
+    }
+    function validPostSound(d) {
+      return !('sound' in d)
+        || ((d.type == 'story' || 'videoId' in d)
+            && d.type in ['text', 'story']
+            && d.sound is map
+            && d.sound.keys().hasOnly(['id', 'title', 'uid', 'username'])
+            && d.sound.id is string
+            && d.sound.id.matches('^[A-Za-z0-9]{10,40}$')
+            && d.sound.title is string
+            && d.sound.title.size() > 0
+            && d.sound.title.size() <= 80
+            && d.sound.uid is string
+            && d.sound.uid.size() <= 128
+            && d.sound.username is string
+            && d.sound.username.size() <= 40
+            && validSoundSource(d.sound));
+    }
+
+    // صوت محفوظ: users/{uid}/savedSounds/{soundId}، لصاحب الحساب وحده.
+    function validSavedSound(soundId) {
+      let d = request.resource.data;
+      return soundId.matches('^[A-Za-z0-9]{10,40}$')
+        && d.keys().hasAll(['at', 'title', 'uid', 'username'])
+        && d.keys().hasOnly(['at', 'title', 'uid', 'username'])
+        && d.at == request.time
+        && d.title is string && d.title.size() > 0 && d.title.size() <= 80
+        && d.uid is string && d.uid.size() <= 128
+        && d.username is string && d.username.size() <= 40;
+    }
+
     // هل أتابع هذا المستخدم؟
     function followsUser(targetUid) {
       return exists(/databases/$(database)/documents/users/$(request.auth.uid)/following/$(targetUid));
@@ -362,6 +404,7 @@ service cloud.firestore {
         // معلومات القصة: للقصص فقط.
         && validStoryInfo(request.resource.data)
         && validStoryVideoUrl(request.resource.data)
+        && validPostSound(request.resource.data)
         && (request.resource.data.type == 'story'
             || !hasStoryInfo(request.resource.data))
         // ذكر المستخدمين في القصة: حتى 3، للقصص فقط.
@@ -1444,6 +1487,7 @@ service cloud.firestore {
                 && request.resource.data.slider.e.size() <= 16))
         && validStoryInfo(request.resource.data)
         && validStoryVideoUrl(request.resource.data)
+        && validPostSound(request.resource.data)
         && (!('mentions' in request.resource.data)
             || (request.resource.data.mentions is list
                 && request.resource.data.mentions.size() <= 3));
@@ -1667,6 +1711,7 @@ service cloud.firestore {
         && (sub != 'savedMessages' || request.auth.uid == uid)
         // المحفوظات خاصة بصاحبها وحده.
         && (sub != 'saved' || request.auth.uid == uid)
+        && (sub != 'savedSounds' || request.auth.uid == uid)
         // قائمة الإعجابات: تحترم «إخفاء الإعجابات» وخصوصية الحساب.
         && (sub != 'liked' || request.auth.uid == uid || canViewLikes(uid));
 
@@ -1687,6 +1732,8 @@ service cloud.firestore {
         (request.auth.uid == uid
           && sub in ['saved', 'liked', 'hiddenPosts']
           && request.resource.data.keys().hasOnly(['at'])) ||
+        (request.auth.uid == uid && sub == 'savedSounds'
+          && validSavedSound(doc)) ||
         // متابعة مباشرة: فقط إذا كان الحساب الهدف عاماً.
         (sub == 'following' && request.auth.uid == uid
           && doc != uid && !isPrivateUser(doc)
@@ -1726,6 +1773,8 @@ service cloud.firestore {
         (request.auth.uid == uid
           && sub in ['saved', 'liked', 'hiddenPosts']
           && request.resource.data.keys().hasOnly(['at'])) ||
+        (request.auth.uid == uid && sub == 'savedSounds'
+          && validSavedSound(doc)) ||
         (sub == 'following' && request.auth.uid == uid
           && request.resource.data.keys().hasOnly(['at'])) ||
         (sub == 'followers' && doc == request.auth.uid
