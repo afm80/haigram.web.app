@@ -13,6 +13,17 @@ enum VideoProvider {
   hls, // بث m3u8
 }
 
+/// مقبض للتحكم بمشغّل ملف مضمَّن (تشغيل/إيقاف) من خارج المشغّل.
+/// يربطه المشغّل نفسه عند بنائه ويفكّه عند إزالته.
+class VideoHandle {
+  void Function(String cmd)? _sender;
+  void attach(void Function(String cmd) sender) => _sender = sender;
+  void detach() => _sender = null;
+
+  /// الأوامر: toggle ، play ، pause.
+  void send(String cmd) => _sender?.call(cmd);
+}
+
 class VideoSource {
   final VideoProvider provider;
 
@@ -251,7 +262,9 @@ class VideoSource {
 
   /// صفحة HTML لمشغّل الملف المباشر أو البث. تُرسل نتيجة التشغيل عبر
   /// postMessage (الويب) أو قناة HaigramVideo (التطبيق): 'ok' أو 'error'.
-  String playerHtml() {
+  /// [short]: نمط الشورتز (تيك توك): بلا أزرار المشغّل، يملأ الإطار، يتكرر،
+  /// وشريط تقدّم رفيع. التشغيل والإيقاف يأتيان من الخارج عبر [VideoHandle].
+  String playerHtml({bool short = false}) {
     final src = _jsString(url);
     final failText = _jsString(tr('تعذر تشغيل هذا الفيديو'));
     final isHls = provider == VideoProvider.hls;
@@ -259,13 +272,14 @@ class VideoSource {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;height:100%;background:#000;overflow:hidden}
-video{width:100%;height:100%;object-fit:contain;background:#000}
+video{width:100%;height:100%;object-fit:${short ? 'cover' : 'contain'};background:#000}
+${short ? '#pb{position:absolute;left:0;bottom:0;height:3px;width:0;background:#fff;opacity:.85;pointer-events:none}' : ''}
 #e{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
 color:#fff;font:15px sans-serif;text-align:center;padding:16px;background:#000}
 </style>
 ${isHls ? '<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>' : ''}
 </head><body>
-<video id="v" controls autoplay playsinline preload="auto"></video><div id="e"></div>
+<video id="v" ${short ? 'loop' : 'controls'} autoplay playsinline preload="auto"></video>${short ? '<div id="pb"></div>' : ''}<div id="e"></div>
 <script>
 var src=$src, isHls=$isHls, v=document.getElementById('v'), done=false;
 function notify(s){
@@ -282,6 +296,14 @@ function ok(){ if(!done){done=true;notify('ok');} }
 v.addEventListener('loadedmetadata',ok);
 v.addEventListener('loadeddata',ok);
 v.addEventListener('canplay',ok);
+function haigramCmd(c){
+  if(c==='toggle'){ if(v.paused){ v.play(); } else { v.pause(); } }
+  else if(c==='play'){ v.play(); } else if(c==='pause'){ v.pause(); }
+}
+window.addEventListener('message',function(e){
+  var d=e.data; if(d && d.haigramCmd) haigramCmd(d.haigramCmd);
+});
+${short ? "var pb=document.getElementById('pb'); v.addEventListener('timeupdate',function(){ if(v.duration) pb.style.width=(100*v.currentTime/v.duration)+'%'; });" : ''}
 if(isHls && !v.canPlayType('application/vnd.apple.mpegurl')){
   if(window.Hls && Hls.isSupported()){
     var h=new Hls(); h.loadSource(src); h.attachMedia(v);
