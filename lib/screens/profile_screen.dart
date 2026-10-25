@@ -231,11 +231,14 @@ class _ProfileViewState extends State<ProfileView> {
 
     // الشبكة، Shorts، فيديو، إعادة النشر، والمحفوظات (لصاحب الحساب فقط).
     // لون أيقونات التبويبات يتبع الوضع (داكن/فاتح) عبر labelColor و unselectedLabelColor.
+    // تبويب الإعجابات: لصاحب الحساب دائماً، وللزوار إن لم يُخفِ إعجاباته.
+    final showLikes = widget.isMe || !user.hideLikes;
     final tabs = <Tab>[
       const Tab(icon: _BoxGlyph(Icons.image_rounded)),
       const Tab(icon: _BoxGlyph(Icons.bolt_rounded)),
       const Tab(icon: _BoxGlyph(Icons.play_arrow_rounded)),
       const Tab(icon: Icon(Icons.repeat_rounded)),
+      if (showLikes) const Tab(icon: Icon(Icons.favorite_border_rounded)),
       if (widget.isMe) const Tab(icon: Icon(Icons.bookmark_border_rounded)),
     ];
     final pinnedIds = user.pinnedPostIds.toSet();
@@ -271,6 +274,7 @@ class _ProfileViewState extends State<ProfileView> {
                   pinnedIds: pinnedIds,
                   feed: _feed.value,
                 ),
+              if (showLikes) _LikedGrid(uid: widget.uid, isMe: widget.isMe),
               if (widget.isMe) const _SavedGrid(),
             ],
           ),
@@ -477,8 +481,11 @@ class _Header extends StatelessWidget {
                   children: [
                     Expanded(
                       child: _LiveStat(
-                        label: tr('منشورات'),
-                        load: () => PostService.countPosts(uid),
+                        label: tr('أتابعه'),
+                        load: () => PostService.countFollowing(uid),
+                        onTap: (isMe || access == _Access.open)
+                            ? () => _showFollowSheet(context, uid, 1)
+                            : null,
                       ),
                     ),
                     Expanded(
@@ -492,11 +499,8 @@ class _Header extends StatelessWidget {
                     ),
                     Expanded(
                       child: _LiveStat(
-                        label: tr('أتابعه'),
-                        load: () => PostService.countFollowing(uid),
-                        onTap: (isMe || access == _Access.open)
-                            ? () => _showFollowSheet(context, uid, 1)
-                            : null,
+                        label: tr('إعجابات'),
+                        load: () => PostService.totalLikes(uid),
                       ),
                     ),
                   ],
@@ -2157,6 +2161,36 @@ class SavedPostsScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: Text(tr('المحفوظات'))),
       body: const SafeArea(child: _SavedGrid()),
+    );
+  }
+}
+
+/// تبويب الإعجابات: المنشورات التي أعجب بها صاحب الملف (الأحدث أولاً).
+class _LikedGrid extends StatelessWidget {
+  final String uid;
+  final bool isMe;
+  const _LikedGrid({required this.uid, required this.isMe});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<Post>>(
+      stream: PostService.likedPosts(uid),
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return ErrorState(error: snap.error, title: tr('تعذر التحميل'));
+        }
+        if (!snap.hasData) return const AppLoading();
+        final list = snap.data!;
+        if (list.isEmpty) {
+          return EmptyState(
+              icon: Icons.favorite_border_rounded,
+              title: tr('لا توجد إعجابات بعد'),
+              message: isMe
+                  ? tr('المنشورات التي تعجبك ستظهر هنا.')
+                  : tr('ستظهر هنا المنشورات التي أعجب بها هذا الحساب.'));
+        }
+        return _PostGrid(list: list);
+      },
     );
   }
 }
