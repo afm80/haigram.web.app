@@ -1,7 +1,8 @@
 // صفحة الفيديو العمودي المرفوع بتصميم تيك توك (للأندرويد/آيفون):
 // فيديو بملء الإطار، عمود أزرار جانبي (صورة صاحب الفيديو مع زر المتابعة،
-// إعجاب، تعليقات، حفظ، مشاركة، قرص الصوت)، والوصف أسفل اليسار.
+// إعجاب، تعليقات، حفظ، مشاركة، قرص الصوت) على اليسار، والوصف أسفل اليمين.
 // نقرة = إيقاف/تشغيل، سحب عمودي = التنقل بين المقاطع (يتولاه العارض).
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../auth_gate.dart';
@@ -137,6 +138,29 @@ class _TikTokShortPageState extends State<TikTokShortPage>
     });
   }
 
+  /// لمس قادم من مشغّل الويب (iframe يلتقط اللمس بنفسه ويرسله لنا).
+  void _onGesture(String g) {
+    if (!widget.active || !mounted) return;
+    if (g == 'next') {
+      widget.onNext();
+    } else if (g == 'prev') {
+      widget.onPrev();
+    } else if (g == 'paused' || g == 'playing') {
+      setState(() => _paused = g == 'paused');
+      if (_paused) {
+        _disc.stop();
+      } else {
+        _disc.repeat();
+      }
+    } else if (g.startsWith('dbl:')) {
+      final xy = g.substring(4).split(',');
+      if (xy.length == 2) {
+        _tapAt = Offset(double.tryParse(xy[0]) ?? 0, double.tryParse(xy[1]) ?? 0);
+      }
+      _doubleTapLike();
+    }
+  }
+
   Future<void> _doFollow() async {
     if (_followBusy || needsLogin(context)) return;
     _followBusy = true;
@@ -160,7 +184,7 @@ class _TikTokShortPageState extends State<TikTokShortPage>
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -169,7 +193,7 @@ class _TikTokShortPageState extends State<TikTokShortPage>
             Text(label,
                 style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 12.5,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                     shadows: _shadow)),
           ],
@@ -398,8 +422,13 @@ class _TikTokShortPageState extends State<TikTokShortPage>
     final p = widget.post;
     final mine = p.uid == PostService.uidOrEmpty;
     final source = p.video!;
+    final isFile = source.provider == VideoProvider.file;
+    // ملف مرفوع: على الأندرويد/آيفون تلتقط طبقة فلتر اللمس، وعلى الويب يلتقطه
+    // مشغّل الصفحة نفسه (iframe). يوتيوب وغيره: مشغّل المنصة يلتقط اللمس.
+    final flutterTouch = isFile && !kIsWeb;
+    final pad = MediaQuery.of(context).padding;
     return LayoutBuilder(builder: (context, c) {
-      // على الشاشات العريضة (تابلت) يبقى الإطار بنسبة 9:16 في الوسط.
+      // الفيديو يملأ الشاشة كاملة؛ على الشاشات العريضة فقط يبقى بنسبة 9:16 في الوسط.
       final maxW = c.maxHeight * 9 / 16;
       final w = c.maxWidth < maxW ? c.maxWidth : maxW;
       return Center(
@@ -410,19 +439,21 @@ class _TikTokShortPageState extends State<TikTokShortPage>
             child: Stack(
               fit: StackFit.expand,
               children: [
-                // الفيديو بملء الإطار
+                // الفيديو بملء الشاشة
                 widget.active
                     ? buildVideoEmbed(source,
                         key: ValueKey('short-${p.id}'),
                         handle: _handle,
-                        tiktok: true)
+                        onGesture: _onGesture,
+                        aspect: 9 / 16,
+                        tiktok: isFile)
                     : VideoCover(source: source),
                 // تدرّجات لقراءة النص والأيقونات
                 const Positioned(
                   left: 0,
                   right: 0,
                   top: 0,
-                  height: 90,
+                  height: 110,
                   child: IgnorePointer(
                     child: DecoratedBox(
                       decoration: BoxDecoration(
@@ -452,18 +483,33 @@ class _TikTokShortPageState extends State<TikTokShortPage>
                     ),
                   ),
                 ),
-                // طبقة اللمس: نقرة للإيقاف/التشغيل، سحب عمودي للتنقل
-                Positioned.fill(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: _toggle,
-                    onDoubleTapDown: (d) => _tapAt = d.localPosition,
-                    onDoubleTap: _doubleTapLike,
-                    onVerticalDragStart: (_) => _dy = 0,
-                    onVerticalDragUpdate: (d) => _dy += d.delta.dy,
-                    onVerticalDragEnd: _dragEnd,
+                if (flutterTouch)
+                  // طبقة اللمس: نقرة للإيقاف/التشغيل، نقرتان إعجاب، سحب عمودي للتنقل
+                  Positioned.fill(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _toggle,
+                      onDoubleTapDown: (d) => _tapAt = d.localPosition,
+                      onDoubleTap: _doubleTapLike,
+                      onVerticalDragStart: (_) => _dy = 0,
+                      onVerticalDragUpdate: (d) => _dy += d.delta.dy,
+                      onVerticalDragEnd: _dragEnd,
+                    ),
+                  )
+                else if (!isFile)
+                  // مشغّل المنصة يلتقط اللمس: شريط سحب جانبي (جهة اليمين لأن الأزرار يسار)
+                  Positioned(
+                    right: 0,
+                    top: c.maxHeight * 0.4,
+                    bottom: 0,
+                    width: (w * 0.2).clamp(36.0, 120.0).toDouble(),
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onVerticalDragStart: (_) => _dy = 0,
+                      onVerticalDragUpdate: (d) => _dy += d.delta.dy,
+                      onVerticalDragEnd: _dragEnd,
+                    ),
                   ),
-                ),
                 // قلوب النقر المزدوج
                 for (final b in _bursts)
                   Positioned(
@@ -504,17 +550,17 @@ class _TikTokShortPageState extends State<TikTokShortPage>
                     ),
                   ),
                 ),
-                // الوصف أسفل (يترك مكان عمود الأزرار)
+                // الوصف أسفل اليمين (يترك مكان عمود الأزرار على اليسار)
                 Positioned(
-                  left: 12,
-                  right: 76,
-                  bottom: 16,
+                  left: 76,
+                  right: 12,
+                  bottom: 16 + pad.bottom,
                   child: _caption(),
                 ),
-                // عمود الأزرار
+                // عمود الأزرار على اليسار
                 Positioned(
-                  right: 6,
-                  bottom: 12,
+                  left: 6,
+                  bottom: 12 + pad.bottom,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -538,217 +584,5 @@ class _TikTokShortPageState extends State<TikTokShortPage>
         ),
       );
     });
-  }
-}
-
-
-/// عمود أزرار بطريقة تيك توك لمشغّل الشورتز على الويب ويوتيوب:
-/// صورة صاحب الفيديو مع +، إعجاب، تعليقات، حفظ، مشاركة.
-/// يوضع بجانب الفيديو (خارج الـ iframe) حتى تعمل النقرات.
-class ShortSideActions extends StatefulWidget {
-  final Post post;
-  final VoidCallback onComments;
-  final VoidCallback onShare;
-
-  const ShortSideActions({
-    super.key,
-    required this.post,
-    required this.onComments,
-    required this.onShare,
-  });
-
-  @override
-  State<ShortSideActions> createState() => _ShortSideActionsState();
-}
-
-class _ShortSideActionsState extends State<ShortSideActions> {
-  bool _followBusy = false;
-
-  late final Stream<Post?> _live = PostService.postStream(widget.post.id);
-  late final Stream<FollowState> _follow =
-      PostService.followState(widget.post.uid);
-  late final Stream<bool> _saved = PostService.isSaved(widget.post.id);
-
-  Future<void> _doFollow() async {
-    if (_followBusy || needsLogin(context)) return;
-    _followBusy = true;
-    try {
-      await PostService.follow(widget.post.uid);
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content:
-                Text(friendlyError(error, fallback: tr('تعذرت المتابعة')))));
-      }
-    } finally {
-      _followBusy = false;
-    }
-  }
-
-  // ───────────────────────── العناصر ─────────────────────────
-
-  Widget _action(Widget icon, String label, VoidCallback onTap) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            icon,
-            const SizedBox(height: 2),
-            Text(label,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    shadows: _shadow)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Icon _icon(IconData i, {Color color = Colors.white}) =>
-      Icon(i, size: 35, color: color, shadows: _shadow);
-
-  /// صورة صاحب الفيديو مع شارة + للمتابعة (تختفي بعد المتابعة).
-  Widget _avatar(bool mine) {
-    final p = widget.post;
-    return SizedBox(
-      width: 56,
-      height: 68,
-      child: Stack(
-        alignment: Alignment.topCenter,
-        clipBehavior: Clip.none,
-        children: [
-          GestureDetector(
-            onTap: () => openProfile(context, p.uid),
-            child: Container(
-              padding: const EdgeInsets.all(1.8),
-              decoration: const BoxDecoration(
-                  shape: BoxShape.circle, color: Colors.white),
-              child: UserAvatar(uid: p.uid, fallbackName: p.name, radius: 24),
-            ),
-          ),
-          if (!mine)
-            Positioned(
-              bottom: 0,
-              child: StreamBuilder<FollowState>(
-                stream: _follow,
-                builder: (context, s) {
-                  final st = s.data ?? FollowState.none;
-                  if (st == FollowState.following) {
-                    return const SizedBox.shrink();
-                  }
-                  final canFollow = st == FollowState.none;
-                  return GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: canFollow ? _doFollow : null,
-                    child: Container(
-                      width: 23,
-                      height: 23,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: canFollow
-                            ? AppColors.likeRed
-                            : const Color(0xFF8E929C),
-                      ),
-                      child: Icon(
-                          canFollow
-                              ? Icons.add_rounded
-                              : Icons.schedule_rounded,
-                          size: 16,
-                          color: Colors.white),
-                    ),
-                  );
-                },
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _heart() {
-    return LikeBuilder(
-      post: widget.post,
-      builder: (context, liked, count, toggle) {
-        return _action(
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 220),
-          transitionBuilder: (child, anim) => ScaleTransition(
-              scale: Tween<double>(begin: 0.6, end: 1).animate(
-                  CurvedAnimation(parent: anim, curve: Curves.elasticOut)),
-              child: child),
-          child: Icon(
-            Icons.favorite_rounded,
-            key: ValueKey(liked),
-            size: 38,
-            color: liked ? AppColors.likeRed : Colors.white,
-            shadows: _shadow,
-          ),
-        ),
-        _fmt(count),
-        toggle,
-      );
-      },
-    );
-  }
-
-  Widget _comments() {
-    final p = widget.post;
-    return StreamBuilder<Post?>(
-      stream: _live,
-      initialData: p,
-      builder: (context, s) {
-        final n = s.data?.comments ?? p.comments;
-        return _action(_icon(Icons.mode_comment_rounded), _fmt(n),
-            widget.onComments);
-      },
-    );
-  }
-
-  Widget _save() {
-    final p = widget.post;
-    return StreamBuilder<bool>(
-      stream: _saved,
-      builder: (context, s) {
-        final saved = s.data ?? false;
-        return _action(
-          _icon(Icons.bookmark_rounded,
-              color: saved ? const Color(0xFFFFC83D) : Colors.white),
-          saved ? tr('محفوظ') : tr('حفظ'),
-          () {
-            if (needsLogin(context)) return;
-            PostService.toggleSave(p.id, saved);
-          },
-        );
-      },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final p = widget.post;
-    final mine = p.uid == PostService.uidOrEmpty;
-    return SizedBox(
-      width: 64,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _avatar(mine),
-          const SizedBox(height: 6),
-          _heart(),
-          _comments(),
-          _save(),
-          _action(
-              _icon(Icons.share_rounded),
-              p.shares > 0 ? _fmt(p.shares) : tr('مشاركة'),
-              widget.onShare),
-        ],
-      ),
-    );
   }
 }

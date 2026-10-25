@@ -1233,9 +1233,10 @@ void showShortDialog(BuildContext context, Post post,
   ));
 }
 
-/// الفيديو العمودي المرفوع (ملف) يُعرض بتصميم تيك توك على التطبيق.
-/// يوتيوب يبقى بالإطار القديم (مشغّله يلتقط اللمس)، وكذلك الويب (iframe).
-bool _isTikTokShort(Post p) =>
+/// كل الشورتز تُعرض بتصميم تيك توك: فيديو بملء الشاشة وأزرار على اليسار.
+/// الملف المرفوع على التطبيق يبقى يعمل أثناء فتح القوائم؛ مشغّل الويب
+/// ويوتيوب (iframe/WebView) يُزال لحظياً لأنه يلتقط النقرات فوقه.
+bool _keepsPlayingUnderMenu(Post p) =>
     !kIsWeb && p.video?.provider == VideoProvider.file;
 
 class ShortsViewer extends StatefulWidget {
@@ -1297,21 +1298,6 @@ class _ShortsViewerState extends State<ShortsViewer> {
         duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
   }
 
-  /// تمرير باللمس: سحب للأعلى = التالي، للأسفل = السابق.
-  /// يكفي سحب قصير (40 بكسل) أو حركة سريعة، فلا يلزم سحب سريع جداً.
-  double _dragDy = 0;
-  void _onDragStart(DragStartDetails _) => _dragDy = 0;
-  void _onDragUpdate(DragUpdateDetails d) => _dragDy += d.delta.dy;
-  void _onDragEnd(DragEndDetails d) {
-    final v = d.primaryVelocity ?? 0;
-    if (v < -150 || _dragDy < -40) {
-      _go(1);
-    } else if (v > 150 || _dragDy > 40) {
-      _go(-1);
-    }
-    _dragDy = 0;
-  }
-
   /// فتح التعليقات/المشاركة: نُزيل مشغّل يوتيوب أولاً (iframe يلتقط النقرات)،
   /// ويعود الفيديو بعد إغلاق النافذة.
   Future<void> _overlay(Future<void> Function() open) async {
@@ -1353,162 +1339,23 @@ class _ShortsViewerState extends State<ShortsViewer> {
   }
 
   Widget _page(Post post, bool active, int index) {
-    if (_isTikTokShort(post)) {
-      return TikTokShortPage(
-        key: ValueKey('tt-${post.id}'),
-        post: post,
-        active: active,
-        onComments: () => _overlay(() => showCommentsSheet(context, post)),
-        onShare: () => _overlay(() => showPostShareSheet(
-            Navigator.of(context, rootNavigator: true).context, post)),
-        onNext: () => _go(1),
-        onPrev: () => _go(-1),
-      );
-    }
-    // الإطار القديم يبدأ تحت شريط الأعلى (56)؛ صفحة تيك توك تملأ الشاشة.
-    return Padding(
-        padding: const EdgeInsets.only(top: 56),
-        child: LayoutBuilder(builder: (context, c) {
-      // عمود أزرار تيك توك على يمين الفيديو (خارج الـ iframe فتعمل النقرات).
-      const colW = 64.0;
-      const captionH = 56.0;
-      final h = (c.maxHeight - captionH - 8).clamp(120.0, 4000.0).toDouble();
-      final maxVideoW = c.maxWidth > colW ? c.maxWidth - colW : 0.0;
-      final w = (h * 9 / 16).clamp(0.0, maxVideoW).toDouble();
-      final vh = w * 16 / 9;
-      final wide = c.maxWidth >= 700;
-      return Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Row(
-            textDirection: TextDirection.ltr,
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              SizedBox(
-                width: w,
-                height: vh,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: post.video == null
-                      ? Container(color: Colors.black)
-                      : active
-                          ? buildVideoEmbed(post.video!,
-                              key: ValueKey('short-${post.videoId}'),
-                              aspect: 9 / 16)
-                          : VideoCover(source: post.video!),
-                ),
-              ),
-              // السحب على العمود ينقل بين الفيديوهات، والنقر على الأزرار يعمل.
-              GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onVerticalDragStart: _onDragStart,
-                onVerticalDragUpdate: _onDragUpdate,
-                onVerticalDragEnd: _onDragEnd,
-                child: SizedBox(
-                  width: colW,
-                  height: vh,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.bottomCenter,
-                    child: ShortSideActions(
-                      key: ValueKey('acts-${post.id}'),
-                      post: post,
-                      onComments: () =>
-                          _overlay(() => showCommentsSheet(context, post)),
-                      onShare: () => _overlay(() => showPostShareSheet(
-                          Navigator.of(context, rootNavigator: true).context,
-                          post)),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          // المنطقة السفلية بعرض الشاشة كلها وخارج الـ iframe: السحب عليها
-          // (حتى 40 بكسل) ينقل بين الفيديوهات.
-          SizedBox(
-            width: c.maxWidth,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onVerticalDragStart: _onDragStart,
-              onVerticalDragUpdate: _onDragUpdate,
-              onVerticalDragEnd: _onDragEnd,
-              child: Center(
-                child: SizedBox(
-                  width: w + colW,
-                  height: captionH,
-                  child: Row(
-                    textDirection: TextDirection.ltr,
-                    children: [
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            '@${post.username}${post.caption.isNotEmpty ? '\n${post.caption}' : ''}',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                color: Colors.white, fontSize: 13.5),
-                          ),
-                        ),
-                      ),
-                      // على الشاشات العريضة توجد أسهم جانبية؛ هنا للصغيرة.
-                      if (!wide) ...[
-                        IconButton(
-                          tooltip: tr('السابق'),
-                          onPressed: index > 0 ? () => _go(-1) : null,
-                          icon: const Icon(Icons.keyboard_arrow_up_rounded,
-                              size: 30),
-                          color: Colors.white,
-                          disabledColor: Colors.white24,
-                        ),
-                        IconButton(
-                          tooltip: tr('التالي'),
-                          onPressed: index < widget.shorts.length - 1
-                              ? () => _go(1)
-                              : null,
-                          icon: const Icon(Icons.keyboard_arrow_down_rounded,
-                              size: 30),
-                          color: Colors.white,
-                          disabledColor: Colors.white24,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      );
-    }));
+    return TikTokShortPage(
+      key: ValueKey('tt-${post.id}'),
+      post: post,
+      active: active,
+      onComments: () => _overlay(() => showCommentsSheet(context, post)),
+      onShare: () => _overlay(() => showPostShareSheet(
+          Navigator.of(context, rootNavigator: true).context, post)),
+      onNext: () => _go(1),
+      onPrev: () => _go(-1),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.of(context).size.width >= 700;
     final post = widget.shorts[_current];
     final mine = post.uid == PostService.uidOrEmpty;
-    // شريطان جانبيان للتمرير باللمس (مشغّل يوتيوب يلتقط اللمس فوق الفيديو):
-    // عرض كل منهما نحو خُمس الشاشة، ويمتدان من 40% من الارتفاع إلى الأسفل
-    // حيث يكون الإبهام، وتبقى وسط الفيديو وأعلاه للمس (تشغيل/إيقاف).
-    final size = MediaQuery.of(context).size;
-    final stripWidth = (size.width * 0.2).clamp(36.0, 120.0).toDouble();
-    final stripTop = size.height * 0.4;
-    Widget strip(bool left) => Positioned(
-          left: left ? 0 : null,
-          right: left ? null : 0,
-          top: stripTop,
-          bottom: 0,
-          width: stripWidth,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onVerticalDragStart: _onDragStart,
-            onVerticalDragUpdate: _onDragUpdate,
-            onVerticalDragEnd: _onDragEnd,
-          ),
-        );
+    final topInset = MediaQuery.of(context).padding.top;
     return Scaffold(
       backgroundColor: Colors.black,
       body: Focus(
@@ -1529,98 +1376,69 @@ class _ShortsViewerState extends State<ShortsViewer> {
           onPointerSignal: (e) {
             if (e is PointerScrollEvent) _go(e.scrollDelta.dy > 0 ? 1 : -1);
           },
-          child: SafeArea(
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: PageView.builder(
-                    controller: _pages,
-                    scrollDirection: Axis.vertical,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: widget.shorts.length,
-                    // مشغّل تيك توك لا يلتقط اللمس فلا يحتاج إخفاءً عند فتح القوائم.
-                    itemBuilder: (_, i) => _page(
-                        widget.shorts[i],
-                        i == _current &&
-                            (!_menuOpen || _isTikTokShort(widget.shorts[i])),
-                        i),
-                  ),
+          // بلا SafeArea: الفيديو يملأ الشاشة كاملة (تحت شريط الحالة) مثل تيك توك.
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: PageView.builder(
+                  controller: _pages,
+                  scrollDirection: Axis.vertical,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: widget.shorts.length,
+                  itemBuilder: (_, i) => _page(
+                      widget.shorts[i],
+                      i == _current &&
+                          (!_menuOpen || _keepsPlayingUnderMenu(widget.shorts[i])),
+                      i),
                 ),
-                // شريط السحب الأيسر لمشغّل يوتيوب فقط (الأيمن صار عمود الأزرار)؛ تيك توك يلتقط السحب بنفسه.
-                if (!_isTikTokShort(post)) strip(true),
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: 56,
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back_rounded,
-                            color: Colors.white,
-                            shadows: [
-                              Shadow(blurRadius: 8, color: Colors.black87)
-                            ]),
-                        onPressed: () => Navigator.of(context).pop(),
-                      ),
-                      const Spacer(),
-                      PopupMenuButton<String>(
-                        icon: const Icon(Icons.more_vert_rounded,
-                            color: Colors.white,
-                            shadows: [
-                              Shadow(blurRadius: 8, color: Colors.black87)
-                            ]),
-                        onOpened: () => setState(() => _menuOpen = true),
-                        onCanceled: () => setState(() => _menuOpen = false),
-                        onSelected: (v) {
-                          setState(() => _menuOpen = false);
-                          _onMenu(v, post);
-                        },
-                        itemBuilder: (_) => [
-                          PopupMenuItem(
-                              value: 'copy', child: Text(tr('نسخ الرابط'))),
-                          PopupMenuItem(
-                              value: 'share', child: Text(tr('مشاركة'))),
-                          PopupMenuItem(
-                              value: 'story', child: Text(tr('إضافة إلى القصة'))),
-                          if (widget.fromProfile && mine)
-                            PopupMenuItem(
-                                value: 'edit', child: Text(tr('تعديل الوصف'))),
-                          if (widget.fromProfile && mine)
-                            PopupMenuItem(
-                                value: 'delete', child: Text(tr('حذف'))),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                if (wide)
-                  Positioned(
-                    right: 24,
-                    top: 0,
-                    bottom: 0,
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton.filledTonal(
-                            icon: const Icon(Icons.keyboard_arrow_up_rounded),
-                            onPressed:
-                                _current > 0 ? () => _go(-1) : null,
-                          ),
-                          const SizedBox(height: 12),
-                          IconButton.filledTonal(
-                            icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                            onPressed: _current < widget.shorts.length - 1
-                                ? () => _go(1)
-                                : null,
-                          ),
-                        ],
-                      ),
+              ),
+              Positioned(
+                top: topInset,
+                left: 0,
+                right: 0,
+                height: 56,
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back_rounded,
+                          color: Colors.white,
+                          shadows: [
+                            Shadow(blurRadius: 8, color: Colors.black87)
+                          ]),
+                      onPressed: () => Navigator.of(context).pop(),
                     ),
-                  ),
-              ],
-            ),
+                    const Spacer(),
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert_rounded,
+                          color: Colors.white,
+                          shadows: [
+                            Shadow(blurRadius: 8, color: Colors.black87)
+                          ]),
+                      onOpened: () => setState(() => _menuOpen = true),
+                      onCanceled: () => setState(() => _menuOpen = false),
+                      onSelected: (v) {
+                        setState(() => _menuOpen = false);
+                        _onMenu(v, post);
+                      },
+                      itemBuilder: (_) => [
+                        PopupMenuItem(
+                            value: 'copy', child: Text(tr('نسخ الرابط'))),
+                        PopupMenuItem(
+                            value: 'share', child: Text(tr('مشاركة'))),
+                        PopupMenuItem(
+                            value: 'story', child: Text(tr('إضافة إلى القصة'))),
+                        if (widget.fromProfile && mine)
+                          PopupMenuItem(
+                              value: 'edit', child: Text(tr('تعديل الوصف'))),
+                        if (widget.fromProfile && mine)
+                          PopupMenuItem(
+                              value: 'delete', child: Text(tr('حذف'))),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),

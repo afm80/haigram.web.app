@@ -21,6 +21,7 @@ Widget buildVideoEmbed(VideoSource source,
         double? aspect,
         void Function(bool ok)? onResult,
         VideoHandle? handle,
+        void Function(String gesture)? onGesture,
         bool tiktok = false}) =>
     _NativeVideo(
         key: key,
