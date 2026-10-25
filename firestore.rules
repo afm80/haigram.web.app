@@ -993,7 +993,7 @@ service cloud.firestore {
                   == resource.data.admins.toSet()
                     .difference([request.auth.uid].toSet()))))
         );
-      // لوحة التحكم عند حذف حساب: حذف المحادثة (الرسائل الفرعية يقرؤها الأدمن للمراجعة).
+      // لوحة التحكم عند حذف حساب: حذف المحادثة (الرسائل الفرعية تبقى غير قابلة للقراءة).
       allow delete: if isAdmin();
 
       match /messages/{messageId} {
@@ -1053,7 +1053,7 @@ service cloud.firestore {
               && chatNext().get('accepted', true) == true);
         }
 
-        // الأدمن (لوحة التحكم) يقرأ رسائل المحادثات للمراجعة والإشراف.
+        // [لوحة التحكم] الأدمن يقرأ الرسائل للمراجعة.
         allow read: if isAdmin() || isChatParticipant();
         allow create: if isChatParticipant()
           && request.resource.data.keys().hasOnly([
@@ -1347,6 +1347,23 @@ service cloud.firestore {
     }
 
     // البلاغات: الإنشاء فقط من المستخدم المسجّل، والقراءة والحذف للأدمن فقط (لوحة التحكم).
+    // [لوحة التحكم] سجل إجراءات الأدمن: إضافة فقط، لا تعديل ولا حذف.
+    match /adminLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'action', 'targetType', 'targetId', 'targetUid', 'details', 'adminUid', 'createdAt'
+        ])
+        && request.resource.data.keys().hasAll(['action', 'adminUid', 'createdAt'])
+        && request.resource.data.action is string
+        && request.resource.data.action.size() <= 40
+        && request.resource.data.adminUid == request.auth.uid
+        && (!('details' in request.resource.data)
+          || (request.resource.data.details is string && request.resource.data.details.size() <= 500))
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+
     match /reports/{reportId} {
       allow create: if isActiveUser()
         && request.resource.data.keys().hasOnly([
@@ -1395,7 +1412,7 @@ service cloud.firestore {
         && request.resource.data.details.size() <= 300
         && request.resource.data.createdAt == request.time;
       allow read, delete: if isAdmin();
-      // لوحة التحكم: تغيير حالة البلاغ فقط (جديد / تم التعامل / مرفوض).
+      // [لوحة التحكم] تغيير حالة البلاغ فقط (جديد / تم التعامل / مرفوض).
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['status', 'handledAt', 'handledBy'])
