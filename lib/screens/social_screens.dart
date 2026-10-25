@@ -2354,6 +2354,8 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final _text = TextEditingController();
   final _messageFocus = FocusNode();
+  // مفتاح ثابت لحقل الكتابة: يبقى الحقل (والكيبورد) كما هو حين تتغير الأزرار حوله.
+  final GlobalKey _inputKey = GlobalKey();
   bool _showStickers = false;
   final _picker = ImagePicker();
   final _scroll = ScrollController();
@@ -3394,6 +3396,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           // الكاميرا في بداية الشريط عند عدم وجود نص (مثل إنستغرام).
           if (!holding && !hasContent)
             IconButton.filled(
+              key: const ValueKey('composer-camera'),
               tooltip: tr('التقاط صورة'),
               onPressed: (_sending || blocked)
                   ? null
@@ -3410,6 +3413,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             ),
           if (holding)
             Expanded(
+              key: const ValueKey('composer-holding'),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 child: Row(
@@ -3443,14 +3447,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             )
           else
           Expanded(
+            key: const ValueKey('composer-input'),
             child: TextField(
+              key: _inputKey,
               controller: _text,
               focusNode: _messageFocus,
               minLines: 1,
               maxLines: 4,
               maxLength: 2000,
               textInputAction: TextInputAction.send,
-              onSubmitted: (_) => _send(),
+              onSubmitted: (_) {
+                _send();
+                // يبقى الكيبورد مفتوحاً بعد الإرسال (كإنستغرام).
+                _messageFocus.requestFocus();
+              },
               decoration: InputDecoration(
                 hintText: tr('مراسلة...'),
                 counterText: '',
@@ -3509,26 +3519,39 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               ),
             ),
           if (!hasContent && !holding)
-            small(Icons.image_outlined, tr('إرسال صورة'),
-                blocked ? null : () => _pickImage(ImageSource.gallery)),
+            KeyedSubtree(
+              key: const ValueKey('composer-gallery'),
+              child: small(Icons.image_outlined, tr('إرسال صورة'),
+                  blocked ? null : () => _pickImage(ImageSource.gallery)),
+            ),
           if (!hasContent && !holding && GifService.enabled)
-            small(Icons.gif_box_outlined, tr('GIF'),
-                blocked || _firstMessageToStranger ? null : _pickGif),
+            KeyedSubtree(
+              key: const ValueKey('composer-gif'),
+              child: small(Icons.gif_box_outlined, tr('GIF'),
+                  blocked || _firstMessageToStranger ? null : _pickGif),
+            ),
           if (!holding)
-            small(
-                _showStickers
-                    ? Icons.keyboard_alt_outlined
-                    : Icons.emoji_emotions_outlined,
-                tr('الملصقات والرموز التعبيرية'),
-                _toggleStickers),
+            KeyedSubtree(
+              key: const ValueKey('composer-stickers'),
+              child: small(
+                  _showStickers
+                      ? Icons.keyboard_alt_outlined
+                      : Icons.emoji_emotions_outlined,
+                  tr('الملصقات والرموز التعبيرية'),
+                  _toggleStickers),
+            ),
           if (!holding)
-            small(Icons.add_circle_outline_rounded, tr('إضافة'),
-                blocked ? null : _showPlusMenu,
-                color: _viewOnce ? AppColors.accent : null),
+            KeyedSubtree(
+              key: const ValueKey('composer-plus'),
+              child: small(Icons.add_circle_outline_rounded, tr('إضافة'),
+                  blocked ? null : _showPlusMenu,
+                  color: _viewOnce ? AppColors.accent : null),
+            ),
           // زر الإرسال عند الكتابة في نهاية الشريط (اليسار بالعربية، اليمين
           // بالإنجليزية) مثل إنستغرام.
           if (hasContent && !holding)
             IconButton.filled(
+              key: const ValueKey('composer-send'),
               tooltip: tr('إرسال'),
               onPressed: _sending ? null : _send,
               style: IconButton.styleFrom(backgroundColor: AppColors.accent),
@@ -6061,6 +6084,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         ),
                       ),
                     SafeArea(
+                      key: const ValueKey('composer-safe'),
                       top: false,
                       bottom: !_showStickers,
                       child: Padding(
@@ -6072,6 +6096,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ),
                     if (_showStickers)
                       SafeArea(
+                        key: const ValueKey('sticker-safe'),
                         top: false,
                         child: StickerPanel(controller: _text),
                       ),
