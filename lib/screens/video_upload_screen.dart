@@ -133,7 +133,14 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
       var video = VideoSource.parse(url);
       if (video == null) throw StateError(tr('فشل رفع الفيديو، حاول مرة أخرى'));
       if (size != null && size.isVertical) video = video.asShort();
-      await PostService.publishText(_caption.text.trim(), video: video);
+      // صورة الغلاف: لقطة من الفيديو الأصلي (إن فشلت يُنشر الفيديو بغلافه المرسوم).
+      String? thumb;
+      try {
+        final poster = await grabVideoPoster(file.path);
+        if (poster != null) thumb = await PostService.uploadVideoPoster(poster.jpeg);
+      } catch (_) {}
+      await PostService.publishText(_caption.text.trim(),
+          video: video, videoThumb: thumb);
       nav.popUntil((r) => r.isFirst);
       messenger.showSnackBar(SnackBar(content: Text(tr('تم النشر بنجاح'))));
     } catch (e) {
