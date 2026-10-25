@@ -377,45 +377,6 @@ class _TikTokShortPageState extends State<TikTokShortPage>
                     shadows: _shadow)),
           ),
         ],
-        const SizedBox(height: 9),
-        IgnorePointer(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              StreamBuilder<Post?>(
-                stream: _live,
-                initialData: p,
-                builder: (context, s) => Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.visibility_rounded,
-                        size: 16, color: Colors.white, shadows: _shadow),
-                    const SizedBox(width: 4),
-                    Text(_fmt(s.data?.views ?? p.views),
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            shadows: _shadow)),
-                    const SizedBox(width: 12),
-                  ],
-                ),
-              ),
-              const Icon(Icons.music_note_rounded,
-                  size: 15, color: Colors.white, shadows: _shadow),
-              const SizedBox(width: 4),
-              Flexible(
-                child: Text('${tr('الصوت الأصلي')} · ${p.username}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        shadows: _shadow)),
-              ),
-            ],
-          ),
-        ),
       ],
     );
   }
