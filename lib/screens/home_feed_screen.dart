@@ -408,8 +408,8 @@ class _FeedModeBar extends StatelessWidget {
     }
 
     return Row(children: [
-      item(tr('للجميع'), _FeedMode.all),
-      item(tr('المتابَعون'), _FeedMode.following),
+      item(tr('الكل'), _FeedMode.all),
+      item(tr('أتابعه'), _FeedMode.following),
     ]);
   }
 }
