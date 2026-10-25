@@ -90,7 +90,7 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
       _busy = true;
       _error = null;
       _progress = 0;
-      _status = tr('جارٍ تجهيز الفيديو، لا تغلق الصفحة...');
+      _status = tr('جارٍ تجهيز الفيديو، لا تغلق هذه الشاشة...');
     });
     final nav = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);

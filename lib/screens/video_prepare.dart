@@ -1,7 +1,8 @@
-// تجهيز الفيديو قبل الرفع: ضغط وقص داخل المتصفح (الويب فقط).
-// على الأنظمة الأخرى تعيد null فيُرفع الملف الأصلي إن كان ضمن الحد.
+// تجهيز الفيديو قبل الرفع: ضغط وقص.
+// الويب: داخل المتصفح (MediaRecorder). الأندرويد: مكتبة video_compress الأصلية.
 import 'video_prepare_stub.dart'
-    if (dart.library.html) 'video_prepare_web.dart' as impl;
+    if (dart.library.html) 'video_prepare_web.dart'
+    if (dart.library.io) 'video_prepare_native.dart' as impl;
 import 'video_prepare_types.dart';
 
 export 'video_prepare_types.dart';
