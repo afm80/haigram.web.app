@@ -275,6 +275,9 @@ class Post {
   final String? videoProvider; // المنصة (youtube وغيرها)؛ فارغ = يوتيوب (منشورات قديمة)
   final String? videoUrl; // الرابط الأصلي للمنصات غير يوتيوب
   final bool isShort; // فيديو عمودي (شورتز، ريلز، تيك توك)
+  final String? storyVideoUrl; // قصة فيديو: رابط الفيديو المرفوع
+  final String? storyOverlayUrl; // قصة فيديو: طبقة النص والملصقات والرسم (PNG شفاف)
+  final int storyFilter; // قصة فيديو: رقم الفلتر (0 = أصلي)
   final int? bg; // قصة نصية: رقم الخلفية الملونة (فارغ = قصة صورة)
   final int? tbg; // منشور نصي: رقم الخلفية الملونة (فارغ = بلا خلفية)
   final int? tc; // منشور نصي: رقم لون النص (فارغ = اللون الافتراضي)
@@ -312,6 +315,9 @@ class Post {
     this.videoProvider,
     this.videoUrl,
     this.isShort = false,
+    this.storyVideoUrl,
+    this.storyOverlayUrl,
+    this.storyFilter = 0,
     this.bg,
     this.tbg,
     this.tc,
@@ -358,6 +364,9 @@ class Post {
       videoProvider: m['videoProvider'] as String?,
       videoUrl: m['videoUrl'] as String?,
       isShort: m['isShort'] == true,
+      storyVideoUrl: m['storyVideoUrl'] as String?,
+      storyOverlayUrl: m['storyOverlayUrl'] as String?,
+      storyFilter: (m['storyFilter'] as num?)?.toInt() ?? 0,
       bg: (m['bg'] as num?)?.toInt(),
       tbg: (m['tbg'] as num?)?.toInt(),
       tc: (m['tc'] as num?)?.toInt(),
@@ -392,6 +401,12 @@ class Post {
   }
 
   bool get hasVideo => videoId != null && videoId!.isNotEmpty;
+
+  /// قصة فيديو مرفوع من الجهاز (تُشغَّل في عارض القصص).
+  bool get isVideoStory =>
+      type == PostType.story &&
+      storyVideoUrl != null &&
+      storyVideoUrl!.isNotEmpty;
 
   /// منشور ألبوم: أكثر من صورة في منشور واحد.
   bool get isAlbum => albumUrls.length > 1;
@@ -1055,6 +1070,54 @@ class PostService {
           extra: extra,
           closeFriends: closeFriends);
     }
+  }
+
+  /// يرفع صورة قصة (غلاف الفيديو أو طبقة الملصقات) ويعيد رابطها.
+  static Future<String> uploadStoryImage(
+      Uint8List bytes, String mime, String ext) async {
+    if (useCloudinary) return _uploadCloudinary(bytes, mime, ext);
+    if (useStorage) {
+      return _upload(
+          bytes, 'photos/${_user.uid}/${_stamp()}.$ext', mime, null);
+    }
+    throw StateError(tr('فيديو القصة يتطلب تفعيل Cloudinary أو Storage'));
+  }
+
+  /// ينشر قصة فيديو: يرفع الفيديو (Cloudflare R2) وغلافه وطبقة الملصقات،
+  /// ثم ينشئ القصة. [poster] هو الصورة التي تُعرض في الأرشيف والمصغّرات.
+  static Future<void> publishVideoStory({
+    required Uint8List video,
+    required String videoMime,
+    Uint8List? poster,
+    Uint8List? overlayPng,
+    required String caption,
+    int filter = 0,
+    bool closeFriends = false,
+    Map<String, dynamic> extra = const {},
+    void Function(double)? onProgress,
+  }) async {
+    if (!useRemoteMedia) {
+      throw StateError(tr('فيديو القصة يتطلب تفعيل Cloudinary أو Storage'));
+    }
+    onProgress?.call(0);
+    final videoUrl = await uploadVideo(video, videoMime);
+    onProgress?.call(0.8);
+    final posterUrl =
+        poster == null ? null : await uploadStoryImage(poster, 'image/jpeg', 'jpg');
+    onProgress?.call(0.9);
+    final overlayUrl = overlayPng == null
+        ? null
+        : await uploadStoryImage(overlayPng, 'image/png', 'png');
+    onProgress?.call(1);
+    await _create(PostType.story, caption, posterUrl,
+        mime: 'image/jpeg',
+        closeFriends: closeFriends,
+        extra: <String, dynamic>{
+          ...extra,
+          'storyVideoUrl': videoUrl,
+          if (overlayUrl != null) 'storyOverlayUrl': overlayUrl,
+          if (filter != 0) 'storyFilter': filter,
+        });
   }
 
   /// أقصى عدد صور في ألبوم واحد.
@@ -1937,6 +2000,11 @@ class PostService {
         'chunks': p.chunks,
         'mime': p.mime,
         'bg': p.bg,
+        if (p.isVideoStory) ...{
+          'storyVideoUrl': p.storyVideoUrl,
+          if (p.storyOverlayUrl != null) 'storyOverlayUrl': p.storyOverlayUrl,
+          if (p.storyFilter != 0) 'storyFilter': p.storyFilter,
+        },
         'sharedFromUsername': p.sharedFromUsername,
         'sharedFromUid': p.sharedFromUid,
         'createdAt': Timestamp.fromDate(p.createdAt),
