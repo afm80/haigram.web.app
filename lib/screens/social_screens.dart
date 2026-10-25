@@ -3373,6 +3373,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Widget _buildComposerPill() {
     final colors = context.appColors;
     final hasContent = _hasContent;
+    // يكتب نصاً الآن: يظهر البحث في البداية والإرسال في النهاية فقط (كإنستغرام).
+    final typing = _text.text.trim().isNotEmpty;
     final blocked = _attachBlocked;
     final holding = _recording && _recHold;
     Widget small(IconData icon, String tip, VoidCallback? onTap,
@@ -3410,6 +3412,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                           strokeWidth: 2, color: Colors.white))
                   : const Icon(Icons.photo_camera_rounded,
                       color: Colors.white),
+            ),
+          // أيقونة البحث في بداية الشريط عند الكتابة (بدل الكاميرا).
+          if (!holding && typing)
+            IconButton.filled(
+              key: const ValueKey('composer-search'),
+              tooltip: tr('بحث في المحادثة'),
+              onPressed: _showMessageSearch,
+              style: IconButton.styleFrom(backgroundColor: AppColors.accent),
+              icon: const Icon(Icons.search_rounded, color: Colors.white),
             ),
           if (holding)
             Expanded(
@@ -3530,7 +3541,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               child: small(Icons.gif_box_outlined, tr('GIF'),
                   blocked || _firstMessageToStranger ? null : _pickGif),
             ),
-          if (!holding)
+          if (!holding && (!typing || _showStickers))
             KeyedSubtree(
               key: const ValueKey('composer-stickers'),
               child: small(
@@ -3540,7 +3551,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   tr('الملصقات والرموز التعبيرية'),
                   _toggleStickers),
             ),
-          if (!holding)
+          if (!holding && !typing)
             KeyedSubtree(
               key: const ValueKey('composer-plus'),
               child: small(Icons.add_circle_outline_rounded, tr('إضافة'),
