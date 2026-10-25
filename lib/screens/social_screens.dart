@@ -3417,8 +3417,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           if (!holding && typing)
             IconButton.filled(
               key: const ValueKey('composer-search'),
-              tooltip: tr('بحث في المحادثة'),
-              onPressed: _showMessageSearch,
+              tooltip: tr('بحث'),
+              // كإنستغرام: يفتح البحث عن GIF؛ وإن لم يتوفر يبحث في المحادثة.
+              onPressed: GifService.enabled
+                  ? ((blocked || _firstMessageToStranger) ? null : _pickGif)
+                  : _showMessageSearch,
               style: IconButton.styleFrom(backgroundColor: AppColors.accent),
               icon: const Icon(Icons.search_rounded, color: Colors.white),
             ),
