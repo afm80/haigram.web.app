@@ -1129,4 +1129,10 @@ const Map<String, String> _en = {
   'التفاعلات': "Reactions",
   'ابحث في المشاهدين': "Search viewers",
   'عرض المزيد': "Show more",
+  'حجم الفيديو يجب ألا يتجاوز 100 ميجابايت': "The video must be under 100 MB",
+  'فشل رفع الفيديو ({0})': "Video upload failed ({0})",
+  'لم يُرجع الخادم رابط الفيديو': "The server didn't return the video link",
+  'تعذر رفع الفيديو': "Couldn't upload the video",
+  'جارٍ رفع الفيديو...': "Uploading video...",
+  'رفع فيديو من الجهاز': "Upload a video from your device",
 };
