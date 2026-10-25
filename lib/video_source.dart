@@ -48,8 +48,8 @@ class VideoSource {
       {String? provider, String? id, String? url, bool isShort = false}) {
     if ((provider == null || provider == 'youtube') && id != null) {
       if (!_ytId.hasMatch(id)) return null;
-      return VideoSource._(VideoProvider.youtube, id, youtubeWatch(id),
-          isShort: isShort);
+      // منشورات يوتيوب القديمة المعلَّمة شورتز تظهر الآن كفيديو عادي.
+      return VideoSource._(VideoProvider.youtube, id, youtubeWatch(id));
     }
     if (url == null) return null;
     final v = parse(url);
@@ -90,8 +90,8 @@ class VideoSource {
         bare == 'youtube-nocookie.com') {
       final id = youtubeIdOf(uri);
       if (id == null) return null;
-      return VideoSource._(VideoProvider.youtube, id, youtubeWatch(id),
-          isShort: seg.isNotEmpty && seg.first == 'shorts');
+      // روابط شورتز يوتيوب تُعامل كفيديو عادي (قسم الشورتز للفيديو المرفوع فقط).
+      return VideoSource._(VideoProvider.youtube, id, youtubeWatch(id));
     }
     // فيسبوك
     if (bare == 'facebook.com' || bare == 'fb.com') return _facebook(uri, seg);
