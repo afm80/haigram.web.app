@@ -27,6 +27,7 @@ import 'social_screens.dart';
 import 'post_widgets.dart' show PostDetailScreen, stopInlineVideos;
 import 'profile_screen.dart';
 import 'settings_screen.dart';
+import 'sound_screen.dart';
 
 /// الغلاف الرئيسي: يجهّز ملف المستخدم أولاً ثم يعرض التبويبات.
 class HomeShell extends StatefulWidget {
@@ -347,6 +348,14 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
       case 'savedPosts':
         return appRoute<void>(
             'savedPosts', const {}, (_) => const SavedPostsScreen());
+      case 'savedSounds':
+        return appRoute<void>(
+            'savedSounds', const {}, (_) => const SavedSoundsScreen());
+      case 'sound':
+        final sound = PostSound.fromMap(args);
+        if (sound == null) return null;
+        return appRoute<void>(
+            'sound', sound.toMap(), (_) => SoundScreen(sound: sound));
       case 'search':
         return appRoute<void>(
             'search', const {}, (_) => const ExploreSearchScreen());

@@ -16,6 +16,7 @@ import '../theme.dart';
 import 'common_widgets.dart';
 import 'create_flow.dart';
 import 'post_widgets.dart';
+import 'sound_screen.dart' show openSound, soundTitle;
 import 'profile_screen.dart';
 import 'story_backgrounds.dart';
 import 'story_mentions.dart';
@@ -957,6 +958,7 @@ class _StoryViewerState extends State<StoryViewer>
                               ),
                             if (story.sharedFromUsername != null)
                               _sharedFrom(story),
+                            if (story.sound != null) _soundPill(story.sound!),
                             if (story.caption.isNotEmpty && story.bg == null)
                               _caption(story),
                           ],
@@ -1376,6 +1378,36 @@ class _StoryViewerState extends State<StoryViewer>
     } catch (_) {
       messenger.showSnackBar(SnackBar(content: Text(tr('تعذّر تنفيذ الإجراء'))));
     }
+  }
+
+  /// شارة الصوت المستخدم في القصة: تفتح صفحة الصوت.
+  Widget _soundPill(PostSound sound) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+      child: GestureDetector(
+        onTap: () => openSound(context, sound, root: true),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+              color: const Color(0x99000000),
+              borderRadius: BorderRadius.circular(16)),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.music_note_rounded,
+                  size: 15, color: Colors.white),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text('${soundTitle(sound)} · @${sound.username}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontSize: 13)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   /// «من @صاحب الصورة» للقصة المشاركة من منشور.

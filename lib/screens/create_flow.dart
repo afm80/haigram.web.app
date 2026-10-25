@@ -47,17 +47,19 @@ String _kindTitle(CreateKind k) => switch (k) {
     };
 
 /// يفتح شاشة الإنشاء (كاميرا أو ملفات الجهاز) للنوع المطلوب.
-void startCreate(BuildContext context, CreateKind kind) {
+/// [sound]: صوت فيديو آخر يُنشر القصة به (من صفحة الصوت).
+void startCreate(BuildContext context, CreateKind kind, {PostSound? sound}) {
   if (needsLogin(context)) return;
   Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
       fullscreenDialog: true,
-      builder: (_) => _createScreen(kind)));
+      builder: (_) => _createScreen(kind, sound)));
 }
 
 /// المنشور ورابط الفيديو يبدآن بالنص مباشرة (الصورة اختيارية)، والقصة بالكاميرا.
-Widget _createScreen(CreateKind kind) => kind == CreateKind.story
-    ? CaptureScreen(kind: kind)
-    : ComposeScreen(kind: kind);
+Widget _createScreen(CreateKind kind, [PostSound? sound]) =>
+    kind == CreateKind.story
+        ? CaptureScreen(kind: kind, sound: sound)
+        : ComposeScreen(kind: kind);
 
 /// ورقة زر الإضافة: أربع بطاقات أفقية (منشور / قصة / فيديو / رابط فيديو) مع وصف مختصر لكل واحدة.
 void showCreateSheet(BuildContext context) {
@@ -303,7 +305,8 @@ Future<(List<PickedMedia>, bool)> pickAlbumMedia(
 /// الخطوة الأولى: اختيار المصدر (كاميرا أو ملفات الجهاز) كما في إنستغرام.
 class CaptureScreen extends StatefulWidget {
   final CreateKind kind;
-  const CaptureScreen({super.key, required this.kind});
+  final PostSound? sound; // صوت تُنشر به القصة (اختياري)
+  const CaptureScreen({super.key, required this.kind, this.sound});
 
   @override
   State<CaptureScreen> createState() => _CaptureScreenState();
@@ -346,7 +349,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
             builder: (_) => ComposeScreen(
                 kind: widget.kind,
                 media: picked.first,
-                extraMedia: picked.sublist(1))));
+                extraMedia: picked.sublist(1),
+                sound: widget.sound)));
         return;
       }
       // قصة من ملفات الجهاز: اختيار عدة صور تُنشر كقصص متتالية (مثل إنستغرام).
@@ -366,7 +370,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
             builder: (_) => ComposeScreen(
                 kind: widget.kind,
                 media: picked.first,
-                extraMedia: picked.sublist(1))));
+                extraMedia: picked.sublist(1),
+                sound: widget.sound)));
         return;
       }
       final media = await pickMedia(
@@ -379,7 +384,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
         return;
       }
       Navigator.of(context).pushReplacement(MaterialPageRoute(
-          builder: (_) => ComposeScreen(kind: widget.kind, media: media)));
+          builder: (_) => ComposeScreen(
+              kind: widget.kind, media: media, sound: widget.sound)));
     } on MediaError catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
@@ -486,7 +492,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                       ),
                     ),
                   ),
-                  widget.kind == CreateKind.story
+                  widget.kind == CreateKind.story && widget.sound == null
                       ? _sideButton(Icons.text_fields_rounded, tr('نص'),
                           _openTextStory)
                       : const SizedBox(width: 72),
@@ -534,11 +540,16 @@ class ComposeScreen extends StatefulWidget {
   final CreateKind kind;
   final PickedMedia? media; // null = منشور نصي فقط
   final List<PickedMedia> extraMedia; // صور إضافية لألبوم (بعد الأولى)
+  final PostSound? sound; // قصة بصوت فيديو آخر (من صفحة الصوت)
 
   /// أقصى عدد صور تُنشر دفعة واحدة كقصص متتالية.
   static const maxStoryImages = 10;
   const ComposeScreen(
-      {super.key, required this.kind, this.media, this.extraMedia = const []});
+      {super.key,
+      required this.kind,
+      this.media,
+      this.extraMedia = const [],
+      this.sound});
 
   @override
   State<ComposeScreen> createState() => _ComposeScreenState();
@@ -1082,6 +1093,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
             if (first && !_info.isEmpty) ..._info.toExtra(),
             if (first && _mentions.isNotEmpty)
               'mentions': [for (final u in _mentions) u.toMap()],
+            // الصوت يرافق كل قصة في الدفعة.
+            if (widget.sound != null) 'sound': widget.sound!.toMap(),
           };
           void storyProgress(double p) =>
               onProgress((_publishedCount + p) / total);
@@ -1945,6 +1958,19 @@ class _ComposeScreenState extends State<ComposeScreen> {
               ),
               const SizedBox(height: 12),
             ],
+            if (widget.sound != null && _isStory)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Chip(
+                    avatar: const Icon(Icons.music_note_rounded, size: 18),
+                    label: Text(
+                        '${tr(widget.sound!.title)} · @${widget.sound!.username}',
+                        overflow: TextOverflow.ellipsis),
+                  ),
+                ),
+              ),
             Container(
               decoration: _styled
                   ? BoxDecoration(

@@ -13,6 +13,7 @@ import '../services/post_service.dart';
 import '../theme.dart';
 import '../video_source.dart';
 import 'common_widgets.dart';
+import 'sound_screen.dart';
 import 'video_cover.dart';
 import 'video_embed_stub.dart' if (dart.library.html) 'video_embed_web.dart';
 
@@ -347,6 +348,34 @@ class _TikTokShortPageState extends State<TikTokShortPage>
     );
   }
 
+  /// سطر اسم الصوت تحت اسم الحساب: يفتح صفحة الصوت.
+  Widget _soundLine(PostSound s) {
+    return PointerInterceptor(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => openSound(context, s, root: true),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.music_note_rounded,
+                size: 15, color: Colors.white, shadows: _shadow),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text('${soundTitle(s)} · @${s.username}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      shadows: _shadow)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _caption() {
     final p = widget.post;
     return Column(
@@ -364,6 +393,10 @@ class _TikTokShortPageState extends State<TikTokShortPage>
                     shadows: _shadow)),
           ),
         ),
+        if (p.soundRef != null) ...[
+          const SizedBox(height: 6),
+          _soundLine(p.soundRef!),
+        ],
         if (p.caption.isNotEmpty) ...[
           const SizedBox(height: 6),
           IgnorePointer(
@@ -545,7 +578,14 @@ class _TikTokShortPageState extends State<TikTokShortPage>
                           p.shares > 0 ? _fmt(p.shares) : tr('مشاركة'),
                           widget.onShare),
                       const SizedBox(height: 8),
-                      _discWidget(),
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          final s = p.soundRef;
+                          if (s != null) openSound(context, s, root: true);
+                        },
+                        child: _discWidget(),
+                      ),
                     ],
                   ),
                   ),

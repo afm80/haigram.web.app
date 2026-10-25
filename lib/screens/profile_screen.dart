@@ -2099,13 +2099,14 @@ class _PostGrid extends StatelessWidget {
                           VideoCover(source: post.video!)
                         else
                           Container(color: Colors.black),
-                        Align(
-                          alignment: post.video?.thumbUrl == null
-                              ? const Alignment(0, 0.6)
-                              : Alignment.center,
-                          child: const Icon(Icons.play_circle_fill_rounded,
-                              color: Colors.white, size: 36),
-                        ),
+                        if (!openAsShorts)
+                          Align(
+                            alignment: post.video?.thumbUrl == null
+                                ? const Alignment(0, 0.6)
+                                : Alignment.center,
+                            child: const Icon(Icons.play_circle_fill_rounded,
+                                color: Colors.white, size: 36),
+                          ),
                       ],
                     ),
                   _ => Container(
@@ -2134,7 +2135,10 @@ class _PostGrid extends StatelessWidget {
                         shadows: [Shadow(blurRadius: 4, color: Colors.black54)]),
                   ),
                 if (pinnedIds.contains(post.id)) const _PinBadge(),
-                _CardStats(post: post),
+                if (openAsShorts)
+                  _ShortViews(post: post)
+                else
+                  _CardStats(post: post),
               ],
             ),
           );
@@ -2346,6 +2350,51 @@ String _compactCount(int n) {
 }
 
 /// أعداد المشاهدات والإعجابات والتعليقات والمشاركات أسفل كرت الفيديو/المنشور.
+/// عداد المشاهدات على كروت الفيديو العمودي مثل تيك توك: علامة تشغيل + العدد.
+class _ShortViews extends StatelessWidget {
+  final Post post;
+  const _ShortViews({required this.post});
+
+  @override
+  Widget build(BuildContext context) {
+    const shadow = [Shadow(blurRadius: 4, color: Colors.black87)];
+    return PositionedDirectional(
+      start: 0,
+      end: 0,
+      bottom: 0,
+      child: IgnorePointer(
+        child: Container(
+          padding: const EdgeInsetsDirectional.fromSTEB(6, 16, 6, 6),
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.bottomCenter,
+              end: Alignment.topCenter,
+              colors: [Color(0x99000000), Colors.transparent],
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.play_arrow_outlined,
+                  size: 20, color: Colors.white, shadows: shadow),
+              const SizedBox(width: 2),
+              Text(
+                _compactCount(post.views),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  shadows: shadow,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _CardStats extends StatelessWidget {
   final Post post;
   const _CardStats({required this.post});

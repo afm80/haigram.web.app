@@ -14,6 +14,7 @@ import '../services/user_service.dart';
 import '../theme.dart';
 import '../route_state.dart';
 import 'profile_screen.dart' show SavedPostsScreen;
+import 'sound_screen.dart' show SavedSoundsScreen;
 import 'social_screens.dart' show ProfileVisitsScreen, BlockedUsersScreen;
 import 'story_privacy_screen.dart';
 
@@ -447,6 +448,14 @@ class _PrivacySectionState extends State<_PrivacySection> {
                 trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
                 onTap: () => Navigator.of(context).push(appRoute<void>(
                     'savedPosts', const {}, (_) => const SavedPostsScreen())),
+              ),
+              Divider(height: 1, color: colors.text.withOpacity(0.08)),
+              ListTile(
+                leading: const Icon(Icons.music_note_rounded),
+                title: Text(tr('الأصوات المحفوظة')),
+                trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                onTap: () => Navigator.of(context).push(appRoute<void>(
+                    'savedSounds', const {}, (_) => const SavedSoundsScreen())),
               ),
             ],
           ),

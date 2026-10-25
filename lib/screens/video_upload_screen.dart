@@ -14,7 +14,9 @@ import 'video_prepare.dart';
 /// رفع فيديو من الجهاز: اختيار الملف، وصف اختياري، ثم الرفع إلى Cloudflare R2
 /// ونشره كمنشور فيديو (يُعرض بمشغّل الملف المباشر الموجود أصلاً).
 class VideoUploadScreen extends StatefulWidget {
-  const VideoUploadScreen({super.key});
+  /// صوت فيديو آخر يُنشر الفيديو الجديد به (من صفحة الصوت).
+  final PostSound? sound;
+  const VideoUploadScreen({super.key, this.sound});
 
   @override
   State<VideoUploadScreen> createState() => _VideoUploadScreenState();
@@ -140,7 +142,7 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
         if (poster != null) thumb = await PostService.uploadVideoPoster(poster.jpeg);
       } catch (_) {}
       await PostService.publishText(_caption.text.trim(),
-          video: video, videoThumb: thumb);
+          video: video, videoThumb: thumb, sound: widget.sound);
       nav.popUntil((r) => r.isFirst);
       messenger.showSnackBar(SnackBar(content: Text(tr('تم النشر بنجاح'))));
     } catch (e) {
@@ -219,6 +221,18 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
                 ),
               ),
             ),
+            if (widget.sound != null) ...[
+              const SizedBox(height: 12),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Chip(
+                  avatar: const Icon(Icons.music_note_rounded, size: 18),
+                  label: Text(
+                      '${tr(widget.sound!.title)} · @${widget.sound!.username}',
+                      overflow: TextOverflow.ellipsis),
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
             TextField(
               controller: _caption,
