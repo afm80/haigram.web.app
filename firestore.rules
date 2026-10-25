@@ -58,6 +58,15 @@ service cloud.firestore {
           && (!('s' in m) || (m.s is number && m.s >= 0.3 && m.s <= 3))
           && (!('ar' in m) || (m.ar is number && m.ar >= 0.1 && m.ar <= 10));
     }
+    // فيديو القصة: لا يُقبل إلا رابط من دومين R2 العام الخاص بالتطبيق
+    // (الذي يعيده Worker الرفع)، وللقصص فقط.
+    function validStoryVideoUrl(d) {
+      return !('storyVideoUrl' in d)
+          || (d.type == 'story'
+              && d.storyVideoUrl is string
+              && d.storyVideoUrl.size() <= 600
+              && d.storyVideoUrl.matches('^https://pub-d69abc5aad1541fd9787cd7950d02359\\.r2\\.dev/[^ ]+$'));
+    }
     // تفاعل المشاهد بإيموجي على القصة (اختياري، نص قصير).
     function validViewReaction(d) {
       return !('e' in d) || (d.e is string && d.e.size() > 0 && d.e.size() <= 16);
@@ -352,6 +361,7 @@ service cloud.firestore {
                 && validStoryPos(request.resource.data.slider)))
         // معلومات القصة: للقصص فقط.
         && validStoryInfo(request.resource.data)
+        && validStoryVideoUrl(request.resource.data)
         && (request.resource.data.type == 'story'
             || !hasStoryInfo(request.resource.data))
         // ذكر المستخدمين في القصة: حتى 3، للقصص فقط.
@@ -1433,6 +1443,7 @@ service cloud.firestore {
                 && request.resource.data.slider.e.size() > 0
                 && request.resource.data.slider.e.size() <= 16))
         && validStoryInfo(request.resource.data)
+        && validStoryVideoUrl(request.resource.data)
         && (!('mentions' in request.resource.data)
             || (request.resource.data.mentions is list
                 && request.resource.data.mentions.size() <= 3));
