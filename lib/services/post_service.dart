@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'progress_put.dart';
 import 'social_service.dart';
 import 'user_service.dart';
 
@@ -791,36 +792,62 @@ class PostService {
 
   /// يرفع فيديو إلى Cloudflare R2 عبر الـ Worker ويعيد رابطه العام (https).
   /// الـ Worker يتحقق من توكن تسجيل الدخول، ويقبل mp4 وmov وwebm فقط.
-  static Future<String> uploadVideo(Uint8List bytes, String mime) async {
+  static Future<String> uploadVideo(Uint8List bytes, String mime,
+      {void Function(double progress)? onProgress}) async {
     if (bytes.length > maxVideoBytes) {
       throw StateError(tr('الفيديو كبير جداً (الحد 100 ميغابايت)'));
     }
-    final token = await _user.getIdToken();
-    final res = await http
-        .put(Uri.parse(videoUploadUrl),
-            headers: {
-              'Authorization': 'Bearer $token',
-              'Content-Type': mime,
-            },
-            body: bytes)
-        .timeout(const Duration(minutes: 10));
-    Map<String, dynamic> json = const {};
-    try {
-      json = jsonDecode(res.body) as Map<String, dynamic>;
-    } catch (_) {}
-    if (res.statusCode != 200) {
-      throw StateError(switch (res.statusCode) {
-        401 => tr('انتهت جلسة الدخول، سجّل الدخول مرة أخرى'),
-        413 => tr('الفيديو كبير جداً (الحد 100 ميغابايت)'),
-        415 => tr('صيغة الفيديو غير مدعومة (mp4 أو mov أو webm)'),
-        _ => tr('فشل رفع الفيديو، حاول مرة أخرى'),
-      });
+    const maxAttempts = 3;
+    var refreshToken = false;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      onProgress?.call(0);
+      try {
+        final token = await _user.getIdToken(refreshToken);
+        final req = ProgressPutRequest(Uri.parse(videoUploadUrl), bytes,
+            onProgress: onProgress)
+          ..headers['Authorization'] = 'Bearer $token'
+          ..headers['Content-Type'] = mime;
+        final res = await http.Response.fromStream(
+            await req.send().timeout(const Duration(minutes: 10)));
+        final code = res.statusCode;
+        if (code == 200) {
+          Map<String, dynamic> json = const {};
+          try {
+            json = jsonDecode(res.body) as Map<String, dynamic>;
+          } catch (_) {}
+          final url = json['url'] as String?;
+          if (url == null || !url.startsWith('https://')) {
+            throw StateError(tr('فشل رفع الفيديو، حاول مرة أخرى'));
+          }
+          onProgress?.call(1);
+          return url;
+        }
+        if (code == 401 && !refreshToken) {
+          // التوكن قديم: نجدّده ونعيد المحاولة.
+          refreshToken = true;
+          continue;
+        }
+        final fatal = switch (code) {
+          401 => tr('انتهت جلسة الدخول، سجّل الدخول مرة أخرى'),
+          413 => tr('الفيديو كبير جداً (الحد 100 ميغابايت)'),
+          415 => tr('صيغة الفيديو غير مدعومة (mp4 أو mov أو webm)'),
+          _ => null,
+        };
+        if (fatal != null) throw StateError(fatal);
+        // أخطاء مؤقتة (408/429/5xx) نعيد معها المحاولة، وغيرها نهائية.
+        if (code != 408 && code != 429 && code < 500) {
+          throw StateError(tr('فشل رفع الفيديو، حاول مرة أخرى'));
+        }
+      } on StateError {
+        rethrow;
+      } catch (_) {
+        // انقطاع شبكة أو انتهاء مهلة: نعيد المحاولة.
+      }
+      if (attempt < maxAttempts) {
+        await Future<void>.delayed(Duration(seconds: 2 * attempt));
+      }
     }
-    final url = json['url'] as String?;
-    if (url == null || !url.startsWith('https://')) {
-      throw StateError(tr('فشل رفع الفيديو، حاول مرة أخرى'));
-    }
-    return url;
+    throw StateError(tr('فشل رفع الفيديو، حاول مرة أخرى'));
   }
 
   /// يرفع صورة محادثة إلى Cloudinary أو Storage ويعيد رابطها المباشر.
@@ -1100,7 +1127,8 @@ class PostService {
       throw StateError(tr('فيديو القصة يتطلب تفعيل Cloudinary أو Storage'));
     }
     onProgress?.call(0);
-    final videoUrl = await uploadVideo(video, videoMime);
+    final videoUrl = await uploadVideo(video, videoMime,
+        onProgress: (p) => onProgress?.call(p * 0.8));
     onProgress?.call(0.8);
     final posterUrl =
         poster == null ? null : await uploadStoryImage(poster, 'image/jpeg', 'jpg');
