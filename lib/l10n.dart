@@ -23,6 +23,9 @@ String trf(String ar, List<Object?> args) {
 }
 
 const Map<String, String> _en = {
+  'ستظهر هنا المنشورات التي أعجب بها هذا الحساب.': "Posts this account liked will appear here.",
+  'المنشورات التي تعجبك ستظهر هنا.': "Posts you like will appear here.",
+  'لا توجد إعجابات بعد': "No likes yet",
   'الصوت': "Sound",
   'الصوت الأصلي': "Original sound",
   'الصوت الأصلي لم يعد متاحاً': "The original sound is no longer available",
