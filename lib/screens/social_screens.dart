@@ -2357,6 +2357,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // مفتاح ثابت لحقل الكتابة: يبقى الحقل (والكيبورد) كما هو حين تتغير الأزرار حوله.
   final GlobalKey _inputKey = GlobalKey();
   bool _showStickers = false;
+  // ثبات الكيبورد: نتذكّر ارتفاعه لتأخذ لوحة الملصقات نفس المساحة فلا يقفز الشريط.
+  double _kbMax = 0; // أكبر ارتفاع كيبورد شوهد
+  double _screenMaxH = 0; // أكبر ارتفاع للشاشة (للويب حيث يُصغّر الكيبورد الصفحة)
+  double _screenW = 0;
+  Timer? _stickersToKbTimer;
   final _picker = ImagePicker();
   final _scroll = ScrollController();
   // مفتاح لكل رسالة: للانتقال إلى الرسالة الأصلية عند الضغط على «ردّ على رسالة».
@@ -2632,18 +2637,57 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// عند الضغط على خانة الكتابة تُغلق لوحة الملصقات ويظهر الكيبورد.
-  void _hideStickersOnFocus() {
-    if (_messageFocus.hasFocus && _showStickers && mounted) {
-      setState(() => _showStickers = false);
+  /// ارتفاع الكيبورد الحالي: viewInsets على أندرويد/آيفون، أو نقص ارتفاع
+  /// الصفحة على الويب (Chrome أندرويد يُصغّر الصفحة بدل الإدخال).
+  double _liveKeyboard() {
+    final m = MediaQueryData.fromView(View.of(context));
+    if ((m.size.width - _screenW).abs() > 1) {
+      _screenW = m.size.width;
+      _screenMaxH = m.size.height;
+      _kbMax = 0;
     }
+    if (m.size.height > _screenMaxH) _screenMaxH = m.size.height;
+    final kb = m.viewInsets.bottom > 0
+        ? m.viewInsets.bottom
+        : (_screenMaxH - m.size.height).clamp(0.0, 2000.0).toDouble();
+    if (kb > _kbMax) _kbMax = kb;
+    return kb;
+  }
+
+  /// ارتفاع لوحة الملصقات = آخر ارتفاع كيبورد معروف (كواتساب/إنستغرام).
+  double get _panelHeight =>
+      (_kbMax >= 200 ? _kbMax : 280.0).clamp(220.0, 400.0).toDouble();
+
+  @override
+  void didChangeMetrics() {
+    if (!mounted || !_showStickers) return;
+    // الكيبورد يطلع والمنصة ما زالت ظاهرة: نزيلها عندما يصل لارتفاعها.
+    if (_messageFocus.hasFocus && _liveKeyboard() >= _panelHeight - 2) {
+      _stickersToKbTimer?.cancel();
+      setState(() => _showStickers = false);
+    } else {
+      setState(() {});
+    }
+  }
+
+  /// عند الضغط على خانة الكتابة يظهر الكيبورد، وتبقى لوحة الملصقات تشغل
+  /// مكانه حتى يكتمل صعوده (بلا قفزة)، ثم تُزال.
+  void _hideStickersOnFocus() {
+    if (!_messageFocus.hasFocus || !_showStickers || !mounted) return;
+    _stickersToKbTimer?.cancel();
+    _stickersToKbTimer = Timer(const Duration(milliseconds: 700), () {
+      if (mounted && _showStickers && _messageFocus.hasFocus) {
+        setState(() => _showStickers = false);
+      }
+    });
   }
 
   void _toggleStickers() {
     if (_showStickers) {
-      setState(() => _showStickers = false);
       _messageFocus.requestFocus();
+      _hideStickersOnFocus();
     } else {
+      _stickersToKbTimer?.cancel();
       FocusScope.of(context).unfocus();
       setState(() => _showStickers = true);
     }
@@ -2652,6 +2696,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _stickersToKbTimer?.cancel();
     _messagesSub?.cancel();
     _chatSub?.cancel();
     _hiddenSub?.cancel();
@@ -3564,18 +3609,28 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           // زر الإرسال عند الكتابة في نهاية الشريط (اليسار بالعربية، اليمين
           // بالإنجليزية) مثل إنستغرام.
           if (hasContent && !holding)
-            IconButton.filled(
+            // ExcludeFocus: الزر لا يأخذ التركيز من خانة الكتابة (وإلا أُغلق
+            // الكيبورد عند الضغط ثم عند اختفاء الزر بعد الإرسال).
+            ExcludeFocus(
               key: const ValueKey('composer-send'),
-              tooltip: tr('إرسال'),
-              onPressed: _sending ? null : _send,
-              style: IconButton.styleFrom(backgroundColor: AppColors.accent),
-              icon: _sending
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.send_rounded, color: Colors.white),
+              child: IconButton.filled(
+                tooltip: tr('إرسال'),
+                onPressed: _sending
+                    ? null
+                    : () {
+                        _send();
+                        // يبقى الكيبورد مفتوحاً بعد الإرسال (كإنستغرام).
+                        if (!_showStickers) _messageFocus.requestFocus();
+                      },
+                style: IconButton.styleFrom(backgroundColor: AppColors.accent),
+                icon: _sending
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.send_rounded, color: Colors.white),
+              ),
             ),
         ],
       ),
@@ -6109,11 +6164,35 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       ),
                     ),
                     if (_showStickers)
-                      SafeArea(
-                        key: const ValueKey('sticker-safe'),
-                        top: false,
-                        child: StickerPanel(controller: _text),
-                      ),
+                      Builder(builder: (context) {
+                        // المساحة الكلية (كيبورد + لوحة) ثابتة: اللوحة تأخذ ما يتركه الكيبورد.
+                        final kb = _liveKeyboard();
+                        final safeB = MediaQuery.of(context).padding.bottom;
+                        final full = _panelHeight + safeB;
+                        final shown = (full - kb).clamp(0.0, full).toDouble();
+                        return SizedBox(
+                          key: const ValueKey('sticker-safe'),
+                          height: shown,
+                          child: ClipRect(
+                            child: OverflowBox(
+                              alignment: Alignment.topCenter,
+                              minHeight: full,
+                              maxHeight: full,
+                              child: Column(
+                                children: [
+                                  StickerPanel(
+                                      controller: _text,
+                                      height: _panelHeight),
+                                  SizedBox(
+                                      height: safeB,
+                                      child: ColoredBox(
+                                          color: context.appColors.surface)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
                   ],
                 ],
               ),
