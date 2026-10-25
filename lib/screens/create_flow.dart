@@ -326,36 +326,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
         MaterialPageRoute(builder: (_) => const TextStoryScreen()));
   }
 
-  /// ضغطة مطوّلة على زر الالتقاط: تسجيل فيديو للقصة (حتى 60 ثانية).
-  Future<void> _recordVideo() async {
-    if (_busy) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      final f = await _picker.pickVideo(
-          source: ImageSource.camera, maxDuration: const Duration(seconds: 60));
-      if (f == null || !mounted) {
-        if (mounted) setState(() => _busy = false);
-        return;
-      }
-      final media = await pickedVideoMedia(f);
-      if (!mounted) return;
-      Navigator.of(context).pushReplacement(MaterialPageRoute(
-          builder: (_) => ComposeScreen(kind: widget.kind, media: media)));
-    } on MediaError catch (e) {
-      if (mounted) setState(() => _error = e.message);
-    } catch (e) {
-      if (mounted) {
-        setState(() => _error =
-            friendlyError(e, fallback: tr('تعذر فتح الكاميرا أو الملفات')));
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
   Future<void> _pick(ImageSource source) async {
     if (_busy) return;
     setState(() {
@@ -502,8 +472,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
                       () => _pick(ImageSource.gallery)),
                   GestureDetector(
                     onTap: () => _pick(ImageSource.camera),
-                    onLongPress:
-                        widget.kind == CreateKind.story ? _recordVideo : null,
                     child: Container(
                       width: 78,
                       height: 78,
