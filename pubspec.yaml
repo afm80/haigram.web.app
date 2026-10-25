@@ -30,7 +30,7 @@ dependencies:
   webview_flutter_android: ^3.16.8
   firebase_messaging: ^15.2.10
   audioplayers: ^6.1.0
-  record: ^5.1.2
+  record: ^6.0.0
   path_provider: ^2.1.4
   video_player: ^2.9.2
 
