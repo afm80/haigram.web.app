@@ -791,6 +791,37 @@ class PostService {
     throw StateError(tr('الرسائل الصوتية تتطلب تفعيل Cloudinary أو Storage'));
   }
 
+  /// عنوان Worker الذي يرفع الفيديو إلى Cloudflare R2 (بعد التحقق من الدخول).
+  static const videoUploadUrl = String.fromEnvironment('VIDEO_UPLOAD_URL',
+      defaultValue: 'https://haigram-upload.alarajiiq.workers.dev');
+  static const maxVideoBytes = 100 * 1024 * 1024;
+
+  /// يرفع فيديو من الجهاز ويعيد رابطه المباشر (https).
+  static Future<String> uploadVideo(Uint8List bytes, String mime) async {
+    if (bytes.isEmpty || bytes.length > maxVideoBytes) {
+      throw StateError(tr('حجم الفيديو يجب ألا يتجاوز 100 ميجابايت'));
+    }
+    final token = await _user.getIdToken();
+    final response = await http
+        .put(Uri.parse(videoUploadUrl),
+            headers: {'Authorization': 'Bearer $token', 'Content-Type': mime},
+            body: bytes)
+        .timeout(const Duration(minutes: 10));
+    Map<String, dynamic> json = const {};
+    try {
+      json = jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (_) {}
+    if (response.statusCode != 200) {
+      throw StateError(
+          trf('فشل رفع الفيديو ({0})', [json['error'] ?? response.statusCode]));
+    }
+    final url = json['url'] as String?;
+    if (url == null || !url.startsWith('https://')) {
+      throw StateError(tr('لم يُرجع الخادم رابط الفيديو'));
+    }
+    return url;
+  }
+
   /// وضع التجربة: يقسّم الملف إلى قطع ويحفظها في مجموعة media.
   static Future<String> _storeInFirestore(
       Uint8List bytes, void Function(double)? onProgress) async {
