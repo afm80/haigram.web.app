@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'image_save_stub.dart' if (dart.library.html) 'image_save_web.dart';
-import 'voice_stub.dart' if (dart.library.html) 'voice_web.dart';
+import 'voice_stub.dart'
+    if (dart.library.html) 'voice_web.dart'
+    if (dart.library.io) 'voice_io.dart';
 import 'location_stub.dart' if (dart.library.html) 'location_web.dart';
 import 'dart:ui' show FontFeature, ImageFilter;
 
