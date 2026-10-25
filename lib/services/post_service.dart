@@ -276,6 +276,7 @@ class Post {
   final String? videoProvider; // المنصة (youtube وغيرها)؛ فارغ = يوتيوب (منشورات قديمة)
   final String? videoUrl; // الرابط الأصلي للمنصات غير يوتيوب
   final bool isShort; // فيديو عمودي (شورتز، ريلز، تيك توك)
+  final String? videoThumbUrl; // صورة غلاف الفيديو المرفوع (لقطة من الفيديو)
   final String? storyVideoUrl; // قصة فيديو: رابط الفيديو المرفوع
   final String? storyOverlayUrl; // قصة فيديو: طبقة النص والملصقات والرسم (PNG شفاف)
   final int storyFilter; // قصة فيديو: رقم الفلتر (0 = أصلي)
@@ -316,6 +317,7 @@ class Post {
     this.videoProvider,
     this.videoUrl,
     this.isShort = false,
+    this.videoThumbUrl,
     this.storyVideoUrl,
     this.storyOverlayUrl,
     this.storyFilter = 0,
@@ -368,6 +370,7 @@ class Post {
       isShort: m['isShort'] == true &&
           m['videoProvider'] != null &&
           m['videoProvider'] != 'youtube',
+      videoThumbUrl: m['videoThumb'] as String?,
       storyVideoUrl: m['storyVideoUrl'] as String?,
       storyOverlayUrl: m['storyOverlayUrl'] as String?,
       storyFilter: (m['storyFilter'] as num?)?.toInt() ?? 0,
@@ -422,7 +425,11 @@ class Post {
   /// مصدر الفيديو (المنصة والمعرّف)، أو null إن لم يكن للمنشور فيديو صالح.
   VideoSource? get video => hasVideo
       ? VideoSource.fromStored(
-          provider: videoProvider, id: videoId, url: videoUrl, isShort: isShort)
+          provider: videoProvider,
+          id: videoId,
+          url: videoUrl,
+          isShort: isShort,
+          thumb: videoThumbUrl)
       : null;
 
   /// صورة الفيديو المصغّرة إن وفّرتها المنصة (لا تستهلك أي حصة من Firebase أو
@@ -853,6 +860,19 @@ class PostService {
     throw StateError(tr('فشل رفع الفيديو، حاول مرة أخرى'));
   }
 
+  /// يرفع لقطة غلاف الفيديو (JPEG) ويعيد رابطها، أو null في وضع التجربة.
+  /// الفشل لا يمنع النشر: يظهر الفيديو بغلافه المرسوم القديم.
+  static Future<String?> uploadVideoPoster(Uint8List jpeg) async {
+    try {
+      if (useCloudinary) return await _uploadCloudinary(jpeg, 'image/jpeg', 'jpg');
+      if (useStorage) {
+        return await _upload(jpeg, 'photos/${_user.uid}/vposter_${_stamp()}.jpg',
+            'image/jpeg', null);
+      }
+    } catch (_) {}
+    return null;
+  }
+
   /// يرفع صورة محادثة إلى Cloudinary أو Storage ويعيد رابطها المباشر.
   /// يعيد null في وضع التجربة (بلا تخزين خارجي)، فتُحفظ الصورة داخل المستند.
   static Future<String?> uploadChatImage(Uint8List bytes) async {
@@ -1061,6 +1081,8 @@ class PostService {
             'videoProvider': p.videoProvider,
           if (p.hasVideo && p.videoUrl != null) 'videoUrl': p.videoUrl,
           if (p.hasVideo && p.isShort) 'isShort': true,
+          if (p.hasVideo && p.videoThumbUrl != null)
+            'videoThumb': p.videoThumbUrl,
           if (p.isAlbum) 'albumUrls': p.albumUrls,
           'repostedFromUid': originalUid,
           'repostedFromUsername': originalUsername,
@@ -1201,8 +1223,9 @@ class PostService {
 
   /// منشور نصي، وقد يرافقه (أو يحلّ محلّه) فيديو يوتيوب.
   static Future<void> publishText(String text,
-          {VideoSource? video, int? tbg, int? tc}) =>
+          {VideoSource? video, int? tbg, int? tc, String? videoThumb}) =>
       _create(PostType.text, text, null, extra: {
+        if (video != null && videoThumb != null) 'videoThumb': videoThumb,
         if (tbg != null) 'tbg': tbg,
         if (tc != null) 'tc': tc,
         if (video != null) 'videoId': video.id,
