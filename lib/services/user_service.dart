@@ -33,6 +33,13 @@ class AppUser {
   /// معرّفات المنشورات المثبّتة أعلى الملف (الأحدث تثبيتاً أولاً، حتى 3).
   final List<String> pinnedPostIds;
 
+  /// توثيق الحساب (يكتبه الأدمن فقط من لوحة التحكم). الفئة لا تُخزَّن هنا
+  /// لأن ملف المستخدم مقروء للجميع؛ تبقى في طلب التوثيق وتظهر للأدمن فقط.
+  final bool verified;
+
+  /// نهاية التوثيق للخطة الشهرية. null = دائم.
+  final DateTime? verifiedUntil;
+
   AppUser({
     required this.uid,
     required this.name,
@@ -45,7 +52,14 @@ class AppUser {
     this.hideLikes = false,
     this.profileVisits = true,
     this.pinnedPostIds = const [],
+    this.verified = false,
+    this.verifiedUntil,
   });
+
+  /// هل العلامة ظاهرة الآن؟ تُحسب وقت العرض، فتختفي تلقائياً بعد انتهاء الشهرية.
+  bool get isVerified =>
+      verified &&
+      (verifiedUntil == null || verifiedUntil!.isAfter(DateTime.now()));
 
   AppUser withSettings({
     bool? isPrivate,
@@ -65,6 +79,8 @@ class AppUser {
         hideLikes: hideLikes ?? this.hideLikes,
         profileVisits: profileVisits ?? this.profileVisits,
         pinnedPostIds: pinnedPostIds ?? this.pinnedPostIds,
+        verified: verified,
+        verifiedUntil: verifiedUntil,
       );
 
   /// الصورة المعروضة: المرفوعة أولاً، ثم صورة Google، وإلا null (يظهر أول حرف).
@@ -97,6 +113,10 @@ class AppUser {
       profileVisits: m['profileVisits'] != false,
       pinnedPostIds: List<String>.unmodifiable(
           (m['pinnedPostIds'] as List? ?? const []).whereType<String>()),
+      verified: m['verified'] == true,
+      verifiedUntil: (m['verifiedUntil'] is Timestamp)
+          ? (m['verifiedUntil'] as Timestamp).toDate()
+          : null,
     );
   }
 
@@ -269,6 +289,8 @@ class UserService {
       isPrivate: me?.isPrivate ?? false,
       hideLikes: me?.hideLikes ?? false,
       pinnedPostIds: me?.pinnedPostIds ?? const [],
+      verified: me?.verified ?? false,
+      verifiedUntil: me?.verifiedUntil,
     );
     me = fresh;
     _cache[u.uid] = Future.value(fresh);
@@ -340,6 +362,16 @@ class UserService {
       final user = AppUser.fromDoc(s);
       return user.username.isEmpty ? null : user;
     });
+  }
+
+  /// يمسح الملف المخزّن مؤقتاً (مثلاً بعد قبول التوثيق) ليُقرأ من جديد.
+  static void invalidate(String uid) {
+    _cache.remove(uid);
+    if (me?.uid == uid) {
+      profileOf(uid).then((u) {
+        if (u != null) me = u;
+      });
+    }
   }
 
   static Stream<AppUser?> profileStream(String uid) =>
