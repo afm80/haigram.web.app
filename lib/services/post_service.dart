@@ -766,6 +766,48 @@ class PostService {
     return url;
   }
 
+  /// عنوان Worker رفع الفيديو على Cloudflare (يكتب في R2). يمكن تغييره بـ
+  /// --dart-define=VIDEO_UPLOAD_URL=...
+  static const videoUploadUrl = String.fromEnvironment('VIDEO_UPLOAD_URL',
+      defaultValue: 'https://haigram-upload.alarajiiq.workers.dev');
+
+  /// أقصى حجم لفيديو مرفوع (حد الـ Worker في الخطة المجانية).
+  static const maxVideoBytes = 100 * 1024 * 1024;
+
+  /// يرفع فيديو إلى Cloudflare R2 عبر الـ Worker ويعيد رابطه العام (https).
+  /// الـ Worker يتحقق من توكن تسجيل الدخول، ويقبل mp4 وmov وwebm فقط.
+  static Future<String> uploadVideo(Uint8List bytes, String mime) async {
+    if (bytes.length > maxVideoBytes) {
+      throw StateError(tr('الفيديو كبير جداً (الحد 100 ميغابايت)'));
+    }
+    final token = await _user.getIdToken();
+    final res = await http
+        .put(Uri.parse(videoUploadUrl),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': mime,
+            },
+            body: bytes)
+        .timeout(const Duration(minutes: 10));
+    Map<String, dynamic> json = const {};
+    try {
+      json = jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (_) {}
+    if (res.statusCode != 200) {
+      throw StateError(switch (res.statusCode) {
+        401 => tr('انتهت جلسة الدخول، سجّل الدخول مرة أخرى'),
+        413 => tr('الفيديو كبير جداً (الحد 100 ميغابايت)'),
+        415 => tr('صيغة الفيديو غير مدعومة (mp4 أو mov أو webm)'),
+        _ => tr('فشل رفع الفيديو، حاول مرة أخرى'),
+      });
+    }
+    final url = json['url'] as String?;
+    if (url == null || !url.startsWith('https://')) {
+      throw StateError(tr('فشل رفع الفيديو، حاول مرة أخرى'));
+    }
+    return url;
+  }
+
   /// يرفع صورة محادثة إلى Cloudinary أو Storage ويعيد رابطها المباشر.
   /// يعيد null في وضع التجربة (بلا تخزين خارجي)، فتُحفظ الصورة داخل المستند.
   static Future<String?> uploadChatImage(Uint8List bytes) async {
@@ -789,37 +831,6 @@ class PostService {
           bytes, 'audio/${_user.uid}/chat_${_stamp()}.$ext', mime, null);
     }
     throw StateError(tr('الرسائل الصوتية تتطلب تفعيل Cloudinary أو Storage'));
-  }
-
-  /// عنوان Worker الذي يرفع الفيديو إلى Cloudflare R2 (بعد التحقق من الدخول).
-  static const videoUploadUrl = String.fromEnvironment('VIDEO_UPLOAD_URL',
-      defaultValue: 'https://haigram-upload.alarajiiq.workers.dev');
-  static const maxVideoBytes = 100 * 1024 * 1024;
-
-  /// يرفع فيديو من الجهاز ويعيد رابطه المباشر (https).
-  static Future<String> uploadVideo(Uint8List bytes, String mime) async {
-    if (bytes.isEmpty || bytes.length > maxVideoBytes) {
-      throw StateError(tr('حجم الفيديو يجب ألا يتجاوز 100 ميجابايت'));
-    }
-    final token = await _user.getIdToken();
-    final response = await http
-        .put(Uri.parse(videoUploadUrl),
-            headers: {'Authorization': 'Bearer $token', 'Content-Type': mime},
-            body: bytes)
-        .timeout(const Duration(minutes: 10));
-    Map<String, dynamic> json = const {};
-    try {
-      json = jsonDecode(response.body) as Map<String, dynamic>;
-    } catch (_) {}
-    if (response.statusCode != 200) {
-      throw StateError(
-          trf('فشل رفع الفيديو ({0})', [json['error'] ?? response.statusCode]));
-    }
-    final url = json['url'] as String?;
-    if (url == null || !url.startsWith('https://')) {
-      throw StateError(tr('لم يُرجع الخادم رابط الفيديو'));
-    }
-    return url;
   }
 
   /// وضع التجربة: يقسّم الملف إلى قطع ويحفظها في مجموعة media.
