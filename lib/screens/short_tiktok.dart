@@ -27,6 +27,12 @@ String _fmt(int n) {
   return '${t(n / 1000000)}M';
 }
 
+class _Burst {
+  final int id;
+  final Offset at;
+  const _Burst(this.id, this.at);
+}
+
 class TikTokShortPage extends StatefulWidget {
   final Post post;
 
@@ -57,6 +63,12 @@ class _TikTokShortPageState extends State<TikTokShortPage>
   bool _paused = false;
   bool _followBusy = false;
   double _dy = 0;
+
+  // الإعجاب بالنقر المزدوج: يُعيَّن من زر القلب (يعرف حالة الإعجاب الحالية).
+  VoidCallback? _likeIfNeeded;
+  Offset _tapAt = Offset.zero;
+  final _bursts = <_Burst>[];
+  int _burstSeq = 0;
 
   // قرص الصوت يدور أثناء التشغيل ويتوقف عند الإيقاف.
   late final AnimationController _disc =
@@ -112,6 +124,17 @@ class _TikTokShortPageState extends State<TikTokShortPage>
       widget.onPrev();
     }
     _dy = 0;
+  }
+
+  /// نقرتان: إعجاب (لا يُلغى بالنقر المزدوج مثل تيك توك) مع قلب يتطاير.
+  void _doubleTapLike() {
+    if (!widget.active) return;
+    _likeIfNeeded?.call();
+    final b = _Burst(++_burstSeq, _tapAt);
+    setState(() => _bursts.add(b));
+    Future.delayed(const Duration(milliseconds: 800), () {
+      if (mounted) setState(() => _bursts.remove(b));
+    });
   }
 
   Future<void> _doFollow() async {
@@ -219,7 +242,11 @@ class _TikTokShortPageState extends State<TikTokShortPage>
   Widget _heart() {
     return LikeBuilder(
       post: widget.post,
-      builder: (context, liked, count, toggle) => _action(
+      builder: (context, liked, count, toggle) {
+        _likeIfNeeded = () {
+          if (!liked) toggle();
+        };
+        return _action(
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 220),
           transitionBuilder: (child, anim) => ScaleTransition(
@@ -236,7 +263,8 @@ class _TikTokShortPageState extends State<TikTokShortPage>
         ),
         _fmt(count),
         toggle,
-      ),
+      );
+      },
     );
   }
 
@@ -327,6 +355,25 @@ class _TikTokShortPageState extends State<TikTokShortPage>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              StreamBuilder<Post?>(
+                stream: _live,
+                initialData: p,
+                builder: (context, s) => Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.visibility_rounded,
+                        size: 16, color: Colors.white, shadows: _shadow),
+                    const SizedBox(width: 4),
+                    Text(_fmt(s.data?.views ?? p.views),
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            shadows: _shadow)),
+                    const SizedBox(width: 12),
+                  ],
+                ),
+              ),
               const Icon(Icons.music_note_rounded,
                   size: 15, color: Colors.white, shadows: _shadow),
               const SizedBox(width: 4),
@@ -410,11 +457,40 @@ class _TikTokShortPageState extends State<TikTokShortPage>
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: _toggle,
+                    onDoubleTapDown: (d) => _tapAt = d.localPosition,
+                    onDoubleTap: _doubleTapLike,
                     onVerticalDragStart: (_) => _dy = 0,
                     onVerticalDragUpdate: (d) => _dy += d.delta.dy,
                     onVerticalDragEnd: _dragEnd,
                   ),
                 ),
+                // قلوب النقر المزدوج
+                for (final b in _bursts)
+                  Positioned(
+                    key: ValueKey('burst-${b.id}'),
+                    left: b.at.dx - 55,
+                    top: b.at.dy - 55,
+                    child: IgnorePointer(
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween(begin: 0, end: 1),
+                        duration: const Duration(milliseconds: 750),
+                        builder: (context, t, _) => Opacity(
+                          opacity: (1 - t * t).clamp(0.0, 1.0),
+                          child: Transform.translate(
+                            offset: Offset(0, -60 * t),
+                            child: Transform.scale(
+                              scale: 0.5 + 0.9 * Curves.easeOutBack.transform(
+                                  t < 0.4 ? t / 0.4 : 1),
+                              child: const Icon(Icons.favorite_rounded,
+                                  size: 110,
+                                  color: AppColors.likeRed,
+                                  shadows: _shadow),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 // أيقونة الإيقاف في الوسط
                 Positioned.fill(
                   child: IgnorePointer(
