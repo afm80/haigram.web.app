@@ -142,6 +142,27 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   // يلغي نافذة «اضغط مرة أخرى للخروج» عند فتح أي صفحة داخل تبويب.
   late final _pushObservers =
       List.generate(5, (_) => _PushObserver(_disarmExit));
+  // عدد الصفحات المفتوحة في كل تبويب (الصفحة الأولى = الرئيسية للتبويب).
+  // عند فتح صفحة داخل التبويب (محادثة، منشور...) يختفي الشريط السفلي كإنستغرام.
+  final _depths = List<int>.filled(5, 0);
+  late final _depthObservers = List.generate(
+    5,
+    (tab) => _DepthObserver((delta) {
+      final next = _depths[tab] + delta;
+      _depths[tab] = next < 0 ? 0 : next;
+      _refreshDeep();
+    }),
+  );
+  bool _deep = false;
+
+  void _refreshDeep() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final deep = _depths[_index] > 1;
+      if (deep != _deep) setState(() => _deep = deep);
+    });
+  }
+
   bool get _guest => !isLoggedIn;
   late final Stream<AppUser?> _currentProfile = _guest
       ? Stream<AppUser?>.value(null)
@@ -500,7 +521,11 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
               _tabNavigators.length,
               (tab) => Navigator(
                 key: _tabNavigators[tab],
-                observers: [_routeObservers[tab], _pushObservers[tab]],
+                observers: [
+                  _routeObservers[tab],
+                  _pushObservers[tab],
+                  _depthObservers[tab],
+                ],
                 onGenerateRoute: (_) => MaterialPageRoute<void>(
                   builder: (_) => ValueListenableBuilder<int>(
                     valueListenable: _selectedTab,
@@ -511,7 +536,9 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
               ),
             ),
           ),
-          bottomNavigationBar: SafeArea(
+          bottomNavigationBar: _deep
+              ? null
+              : SafeArea(
             top: false,
             child: Padding(
               padding: const EdgeInsets.only(left: 10, right: 10, bottom: 4),
@@ -627,6 +654,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     });
     _selectedTab.value = tab;
     RouteStore.setTab(tab);
+    _refreshDeep();
   }
 
   Widget _navItem(
@@ -764,4 +792,31 @@ class _PushObserver extends NavigatorObserver {
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) => onPush();
+}
+
+/// يعدّ الصفحات (PageRoute) المفتوحة داخل تبويب؛ النوافذ والقوائم لا تُحسب.
+class _DepthObserver extends NavigatorObserver {
+  final void Function(int delta) onChange;
+  _DepthObserver(this.onChange);
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PageRoute) onChange(1);
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PageRoute) onChange(-1);
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PageRoute) onChange(-1);
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    if (oldRoute is PageRoute) onChange(-1);
+    if (newRoute is PageRoute) onChange(1);
+  }
 }
