@@ -146,14 +146,14 @@ void showCreateSheet(BuildContext context) {
                           () => open(CreateKind.post)),
                       item(tr('قصة'), Icons.add_circle_outline_rounded,
                           () => open(CreateKind.story)),
-                      item(tr('فيديو'), Icons.video_library_outlined, () {
+                      item(tr('فيديو'), Icons.videocam_outlined, () {
                         final navigator = Navigator.of(ctx);
                         navigator.pop();
                         navigator.push<void>(MaterialPageRoute(
                             fullscreenDialog: true,
                             builder: (_) => const VideoUploadScreen()));
                       }),
-                      item(tr('رابط فيديو'), Icons.link_rounded,
+                      item(tr('رابط فيديو'), Icons.ondemand_video_outlined,
                           () => open(CreateKind.video)),
                     ],
                   ),
