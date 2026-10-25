@@ -6,7 +6,7 @@ import 'dart:async';
 import 'dart:html' as html;
 import 'dart:math' as math;
 import 'dart:typed_data';
-import 'dart:web_audio' as wa;
+import 'dart:js_util' as js_util;
 
 import '../l10n.dart';
 import 'video_prepare_types.dart';
@@ -39,7 +39,7 @@ Future<PreparedVideo?> prepareVideoImpl({
     ..src = blobUrl
     ..preload = 'auto'
     ..setAttribute('playsinline', 'true');
-  wa.AudioContext? ac;
+  Object? ac;
   html.MediaStream? stream;
   double dur = double.nan;
   try {
@@ -70,13 +70,27 @@ Future<PreparedVideo?> prepareVideoImpl({
 
     // الصوت: نمرّره عبر WebAudio إلى المسجّل دون إخراجه للسماعات.
     try {
-      ac = wa.AudioContext();
-      final src = ac.createMediaElementSource(video);
-      final dest = ac.createMediaStreamDestination();
-      src.connectNode(dest);
-      final tracks = dest.stream?.getAudioTracks() ?? const [];
-      for (final t in tracks) {
-        stream.addTrack(t);
+      // بلا dart:web_audio (أُزيلت من SDK): نستدعي Web Audio عبر js_util.
+      Object? ctor = js_util.getProperty<Object?>(html.window, 'AudioContext');
+      ctor ??= js_util.getProperty<Object?>(html.window, 'webkitAudioContext');
+      if (ctor != null) {
+        final Object ctx = js_util.callConstructor<Object>(ctor, <Object?>[]);
+        ac = ctx;
+        final Object src = js_util
+            .callMethod<Object>(ctx, 'createMediaElementSource', <Object?>[video]);
+        final Object dest = js_util
+            .callMethod<Object>(ctx, 'createMediaStreamDestination', <Object?>[]);
+        js_util.callMethod<void>(src, 'connect', <Object?>[dest]);
+        final Object? destStream = js_util.getProperty<Object?>(dest, 'stream');
+        if (destStream != null) {
+          final tracks = js_util
+              .callMethod<Object>(destStream, 'getAudioTracks', <Object?>[]);
+          final n = js_util.getProperty<int>(tracks, 'length');
+          for (var i = 0; i < n; i++) {
+            final t = js_util.getProperty<Object>(tracks, i);
+            stream.addTrack(t as html.MediaStreamTrack);
+          }
+        }
       }
     } catch (_) {}
 
@@ -160,7 +174,8 @@ Future<PreparedVideo?> prepareVideoImpl({
       }
     } catch (_) {}
     try {
-      ac?.close();
+      final c = ac;
+      if (c != null) js_util.callMethod<void>(c, 'close', <Object?>[]);
     } catch (_) {}
   }
 }
