@@ -575,6 +575,20 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     );
   }
 
+  /// يضيف إيموجي إلى موضع المؤشر في خانة الكتابة.
+  void _insertEmoji(String e) {
+    if (needsLogin(context)) return;
+    final v = _text.value;
+    final sel = v.selection;
+    final start = sel.isValid ? sel.start : v.text.length;
+    final end = sel.isValid ? sel.end : v.text.length;
+    _text.value = TextEditingValue(
+      text: v.text.replaceRange(start, end, e),
+      selection: TextSelection.collapsed(offset: start + e.length),
+    );
+    _focus.requestFocus();
+  }
+
   void _startReply(Comment c) {
     if (needsLogin(context)) return;
     setState(() => _replyTo = c);
@@ -621,10 +635,28 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                 decoration: BoxDecoration(
                     color: context.appColors.textDim,
                     borderRadius: BorderRadius.circular(2))),
-            Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text(tr('التعليقات'),
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            SizedBox(
+              height: 44,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Text(
+                      widget.post.comments > 0
+                          ? '${tr('التعليقات')} · ${widget.post.comments}'
+                          : tr('التعليقات'),
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w700)),
+                  PositionedDirectional(
+                    end: 4,
+                    child: IconButton(
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      icon: Icon(Icons.close_rounded,
+                          size: 22, color: context.appColors.text),
+                    ),
+                  ),
+                ],
+              ),
             ),
             Divider(
                 height: 1, color: context.appColors.text.withOpacity(0.12)),
@@ -685,65 +717,133 @@ class _CommentsSheetState extends State<_CommentsSheet> {
               ),
             Divider(
                 height: 1, color: context.appColors.text.withOpacity(0.12)),
+            // صف إيموجي سريع مثل إنستغرام: نقرة تضيف الإيموجي إلى الخانة.
+            if (!_showStickers)
+              SizedBox(
+                height: 44,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  children: [
+                    for (final e in const [
+                      '❤️', '🙌', '🔥', '👏', '😢', '😍', '😮', '😂'
+                    ])
+                      InkWell(
+                        borderRadius: BorderRadius.circular(20),
+                        onTap: () => _insertEmoji(e),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          child: Text(e, style: const TextStyle(fontSize: 24)),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             SafeArea(
               top: false,
               bottom: !_showStickers,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
                 child: Row(
                   children: [
                     UserAvatar(
                         uid: me,
                         fallbackName: PostService.username,
-                        radius: 17),
+                        radius: 18),
                     const SizedBox(width: 10),
-                    IconButton(
-                      tooltip: tr('الملصقات'),
-                      visualDensity: VisualDensity.compact,
-                      onPressed: () {
-                        if (needsLogin(context)) return;
-                        _toggleStickers();
-                      },
-                      icon: Icon(
-                          _showStickers
-                              ? Icons.keyboard_alt_outlined
-                              : Icons.emoji_emotions_outlined,
-                          color: context.appColors.text),
-                    ),
-                    IconButton(
-                      tooltip: tr('إرسال صورة'),
-                      visualDensity: VisualDensity.compact,
-                      onPressed: _sending ? null : _pickImage,
-                      icon: Icon(Icons.image_outlined,
-                          color: context.appColors.text),
-                    ),
+                    // خانة بشكل حبة مثل تيك توك، وأزرار الملصقات والصورة بداخلها.
                     Expanded(
-                      child: TextField(
-                        controller: _text,
-                        focusNode: _focus,
-                        readOnly: !isLoggedIn,
-                        onTap: () {
-                          if (!isLoggedIn) needsLogin(context);
-                        },
-                        maxLength: 500,
-                        textInputAction: TextInputAction.send,
-                        onSubmitted: (_) => _send(),
-                        decoration: InputDecoration(
-                          hintText: _replyTo != null
-                              ? tr('أضف رداً...')
-                              : tr('أضف تعليقاً...'),
-                          counterText: '',
-                          isDense: true,
-                          contentPadding: EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: context.appColors.surfaceHigh,
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                        padding: const EdgeInsetsDirectional.only(start: 14),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _text,
+                                focusNode: _focus,
+                                readOnly: !isLoggedIn,
+                                onTap: () {
+                                  if (!isLoggedIn) needsLogin(context);
+                                },
+                                maxLength: 500,
+                                minLines: 1,
+                                maxLines: 4,
+                                textInputAction: TextInputAction.send,
+                                onSubmitted: (_) => _send(),
+                                decoration: InputDecoration(
+                                  hintText: _replyTo != null
+                                      ? tr('أضف رداً...')
+                                      : tr('أضف تعليقاً...'),
+                                  counterText: '',
+                                  isDense: true,
+                                  filled: false,
+                                  border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      vertical: 12),
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: tr('الملصقات'),
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () {
+                                if (needsLogin(context)) return;
+                                _toggleStickers();
+                              },
+                              icon: Icon(
+                                  _showStickers
+                                      ? Icons.keyboard_alt_outlined
+                                      : Icons.emoji_emotions_outlined,
+                                  color: context.appColors.textDim),
+                            ),
+                            IconButton(
+                              tooltip: tr('إرسال صورة'),
+                              visualDensity: VisualDensity.compact,
+                              onPressed: _sending ? null : _pickImage,
+                              icon: Icon(Icons.image_outlined,
+                                  color: context.appColors.textDim),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    IconButton(
-                      onPressed: _send,
-                      icon: Icon(Icons.send_rounded,
-                          color: context.appColors.text),
+                    // زر الإرسال يظهر فقط عند وجود نص أو صورة.
+                    ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: _text,
+                      builder: (context, v, _) {
+                        final ready =
+                            v.text.trim().isNotEmpty || _pendingImage != null;
+                        return AnimatedSize(
+                          duration: const Duration(milliseconds: 150),
+                          child: ready
+                              ? Padding(
+                                  padding: const EdgeInsetsDirectional.only(
+                                      start: 8),
+                                  child: GestureDetector(
+                                    onTap: _send,
+                                    child: Container(
+                                      width: 40,
+                                      height: 40,
+                                      decoration: const BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: AppColors.accent),
+                                      child: const Icon(
+                                          Icons.arrow_upward_rounded,
+                                          color: Colors.white,
+                                          size: 22),
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
+                        );
+                      },
                     ),
                   ],
                 ),
