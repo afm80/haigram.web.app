@@ -41,8 +41,17 @@ class VideoSource {
           isShort: isShort);
     }
     if (url == null) return null;
-    return parse(url);
+    final v = parse(url);
+    // الفيديو المرفوع: العلامة (عمودي/أفقي) محفوظة في المنشور وليست في الرابط.
+    if (v != null && isShort && v.provider == VideoProvider.file) {
+      return v.asShort();
+    }
+    return v;
   }
+
+  /// نسخة من المصدر معلَّمة كفيديو عمودي (تظهر مع الشورتز).
+  VideoSource asShort() =>
+      VideoSource._(provider, id, url, isShort: true, isLive: isLive);
 
   static final _ytId = RegExp(r'^[A-Za-z0-9_-]{11}$');
   static String youtubeWatch(String id) => 'https://www.youtube.com/watch?v=$id';
