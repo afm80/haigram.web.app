@@ -1,6 +1,8 @@
 // ضغط وقص الفيديو على الأندرويد بمكتبة video_compress (ضاغط الجهاز نفسه).
-// الهدف: دقة أقصاها 720p، ومدة لا تتجاوز [maxSeconds].
+// الهدف: دقة أقصاها 540p (جودة جيدة وحجم خفيف)، ومدة لا تتجاوز [maxSeconds].
+// الضغط يحوّل الفيديو أيضاً إلى mp4 (H.264) فيعمل عند الجميع مهما كانت صيغته.
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:video_compress/video_compress.dart';
 
@@ -27,8 +29,9 @@ Future<VideoSize?> probeVideoSizeImpl(String path) async {
 Future<VideoPoster?> grabVideoPosterImpl(String path) async {
   final size = await probeVideoSizeImpl(path);
   if (size == null) return null;
-  final bytes = await VideoCompress.getByteThumbnail(path, quality: 80);
-  if (bytes.isEmpty) return null;
+  final Uint8List? bytes =
+      await VideoCompress.getByteThumbnail(path, quality: 80);
+  if (bytes == null || bytes.isEmpty) return null;
   return VideoPoster(bytes, size);
 }
 
@@ -54,12 +57,12 @@ Future<PreparedVideo?> prepareVideoImpl({
       onProgress?.call((p / 100).clamp(0.0, 1.0));
     });
 
-    // ضغط بدقة 720p، مع قص عند الحاجة. معنى معامل المدة في المكتبة غير موثّق
+    // ضغط بدقة 540p، مع قص عند الحاجة. معنى معامل المدة في المكتبة غير موثّق
     // بوضوح (قد يكون «ما يُقصّ من النهاية»)، لذلك نتحقق من طول الناتج فعلياً
     // ونجرّب المعنى الآخر إن لم يطابق.
     Future<MediaInfo?> run(int? trimArg) => VideoCompress.compressVideo(
           path,
-          quality: VideoQuality.Res1280x720Quality,
+          quality: VideoQuality.Res960x540Quality,
           deleteOrigin: false,
           includeAudio: true,
           duration: trimArg,
@@ -92,6 +95,18 @@ Future<PreparedVideo?> prepareVideoImpl({
     final out = best;
     if (out == null) {
       if (tooLong) throw StateError(_tooLongMsg(maxSeconds));
+      return null;
+    }
+    // إن لم يصغر الملف (كان خفيفاً أصلاً) نبقي الأصلي بدل خسارة جودة بلا فائدة.
+    // (فقط للصيغ التي يقبلها الخادم كما هي.)
+    final lower = path.toLowerCase();
+    final acceptedAsIs = lower.endsWith('.mp4') ||
+        lower.endsWith('.m4v') ||
+        lower.endsWith('.mov') ||
+        lower.endsWith('.webm');
+    if (!tooLong &&
+        acceptedAsIs &&
+        await File(out.path!).length() >= originalSize) {
       return null;
     }
     final bytes = await File(out.path!).readAsBytes();

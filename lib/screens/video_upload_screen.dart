@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -26,13 +27,12 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
   int _size = 0;
   String _name = '';
   String _mime = '';
+  bool _known = true; // صيغة يقبلها الخادم كما هي (غيرها يُحوَّل بالضغط)
   bool _busy = false;
   double _progress = 0;
   String _status = '';
   String? _error;
 
-  /// أكبر ملف نقبل اختياره (يُضغط داخل المتصفح قبل الرفع).
-  static const _maxPickBytes = 1024 * 1024 * 1024;
   static const _maxSeconds = 60;
 
   static const _mimes = {
@@ -56,22 +56,17 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
       final name = f.name;
       final dot = name.lastIndexOf('.');
       final ext = dot < 0 ? '' : name.substring(dot + 1).toLowerCase();
-      final mime = _mimes[ext];
-      if (mime == null) {
-        setState(() => _error = tr('صيغة الفيديو غير مدعومة (mp4 أو mov أو webm)'));
-        return;
-      }
+      // أي فيديو مقبول: غير المعروف يُحوَّل إلى mp4 أثناء الضغط.
+      final known = _mimes[ext];
+      final mime = known ?? 'video/mp4';
       final size = await f.length();
-      if (size > _maxPickBytes) {
-        setState(() => _error = tr('الفيديو كبير جداً (الحد 1 غيغابايت)'));
-        return;
-      }
       if (!mounted) return;
       setState(() {
         _file = f;
         _size = size;
         _name = name;
         _mime = mime;
+        _known = known != null;
       });
     } catch (e) {
       if (mounted) {
@@ -98,7 +93,8 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
       // الأبعاد قبل الضغط: الفيديو العمودي يُنشر في قسم الشورتز.
       final size = await probeVideoSize(file.path);
       // لا نرفع فيديو لا نستطيع قراءته (قد لا يعمل عند المشاهدين ولا نعرف مدته).
-      if (size == null) throw StateError(tr('تعذر قراءة الفيديو'));
+      // على الويب لا نستطيع تحويله، فنوقف النشر. على أندرويد الضغط يحوّله.
+      if (size == null && kIsWeb) throw StateError(tr('تعذر قراءة الفيديو'));
       // ضغط وقص داخل المتصفح (الويب). null = يُرفع الملف الأصلي كما هو.
       final prepared = await prepareVideo(
         blobUrl: file.path,
@@ -114,6 +110,10 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
         bytes = prepared.bytes;
         mime = prepared.mime;
       } else {
+        if (!_known) {
+          throw StateError(
+              tr('تعذّر تجهيز هذا الفيديو على هذا الجهاز، جرّب فيديو آخر'));
+        }
         if (_size > PostService.maxVideoBytes) {
           throw StateError(
               tr('تعذّر ضغط الفيديو على هذا الجهاز. اختر فيديو أصغر من 100 ميغابايت'));
@@ -132,7 +132,7 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
       });
       var video = VideoSource.parse(url);
       if (video == null) throw StateError(tr('فشل رفع الفيديو، حاول مرة أخرى'));
-      if (size.isVertical) video = video.asShort();
+      if (size != null && size.isVertical) video = video.asShort();
       await PostService.publishText(_caption.text.trim(), video: video);
       nav.popUntil((r) => r.isFirst);
       messenger.showSnackBar(SnackBar(content: Text(tr('تم النشر بنجاح'))));
@@ -202,7 +202,7 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
                     ),
                     if (_file == null) ...[
                       const SizedBox(height: 4),
-                      Text(tr('أي فيديو (mp4 أو mov أو webm): يُضغط ويُقصّ تلقائياً إلى دقيقة'),
+                      Text(tr('أي فيديو من جهازك: يُجهَّز تلقائياً ويُقصّ إلى دقيقة كحد أقصى'),
                           style: TextStyle(color: colors.textDim, fontSize: 12.5)),
                     ] else
                       TextButton(

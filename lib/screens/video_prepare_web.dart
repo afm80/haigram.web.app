@@ -1,6 +1,6 @@
 // ignore_for_file: avoid_web_libraries_in_flutter
 // ضغط وقص الفيديو داخل المتصفح: يُشغَّل الفيديو في الخلفية ويُسجَّل من جديد
-// بدقة أقصاها 720p ومعدل بيانات محدود، ولا يتجاوز [maxSeconds].
+// بدقة أقصاها 540p ومعدل بيانات محدود، ولا يتجاوز [maxSeconds].
 // التسجيل يجري بسرعة التشغيل الفعلية، فيجب أن تبقى الصفحة مفتوحة.
 import 'dart:async';
 import 'dart:html' as html;
@@ -61,7 +61,7 @@ Future<PreparedVideo?> prepareVideoImpl({
     }
 
     final limit = dur.isFinite ? math.min(dur, maxSeconds.toDouble()) : maxSeconds.toDouble();
-    final scale = math.min(1.0, 1280 / math.max(w, h));
+    final scale = math.min(1.0, 960 / math.max(w, h));
     final cw = math.max(2, (w * scale / 2).round() * 2);
     final ch = math.max(2, (h * scale / 2).round() * 2);
     final canvas = html.CanvasElement(width: cw, height: ch);
@@ -96,7 +96,7 @@ Future<PreparedVideo?> prepareVideoImpl({
 
     final rec = html.MediaRecorder(stream, {
       'mimeType': mime,
-      'videoBitsPerSecond': 2500000,
+      'videoBitsPerSecond': 1500000,
       'audioBitsPerSecond': 96000,
     });
     final chunks = <html.Blob>[];

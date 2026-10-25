@@ -13,7 +13,7 @@ Future<PreparedVideo?> prepareVideo({
   required String blobUrl,
   required int originalSize,
   int maxSeconds = 60,
-  int keepOriginalBytes = 40 * 1024 * 1024,
+  int keepOriginalBytes = 8 * 1024 * 1024,
   void Function(double progress)? onProgress,
 }) =>
     impl.prepareVideoImpl(

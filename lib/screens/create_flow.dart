@@ -210,14 +210,9 @@ Future<PickedMedia> pickedVideoMedia(XFile f) async {
   if (!PostService.useRemoteMedia) {
     throw MediaError(tr('فيديو القصة يتطلب تفعيل Cloudinary أو Storage'));
   }
+  // لا نرفض أي فيديو بسبب صيغته أو حجمه: يُجهَّز (يُضغط ويُقصّ) عند النشر.
   final ext = _extOf(f.name);
-  if (!_videoExts.contains(ext)) {
-    throw MediaError(tr('صيغة الفيديو غير مدعومة (mp4 أو mov أو webm)'));
-  }
   final size = await f.length();
-  if (size > 1024 * 1024 * 1024) {
-    throw MediaError(tr('الفيديو كبير جداً (الحد 1 غيغابايت)'));
-  }
   final poster = await grabVideoPoster(f.path);
   if (poster == null) throw MediaError(tr('تعذر قراءة الفيديو'));
   return PickedMedia(
