@@ -28,6 +28,7 @@ import 'story_text_editor.dart';
 import 'text_story_screen.dart';
 import 'post_style.dart';
 import 'video_cover.dart';
+import 'video_upload_screen.dart';
 import 'video_embed_stub.dart' if (dart.library.html) 'video_embed_web.dart';
 
 enum CreateKind { post, story, video }
@@ -56,7 +57,7 @@ Widget _createScreen(CreateKind kind) => kind == CreateKind.story
     ? CaptureScreen(kind: kind)
     : ComposeScreen(kind: kind);
 
-/// ورقة زر الإضافة: ثلاث بطاقات أفقية (منشور / قصة / رابط فيديو) مع وصف مختصر لكل واحدة.
+/// ورقة زر الإضافة: أربع بطاقات أفقية (منشور / قصة / فيديو / رابط فيديو) مع وصف مختصر لكل واحدة.
 void showCreateSheet(BuildContext context) {
   if (needsLogin(context)) return;
   showModalBottomSheet(
@@ -81,10 +82,10 @@ void showCreateSheet(BuildContext context) {
       }
 
       // عنصر أفقي الشكل: أيقونة فوق والاسم تحتها، ويتوزع الثلاثة بالتساوي.
-      Widget item(String title, IconData icon, CreateKind kind) => Expanded(
+      Widget item(String title, IconData icon, VoidCallback onTap) => Expanded(
             child: InkWell(
               borderRadius: BorderRadius.circular(14),
-              onTap: () => open(kind),
+              onTap: onTap,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 14),
                 child: Column(
@@ -141,11 +142,19 @@ void showCreateSheet(BuildContext context) {
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: Row(
                     children: [
-                      item(tr('منشور'), Icons.grid_on_rounded, CreateKind.post),
+                      item(tr('منشور'), Icons.grid_on_rounded,
+                          () => open(CreateKind.post)),
                       item(tr('قصة'), Icons.add_circle_outline_rounded,
-                          CreateKind.story),
-                      item(tr('رابط فيديو'), Icons.videocam_outlined,
-                          CreateKind.video),
+                          () => open(CreateKind.story)),
+                      item(tr('فيديو'), Icons.video_library_outlined, () {
+                        final navigator = Navigator.of(ctx);
+                        navigator.pop();
+                        navigator.push<void>(MaterialPageRoute(
+                            fullscreenDialog: true,
+                            builder: (_) => const VideoUploadScreen()));
+                      }),
+                      item(tr('رابط فيديو'), Icons.link_rounded,
+                          () => open(CreateKind.video)),
                     ],
                   ),
                 ),
@@ -463,7 +472,6 @@ class ComposeScreen extends StatefulWidget {
 class _ComposeScreenState extends State<ComposeScreen> {
   final _caption = TextEditingController();
   final _videoLink = TextEditingController();
-  bool _uploadingVideo = false;
   final _scroll = ScrollController();
   final _captureKey = GlobalKey(); // يلتقط الصورة مع ملصقاتها عند النشر
   // ملصقات ونصوص كل صورة على حدة (المفتاح هو كائن الصورة نفسه).
@@ -628,39 +636,6 @@ class _ComposeScreenState extends State<ComposeScreen> {
     _videoLink.dispose();
     _scroll.dispose();
     super.dispose();
-  }
-
-  /// يختار فيديو من الجهاز، يرفعه إلى R2، ثم يضع رابطه في خانة الرابط.
-  Future<void> _pickAndUploadVideo() async {
-    if (_uploadingVideo) return;
-    try {
-      final file = await _picker.pickVideo(source: ImageSource.gallery);
-      if (file == null) return;
-      if (await file.length() > PostService.maxVideoBytes) {
-        if (mounted) {
-          setState(() =>
-              _linkError = tr('حجم الفيديو يجب ألا يتجاوز 100 ميجابايت'));
-        }
-        return;
-      }
-      if (mounted) setState(() => _uploadingVideo = true);
-      final bytes = await file.readAsBytes();
-      final name = file.name.toLowerCase();
-      final mime = name.endsWith('.webm')
-          ? 'video/webm'
-          : (name.endsWith('.mov') ? 'video/quicktime' : 'video/mp4');
-      final url = await PostService.uploadVideo(bytes, mime);
-      if (!mounted) return;
-      setState(() => _linkError = null);
-      _videoLink.text = url;
-    } catch (e) {
-      if (mounted) {
-        setState(() =>
-            _linkError = friendlyError(e, fallback: tr('تعذر رفع الفيديو')));
-      }
-    } finally {
-      if (mounted) setState(() => _uploadingVideo = false);
-    }
   }
 
   /// يحلّل الرابط بعد توقف الكتابة ويعرض المعاينة أو سبب الرفض.
@@ -1798,24 +1773,6 @@ class _ComposeScreenState extends State<ComposeScreen> {
                   prefixIcon: const Icon(Icons.play_circle_outline_rounded),
                   errorText: _linkError,
                   errorMaxLines: 3,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: OutlinedButton.icon(
-                  onPressed: _busy || _uploadingVideo
-                      ? null
-                      : _pickAndUploadVideo,
-                  icon: _uploadingVideo
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.upload_rounded),
-                  label: Text(_uploadingVideo
-                      ? tr('جارٍ رفع الفيديو...')
-                      : tr('رفع فيديو من الجهاز')),
                 ),
               ),
               const SizedBox(height: 12),
