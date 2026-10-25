@@ -993,7 +993,7 @@ service cloud.firestore {
                   == resource.data.admins.toSet()
                     .difference([request.auth.uid].toSet()))))
         );
-      // لوحة التحكم عند حذف حساب: حذف المحادثة (الرسائل الفرعية تبقى غير قابلة للقراءة).
+      // لوحة التحكم عند حذف حساب: حذف المحادثة (الرسائل الفرعية يقرؤها الأدمن للمراجعة).
       allow delete: if isAdmin();
 
       match /messages/{messageId} {
@@ -1053,7 +1053,8 @@ service cloud.firestore {
               && chatNext().get('accepted', true) == true);
         }
 
-        allow read: if isChatParticipant();
+        // الأدمن (لوحة التحكم) يقرأ رسائل المحادثات للمراجعة والإشراف.
+        allow read: if isAdmin() || isChatParticipant();
         allow create: if isChatParticipant()
           && request.resource.data.keys().hasOnly([
             'senderUid', 'text', 'kind', 'image', 'imageUrl', 'deliveredTo',
