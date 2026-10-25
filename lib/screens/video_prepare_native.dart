@@ -10,6 +10,20 @@ import 'video_prepare_types.dart';
 String _tooLongMsg(int s) =>
     trf('تعذّر تقصير الفيديو على هذا الجهاز. اختر فيديو أقصر من {0} ثانية', [s]);
 
+Future<VideoSize?> probeVideoSizeImpl(String path) async {
+  final info = await VideoCompress.getMediaInfo(path);
+  var w = info.width ?? 0, h = info.height ?? 0;
+  if (w == 0 || h == 0) return null;
+  // فيديو الجوال المصوَّر عمودياً يُخزَّن أفقياً مع تدوير 90/270.
+  final o = info.orientation ?? 0;
+  if (o == 90 || o == 270) {
+    final t = w;
+    w = h;
+    h = t;
+  }
+  return VideoSize(w, h);
+}
+
 Future<PreparedVideo?> prepareVideoImpl({
   required String blobUrl,
   required int originalSize,

@@ -8,3 +8,5 @@ Future<PreparedVideo?> prepareVideoImpl({
   void Function(double progress)? onProgress,
 }) async =>
     null;
+
+Future<VideoSize?> probeVideoSizeImpl(String blobUrl) async => null;

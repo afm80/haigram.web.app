@@ -95,6 +95,8 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
     final nav = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     try {
+      // الأبعاد قبل الضغط: الفيديو العمودي يُنشر في قسم الشورتز.
+      final size = await probeVideoSize(file.path);
       // ضغط وقص داخل المتصفح (الويب). null = يُرفع الملف الأصلي كما هو.
       final prepared = await prepareVideo(
         blobUrl: file.path,
@@ -124,8 +126,9 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
         });
       }
       final url = await PostService.uploadVideo(bytes, mime);
-      final video = VideoSource.parse(url);
+      var video = VideoSource.parse(url);
       if (video == null) throw StateError(tr('فشل رفع الفيديو، حاول مرة أخرى'));
+      if (size != null && size.isVertical) video = video.asShort();
       await PostService.publishText(_caption.text.trim(), video: video);
       nav.popUntil((r) => r.isFirst);
       messenger.showSnackBar(SnackBar(content: Text(tr('تم النشر بنجاح'))));

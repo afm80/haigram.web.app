@@ -22,3 +22,12 @@ Future<PreparedVideo?> prepareVideo({
         maxSeconds: maxSeconds,
         keepOriginalBytes: keepOriginalBytes,
         onProgress: onProgress);
+
+/// يقرأ أبعاد الفيديو لتحديد قسمه (شورتز أو فيديو عادي). null إن تعذّرت القراءة.
+Future<VideoSize?> probeVideoSize(String blobUrl) async {
+  try {
+    return await impl.probeVideoSizeImpl(blobUrl);
+  } catch (_) {
+    return null;
+  }
+}

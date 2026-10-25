@@ -8,3 +8,13 @@ class PreparedVideo {
   final String mime;
   const PreparedVideo(this.bytes, this.mime);
 }
+
+/// أبعاد الفيديو كما تظهر للمشاهد (بعد مراعاة التدوير).
+class VideoSize {
+  final int width;
+  final int height;
+  const VideoSize(this.width, this.height);
+
+  /// عمودي بوضوح (مثل 9:16 أو 3:4): يُعرض مع الشورتز.
+  bool get isVertical => width > 0 && height >= width * 1.2;
+}

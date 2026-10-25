@@ -180,5 +180,25 @@ Future<PreparedVideo?> prepareVideoImpl({
   }
 }
 
+Future<VideoSize?> probeVideoSizeImpl(String blobUrl) async {
+  final video = html.VideoElement()
+    ..src = blobUrl
+    ..preload = 'metadata'
+    ..setAttribute('playsinline', 'true');
+  try {
+    await video.onLoadedMetadata.first.timeout(const Duration(seconds: 15));
+    final w = video.videoWidth, h = video.videoHeight;
+    if (w == 0 || h == 0) return null;
+    return VideoSize(w, h);
+  } catch (_) {
+    return null;
+  } finally {
+    try {
+      video.removeAttribute('src');
+      video.load();
+    } catch (_) {}
+  }
+}
+
 String _tooLongMsg(int s) =>
     trf('تعذّر تقصير الفيديو على هذا المتصفح. اختر فيديو أقصر من {0} ثانية', [s]);
