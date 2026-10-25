@@ -540,3 +540,215 @@ class _TikTokShortPageState extends State<TikTokShortPage>
     });
   }
 }
+
+
+/// عمود أزرار بطريقة تيك توك لمشغّل الشورتز على الويب ويوتيوب:
+/// صورة صاحب الفيديو مع +، إعجاب، تعليقات، حفظ، مشاركة.
+/// يوضع بجانب الفيديو (خارج الـ iframe) حتى تعمل النقرات.
+class ShortSideActions extends StatefulWidget {
+  final Post post;
+  final VoidCallback onComments;
+  final VoidCallback onShare;
+
+  const ShortSideActions({
+    super.key,
+    required this.post,
+    required this.onComments,
+    required this.onShare,
+  });
+
+  @override
+  State<ShortSideActions> createState() => _ShortSideActionsState();
+}
+
+class _ShortSideActionsState extends State<ShortSideActions> {
+  bool _followBusy = false;
+
+  late final Stream<Post?> _live = PostService.postStream(widget.post.id);
+  late final Stream<FollowState> _follow =
+      PostService.followState(widget.post.uid);
+  late final Stream<bool> _saved = PostService.isSaved(widget.post.id);
+
+  Future<void> _doFollow() async {
+    if (_followBusy || needsLogin(context)) return;
+    _followBusy = true;
+    try {
+      await PostService.follow(widget.post.uid);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text(friendlyError(error, fallback: tr('تعذرت المتابعة')))));
+      }
+    } finally {
+      _followBusy = false;
+    }
+  }
+
+  // ───────────────────────── العناصر ─────────────────────────
+
+  Widget _action(Widget icon, String label, VoidCallback onTap) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            icon,
+            const SizedBox(height: 2),
+            Text(label,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    shadows: _shadow)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Icon _icon(IconData i, {Color color = Colors.white}) =>
+      Icon(i, size: 35, color: color, shadows: _shadow);
+
+  /// صورة صاحب الفيديو مع شارة + للمتابعة (تختفي بعد المتابعة).
+  Widget _avatar(bool mine) {
+    final p = widget.post;
+    return SizedBox(
+      width: 56,
+      height: 68,
+      child: Stack(
+        alignment: Alignment.topCenter,
+        clipBehavior: Clip.none,
+        children: [
+          GestureDetector(
+            onTap: () => openProfile(context, p.uid),
+            child: Container(
+              padding: const EdgeInsets.all(1.8),
+              decoration: const BoxDecoration(
+                  shape: BoxShape.circle, color: Colors.white),
+              child: UserAvatar(uid: p.uid, fallbackName: p.name, radius: 24),
+            ),
+          ),
+          if (!mine)
+            Positioned(
+              bottom: 0,
+              child: StreamBuilder<FollowState>(
+                stream: _follow,
+                builder: (context, s) {
+                  final st = s.data ?? FollowState.none;
+                  if (st == FollowState.following) {
+                    return const SizedBox.shrink();
+                  }
+                  final canFollow = st == FollowState.none;
+                  return GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: canFollow ? _doFollow : null,
+                    child: Container(
+                      width: 23,
+                      height: 23,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: canFollow
+                            ? AppColors.likeRed
+                            : const Color(0xFF8E929C),
+                      ),
+                      child: Icon(
+                          canFollow
+                              ? Icons.add_rounded
+                              : Icons.schedule_rounded,
+                          size: 16,
+                          color: Colors.white),
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _heart() {
+    return LikeBuilder(
+      post: widget.post,
+      builder: (context, liked, count, toggle) {
+        return _action(
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          transitionBuilder: (child, anim) => ScaleTransition(
+              scale: Tween<double>(begin: 0.6, end: 1).animate(
+                  CurvedAnimation(parent: anim, curve: Curves.elasticOut)),
+              child: child),
+          child: Icon(
+            Icons.favorite_rounded,
+            key: ValueKey(liked),
+            size: 38,
+            color: liked ? AppColors.likeRed : Colors.white,
+            shadows: _shadow,
+          ),
+        ),
+        _fmt(count),
+        toggle,
+      );
+      },
+    );
+  }
+
+  Widget _comments() {
+    final p = widget.post;
+    return StreamBuilder<Post?>(
+      stream: _live,
+      initialData: p,
+      builder: (context, s) {
+        final n = s.data?.comments ?? p.comments;
+        return _action(_icon(Icons.mode_comment_rounded), _fmt(n),
+            widget.onComments);
+      },
+    );
+  }
+
+  Widget _save() {
+    final p = widget.post;
+    return StreamBuilder<bool>(
+      stream: _saved,
+      builder: (context, s) {
+        final saved = s.data ?? false;
+        return _action(
+          _icon(Icons.bookmark_rounded,
+              color: saved ? const Color(0xFFFFC83D) : Colors.white),
+          saved ? tr('محفوظ') : tr('حفظ'),
+          () {
+            if (needsLogin(context)) return;
+            PostService.toggleSave(p.id, saved);
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.post;
+    final mine = p.uid == PostService.uidOrEmpty;
+    return SizedBox(
+      width: 64,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _avatar(mine),
+          const SizedBox(height: 6),
+          _heart(),
+          _comments(),
+          _save(),
+          _action(
+              _icon(Icons.share_rounded),
+              p.shares > 0 ? _fmt(p.shares) : tr('مشاركة'),
+              widget.onShare),
+        ],
+      ),
+    );
+  }
+}

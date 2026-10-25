@@ -1233,96 +1233,6 @@ void showShortDialog(BuildContext context, Post post,
   ));
 }
 
-/// صف أزرار الشورتز: إعجاب + تعليق + مشاركة (+ أسهم تنقّل على الشاشات الصغيرة).
-class _ShortActionsBar extends StatefulWidget {
-  final Post post;
-  final bool showArrows;
-  final bool canUp;
-  final bool canDown;
-  final VoidCallback onUp;
-  final VoidCallback onDown;
-  final VoidCallback onComments;
-  final VoidCallback onShare;
-  const _ShortActionsBar({
-    super.key,
-    required this.post,
-    required this.showArrows,
-    required this.canUp,
-    required this.canDown,
-    required this.onUp,
-    required this.onDown,
-    required this.onComments,
-    required this.onShare,
-  });
-
-  @override
-  State<_ShortActionsBar> createState() => _ShortActionsBarState();
-}
-
-class _ShortActionsBarState extends State<_ShortActionsBar> {
-  // عدّاد التعليقات حيّ (القائمة الممرَّرة للعارض نسخة ثابتة).
-  late final Stream<Post?> _live = PostService.postStream(widget.post.id);
-
-  Widget _btn(IconData icon, String label, VoidCallback onTap,
-      {Color color = Colors.white}) {
-    return TextButton.icon(
-      onPressed: onTap,
-      style: TextButton.styleFrom(
-        foregroundColor: Colors.white,
-        minimumSize: const Size(44, 44),
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-      ),
-      icon: Icon(icon, size: 26, color: color),
-      label: Text(label, style: const TextStyle(fontSize: 13)),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final p = widget.post;
-    return Row(
-      children: [
-        LikeBuilder(
-          post: p,
-          builder: (context, liked, count, toggle) => _btn(
-            liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-            count > 0 ? '$count' : '',
-            toggle,
-            color: liked ? AppColors.likeRed : Colors.white,
-          ),
-        ),
-        StreamBuilder<Post?>(
-          stream: _live,
-          initialData: p,
-          builder: (context, s) {
-            final n = s.data?.comments ?? p.comments;
-            return _btn(Icons.mode_comment_outlined, n > 0 ? '$n' : '',
-                widget.onComments);
-          },
-        ),
-        _btn(Icons.send_outlined, '', widget.onShare),
-        const Spacer(),
-        if (widget.showArrows) ...[
-          IconButton(
-            tooltip: tr('السابق'),
-            onPressed: widget.canUp ? widget.onUp : null,
-            icon: const Icon(Icons.keyboard_arrow_up_rounded, size: 30),
-            color: Colors.white,
-            disabledColor: Colors.white24,
-          ),
-          IconButton(
-            tooltip: tr('التالي'),
-            onPressed: widget.canDown ? widget.onDown : null,
-            icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 30),
-            color: Colors.white,
-            disabledColor: Colors.white24,
-          ),
-        ],
-      ],
-    );
-  }
-}
-
 /// الفيديو العمودي المرفوع (ملف) يُعرض بتصميم تيك توك على التطبيق.
 /// يوتيوب يبقى بالإطار القديم (مشغّله يلتقط اللمس)، وكذلك الويب (iframe).
 bool _isTikTokShort(Post p) =>
@@ -1459,53 +1369,51 @@ class _ShortsViewerState extends State<ShortsViewer> {
     return Padding(
         padding: const EdgeInsets.only(top: 56),
         child: LayoutBuilder(builder: (context, c) {
-      const actionsH = 52.0;
+      // عمود أزرار تيك توك على يمين الفيديو (خارج الـ iframe فتعمل النقرات).
+      const colW = 64.0;
       const captionH = 56.0;
-      final h = (c.maxHeight - actionsH - captionH - 8)
-          .clamp(120.0, 4000.0)
-          .toDouble();
-      final w = (h * 9 / 16).clamp(0.0, c.maxWidth).toDouble();
+      final h = (c.maxHeight - captionH - 8).clamp(120.0, 4000.0).toDouble();
+      final maxVideoW = c.maxWidth > colW ? c.maxWidth - colW : 0.0;
+      final w = (h * 9 / 16).clamp(0.0, maxVideoW).toDouble();
       final vh = w * 16 / 9;
       final wide = c.maxWidth >= 700;
       return Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          SizedBox(
-            width: w,
-            height: vh,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: post.video == null
-                  ? Container(color: Colors.black)
-                  : active
-                      ? buildVideoEmbed(post.video!,
-                          key: ValueKey('short-${post.videoId}'), aspect: 9 / 16)
-                      : VideoCover(source: post.video!),
-            ),
-          ),
-          // المنطقة السفلية بعرض الشاشة كلها وخارج الـ iframe: الأزرار هنا
-          // تعمل، والسحب عليها (حتى 40 بكسل) ينقل بين الفيديوهات.
-          SizedBox(
-            width: c.maxWidth,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onVerticalDragStart: _onDragStart,
-              onVerticalDragUpdate: _onDragUpdate,
-              onVerticalDragEnd: _onDragEnd,
-              child: Column(
-                children: [
-                  SizedBox(
-                    width: w,
-                    height: actionsH,
-                    child: _ShortActionsBar(
+          Row(
+            textDirection: TextDirection.ltr,
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              SizedBox(
+                width: w,
+                height: vh,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: post.video == null
+                      ? Container(color: Colors.black)
+                      : active
+                          ? buildVideoEmbed(post.video!,
+                              key: ValueKey('short-${post.videoId}'),
+                              aspect: 9 / 16)
+                          : VideoCover(source: post.video!),
+                ),
+              ),
+              // السحب على العمود ينقل بين الفيديوهات، والنقر على الأزرار يعمل.
+              GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onVerticalDragStart: _onDragStart,
+                onVerticalDragUpdate: _onDragUpdate,
+                onVerticalDragEnd: _onDragEnd,
+                child: SizedBox(
+                  width: colW,
+                  height: vh,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.bottomCenter,
+                    child: ShortSideActions(
                       key: ValueKey('acts-${post.id}'),
                       post: post,
-                      // على الشاشات العريضة توجد أسهم جانبية؛ هنا للصغيرة.
-                      showArrows: !wide,
-                      canUp: index > 0,
-                      canDown: index < widget.shorts.length - 1,
-                      onUp: () => _go(-1),
-                      onDown: () => _go(1),
                       onComments: () =>
                           _overlay(() => showCommentsSheet(context, post)),
                       onShare: () => _overlay(() => showPostShareSheet(
@@ -1513,21 +1421,62 @@ class _ShortsViewerState extends State<ShortsViewer> {
                           post)),
                     ),
                   ),
-                  SizedBox(
-                    width: w,
-                    height: captionH,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        '@${post.username}${post.caption.isNotEmpty ? '\n${post.caption}' : ''}',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            color: Colors.white, fontSize: 13.5),
+                ),
+              ),
+            ],
+          ),
+          // المنطقة السفلية بعرض الشاشة كلها وخارج الـ iframe: السحب عليها
+          // (حتى 40 بكسل) ينقل بين الفيديوهات.
+          SizedBox(
+            width: c.maxWidth,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onVerticalDragStart: _onDragStart,
+              onVerticalDragUpdate: _onDragUpdate,
+              onVerticalDragEnd: _onDragEnd,
+              child: Center(
+                child: SizedBox(
+                  width: w + colW,
+                  height: captionH,
+                  child: Row(
+                    textDirection: TextDirection.ltr,
+                    children: [
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            '@${post.username}${post.caption.isNotEmpty ? '\n${post.caption}' : ''}',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 13.5),
+                          ),
+                        ),
                       ),
-                    ),
+                      // على الشاشات العريضة توجد أسهم جانبية؛ هنا للصغيرة.
+                      if (!wide) ...[
+                        IconButton(
+                          tooltip: tr('السابق'),
+                          onPressed: index > 0 ? () => _go(-1) : null,
+                          icon: const Icon(Icons.keyboard_arrow_up_rounded,
+                              size: 30),
+                          color: Colors.white,
+                          disabledColor: Colors.white24,
+                        ),
+                        IconButton(
+                          tooltip: tr('التالي'),
+                          onPressed: index < widget.shorts.length - 1
+                              ? () => _go(1)
+                              : null,
+                          icon: const Icon(Icons.keyboard_arrow_down_rounded,
+                              size: 30),
+                          color: Colors.white,
+                          disabledColor: Colors.white24,
+                        ),
+                      ],
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
@@ -1597,8 +1546,8 @@ class _ShortsViewerState extends State<ShortsViewer> {
                         i),
                   ),
                 ),
-                // شريطا السحب لمشغّل يوتيوب فقط؛ تيك توك يلتقط السحب بنفسه.
-                if (!_isTikTokShort(post)) ...[strip(true), strip(false)],
+                // شريط السحب الأيسر لمشغّل يوتيوب فقط (الأيمن صار عمود الأزرار)؛ تيك توك يلتقط السحب بنفسه.
+                if (!_isTikTokShort(post)) strip(true),
                 Positioned(
                   top: 0,
                   left: 0,
