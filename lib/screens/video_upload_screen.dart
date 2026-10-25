@@ -8,6 +8,7 @@ import '../net_error.dart';
 import '../services/post_service.dart';
 import '../theme.dart';
 import '../video_source.dart';
+import 'video_prepare.dart';
 
 /// رفع فيديو من الجهاز: اختيار الملف، وصف اختياري، ثم الرفع إلى Cloudflare R2
 /// ونشره كمنشور فيديو (يُعرض بمشغّل الملف المباشر الموجود أصلاً).
@@ -21,11 +22,18 @@ class VideoUploadScreen extends StatefulWidget {
 class _VideoUploadScreenState extends State<VideoUploadScreen> {
   final _picker = ImagePicker();
   final _caption = TextEditingController();
-  Uint8List? _bytes;
+  XFile? _file;
+  int _size = 0;
   String _name = '';
   String _mime = '';
   bool _busy = false;
+  double _progress = 0;
+  String _status = '';
   String? _error;
+
+  /// أكبر ملف نقبل اختياره (يُضغط داخل المتصفح قبل الرفع).
+  static const _maxPickBytes = 1024 * 1024 * 1024;
+  static const _maxSeconds = 60;
 
   static const _mimes = {
     'mp4': 'video/mp4',
@@ -53,14 +61,15 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
         setState(() => _error = tr('صيغة الفيديو غير مدعومة (mp4 أو mov أو webm)'));
         return;
       }
-      final bytes = await f.readAsBytes();
-      if (bytes.length > PostService.maxVideoBytes) {
-        setState(() => _error = tr('الفيديو كبير جداً (الحد 100 ميغابايت)'));
+      final size = await f.length();
+      if (size > _maxPickBytes) {
+        setState(() => _error = tr('الفيديو كبير جداً (الحد 1 غيغابايت)'));
         return;
       }
       if (!mounted) return;
       setState(() {
-        _bytes = bytes;
+        _file = f;
+        _size = size;
         _name = name;
         _mime = mime;
       });
@@ -72,19 +81,49 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
   }
 
   Future<void> _publish() async {
-    final bytes = _bytes;
-    if (bytes == null) {
+    final file = _file;
+    if (file == null) {
       setState(() => _error = tr('اختر فيديو أولاً'));
       return;
     }
     setState(() {
       _busy = true;
       _error = null;
+      _progress = 0;
+      _status = tr('جارٍ تجهيز الفيديو، لا تغلق الصفحة...');
     });
     final nav = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final url = await PostService.uploadVideo(bytes, _mime);
+      // ضغط وقص داخل المتصفح (الويب). null = يُرفع الملف الأصلي كما هو.
+      final prepared = await prepareVideo(
+        blobUrl: file.path,
+        originalSize: _size,
+        maxSeconds: _maxSeconds,
+        onProgress: (p) {
+          if (mounted) setState(() => _progress = p);
+        },
+      );
+      Uint8List bytes;
+      String mime;
+      if (prepared != null) {
+        bytes = prepared.bytes;
+        mime = prepared.mime;
+      } else {
+        if (_size > PostService.maxVideoBytes) {
+          throw StateError(
+              tr('تعذّر ضغط الفيديو على هذا الجهاز. اختر فيديو أصغر من 100 ميغابايت'));
+        }
+        bytes = await file.readAsBytes();
+        mime = _mime;
+      }
+      if (mounted) {
+        setState(() {
+          _progress = 0;
+          _status = tr('جارٍ الرفع...');
+        });
+      }
+      final url = await PostService.uploadVideo(bytes, mime);
       final video = VideoSource.parse(url);
       if (video == null) throw StateError(tr('فشل رفع الفيديو، حاول مرة أخرى'));
       await PostService.publishText(_caption.text.trim(), video: video);
@@ -100,7 +139,7 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
     }
   }
 
-  String _size(int b) => b >= 1024 * 1024
+  String _fmt(int b) => b >= 1024 * 1024
       ? '${(b / (1024 * 1024)).toStringAsFixed(1)} MB'
       : '${(b / 1024).toStringAsFixed(0)} KB';
 
@@ -127,24 +166,24 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                        _bytes == null
+                        _file == null
                             ? Icons.video_library_outlined
                             : Icons.check_circle_outline_rounded,
                         size: 40,
                         color: colors.text),
                     const SizedBox(height: 10),
                     Text(
-                      _bytes == null
+                      _file == null
                           ? tr('اختر فيديو من جهازك')
-                          : '$_name  •  ${_size(_bytes!.length)}',
+                          : '$_name  •  ${_fmt(_size)}',
                       textAlign: TextAlign.center,
                       textDirection: TextDirection.ltr,
                       style: TextStyle(
                           color: colors.text, fontWeight: FontWeight.w600),
                     ),
-                    if (_bytes == null) ...[
+                    if (_file == null) ...[
                       const SizedBox(height: 4),
-                      Text(tr('mp4 أو mov أو webm حتى 100 ميغابايت'),
+                      Text(tr('أي فيديو (mp4 أو mov أو webm): يُضغط ويُقصّ تلقائياً إلى دقيقة'),
                           style: TextStyle(color: colors.textDim, fontSize: 12.5)),
                     ] else
                       TextButton(
@@ -171,9 +210,15 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
             if (_busy) ...[
               const SizedBox(height: 8),
               LinearProgressIndicator(
-                  minHeight: 6, borderRadius: BorderRadius.circular(3)),
+                  value: _progress > 0 ? _progress : null,
+                  minHeight: 6,
+                  borderRadius: BorderRadius.circular(3)),
               const SizedBox(height: 4),
-              Text(tr('جارٍ الرفع...'), textAlign: TextAlign.center),
+              Text(
+                  _progress > 0
+                      ? '$_status ${(_progress * 100).toStringAsFixed(0)}%'
+                      : _status,
+                  textAlign: TextAlign.center),
             ],
             const SizedBox(height: 16),
             FilledButton(
