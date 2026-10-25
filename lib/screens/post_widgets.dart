@@ -1359,6 +1359,8 @@ class _ShortsViewerState extends State<ShortsViewer> {
     final topInset = MediaQuery.of(context).padding.top;
     return Scaffold(
       backgroundColor: Colors.black,
+      // القائمة السفلية تظهر مع الشورتز مثل تيك توك (خلفية سوداء وأيقونات بيضاء).
+      bottomNavigationBar: ShellNavBridge.shortsBar?.call(context),
       body: Focus(
         autofocus: true,
         onKeyEvent: (_, e) {

@@ -165,17 +165,22 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   }
 
   bool get _guest => !isLoggedIn;
-  late final Stream<AppUser?> _currentProfile = _guest
-      ? Stream<AppUser?>.value(null)
-      : UserService.profileStream(UserService.me?.uid ?? '');
+  // broadcast: القائمة السفلية في الغلاف وفي عارض الشورتز تستمعان معاً.
+  late final Stream<AppUser?> _currentProfile = (_guest
+          ? Stream<AppUser?>.value(null)
+          : UserService.profileStream(UserService.me?.uid ?? ''))
+      .asBroadcastStream();
   // شارة تبويب الرسائل: عدد المحادثات غير المقروءة (كإنستغرام)، لا الإشعارات.
-  late final Stream<int> _unreadChatCount =
-      _guest ? Stream<int>.value(0) : SocialService.unreadChatCount();
+  late final Stream<int> _unreadChatCount = (_guest
+          ? Stream<int>.value(0)
+          : SocialService.unreadChatCount())
+      .asBroadcastStream();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    ShellNavBridge.shortsBar = _shortsNavBar;
     // الزائر: لا إشعارات دفع ولا حالة اتصال ولا تنظيف قصص (لا قراءات ولا كتابات).
     if (!_guest) {
       _pushOpenedSub = FirebaseMessaging.onMessageOpenedApp.listen(
@@ -225,6 +230,9 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    if (ShellNavBridge.shortsBar == _shortsNavBar) {
+      ShellNavBridge.shortsBar = null;
+    }
     WidgetsBinding.instance.removeObserver(this);
     _presenceHeartbeat?.cancel();
     _pushOpenedSub?.cancel();
@@ -547,78 +555,129 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
           ),
           bottomNavigationBar: _deep
               ? null
-              : SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.only(left: 10, right: 10, bottom: 4),
-              child: SizedBox(
-                height: 58,
-                child: Row(
-                  children: [
-                    _navItem(0, Icons.home_outlined, Icons.home_rounded,
-                        tr('الرئيسية'),
-                        foreground: navForeground, inactive: navInactive),
-                    _navItem(1, Icons.explore_outlined, Icons.explore_rounded,
-                        tr('استكشف'),
-                        foreground: navForeground, inactive: navInactive),
-                    Expanded(child: Center(child: _createButton())),
-                    StreamBuilder<int>(
-                      stream: _unreadChatCount,
-                      builder: (context, snapshot) => _navItem(
-                        3,
-                        Icons.chat_bubble_outline_rounded,
-                        Icons.chat_bubble_rounded,
-                        tr('الرسائل'),
-                        foreground: navForeground,
-                        inactive: navInactive,
-                        badgeCount:
-                            snapshot.hasError ? -1 : (snapshot.data ?? 0),
-                      ),
-                    ),
-                    StreamBuilder<AppUser?>(
-                      stream: _currentProfile,
-                      builder: (context, snapshot) {
-                        final profile = snapshot.data ?? UserService.me;
-                        return _navItem(
-                          4,
-                          Icons.person_outline_rounded,
-                          Icons.person_rounded,
-                          tr('الملف الشخصي'),
-                          foreground: navForeground,
-                          inactive: navInactive,
-                          showLabel: _guest,
-                          // صورة الملف الشخصي بحجم التبويب كامل (مثل انستغرام)
-                          iconBuilder: _guest
-                              ? null
-                              : (selected) => Container(
-                                    width: 40,
-                                    height: 40,
-                                    padding: const EdgeInsets.all(2),
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: selected
-                                            ? navForeground
-                                            : Colors.transparent,
-                                        width: 1.5,
-                                      ),
-                                    ),
-                                    child: UserAvatar(
-                                      uid: profile?.uid ?? '',
-                                      fallbackName: profile?.username ?? '',
-                                      profile: profile,
-                                      radius: 16.5,
-                                    ),
-                                  ),
-                        );
-                      },
-                    ),
-                  ],
+              : _navBar(
+                  foreground: navForeground,
+                  inactive: navInactive,
+                  dark: isDark,
+                  select: _selectTab,
+                ),
+        ));
+  }
+
+  /// القائمة السفلية. [dark] = خلفية داكنة (الشورتز)، و[select] ما يحدث عند
+  /// الضغط على تبويب.
+  Widget _navBar({
+    required Color foreground,
+    required Color inactive,
+    required bool dark,
+    required void Function(int tab) select,
+    VoidCallback? onCreate,
+  }) {
+    final bar = SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 10, right: 10, bottom: 4),
+        child: SizedBox(
+          height: 58,
+          child: Row(
+            children: [
+              _navItem(0, Icons.home_outlined, Icons.home_rounded,
+                  tr('الرئيسية'),
+                  foreground: foreground, inactive: inactive, select: select),
+              _navItem(1, Icons.explore_outlined, Icons.explore_rounded,
+                  tr('استكشف'),
+                  foreground: foreground, inactive: inactive, select: select),
+              Expanded(
+                  child: Center(
+                      child: _createButton(dark: dark, onCreate: onCreate))),
+              StreamBuilder<int>(
+                stream: _unreadChatCount,
+                builder: (context, snapshot) => _navItem(
+                  3,
+                  Icons.chat_bubble_outline_rounded,
+                  Icons.chat_bubble_rounded,
+                  tr('الرسائل'),
+                  foreground: foreground,
+                  inactive: inactive,
+                  select: select,
+                  badgeCount: snapshot.hasError ? -1 : (snapshot.data ?? 0),
                 ),
               ),
-            ),
+              StreamBuilder<AppUser?>(
+                stream: _currentProfile,
+                builder: (context, snapshot) {
+                  final profile = snapshot.data ?? UserService.me;
+                  return _navItem(
+                    4,
+                    Icons.person_outline_rounded,
+                    Icons.person_rounded,
+                    tr('الملف الشخصي'),
+                    foreground: foreground,
+                    inactive: inactive,
+                    select: select,
+                    showLabel: _guest,
+                    // صورة الملف الشخصي بحجم التبويب كامل (مثل انستغرام)
+                    iconBuilder: _guest
+                        ? null
+                        : (selected) => Container(
+                              width: 40,
+                              height: 40,
+                              padding: const EdgeInsets.all(2),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: selected
+                                      ? foreground
+                                      : Colors.transparent,
+                                  width: 1.5,
+                                ),
+                              ),
+                              child: UserAvatar(
+                                uid: profile?.uid ?? '',
+                                fallbackName: profile?.username ?? '',
+                                profile: profile,
+                                radius: 16.5,
+                              ),
+                            ),
+                  );
+                },
+              ),
+            ],
           ),
-        ));
+        ),
+      ),
+    );
+    if (!dark) return bar;
+    // الشورتز: خلفية سوداء مثل تيك توك.
+    return ColoredBox(color: Colors.black, child: bar);
+  }
+
+  /// القائمة السفلية داخل عارض الشورتز (يطلبها العارض عبر [ShellNavBridge]).
+  /// الضغط على تبويب يغلق العارض وأي صفحات فوق الغلاف ثم ينتقل للتبويب.
+  Widget _shortsNavBar(BuildContext viewerContext) {
+    void leaveRoot() {
+      Navigator.of(viewerContext, rootNavigator: true)
+          .popUntil((route) => route.isFirst);
+    }
+
+    return _navBar(
+      foreground: Colors.white,
+      inactive: Colors.white70,
+      dark: true,
+      select: (tab) {
+        leaveRoot();
+        if (!mounted) return;
+        _selectTab(tab);
+      },
+      onCreate: () {
+        if (needsLogin(viewerContext)) return;
+        leaveRoot();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          showCreateSheet(_tabNavigators[_index].currentContext ?? context);
+        });
+      },
+    );
   }
 
   Widget _tabPage(int tab, int selectedTab) => switch (tab) {
@@ -673,6 +732,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     String label, {
     required Color foreground,
     required Color inactive,
+    required void Function(int tab) select,
     int badgeCount = 0,
     bool showLabel = true,
     Widget Function(bool selected)? iconBuilder,
@@ -683,7 +743,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
         onTap: () {
           // الرسائل والملف الشخصي تحتاج حساباً.
           if ((i == 3 || i == 4) && needsLogin(context)) return;
-          _selectTab(i);
+          select(i);
         },
         behavior: HitTestBehavior.opaque,
         child: AnimatedContainer(
@@ -749,10 +809,10 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     );
   }
 
-  Widget _createButton() {
+  Widget _createButton({required bool dark, VoidCallback? onCreate}) {
     // زر الإضافة: طبقة بنفسجية فاتحة يساراً وبنفسجية داكنة يميناً
     // ومستطيل أبيض في الوسط (أسود في الوضع الفاتح) وعليه علامة +.
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isDark = dark;
     final centerColor = isDark ? Colors.white : Colors.black;
     final plusColor = isDark ? Colors.black : Colors.white;
     Widget layer(Color color) => Container(
@@ -764,10 +824,11 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
           ),
         );
     return GestureDetector(
-      onTap: () {
-        if (needsLogin(context)) return;
-        showCreateSheet(_tabNavigators[_index].currentContext ?? context);
-      },
+      onTap: onCreate ??
+          () {
+            if (needsLogin(context)) return;
+            showCreateSheet(_tabNavigators[_index].currentContext ?? context);
+          },
       child: SizedBox(
         width: 50,
         height: 34,
