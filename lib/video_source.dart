@@ -264,14 +264,17 @@ class VideoSource {
   /// postMessage (الويب) أو قناة HaigramVideo (التطبيق): 'ok' أو 'error'.
   /// [short]: نمط الشورتز (تيك توك): بلا أزرار المشغّل، يملأ الإطار، يتكرر،
   /// وشريط تقدّم رفيع. التشغيل والإيقاف يأتيان من الخارج عبر [VideoHandle].
-  String playerHtml({bool short = false}) {
+  /// [gestures] (للويب): تتولى الصفحة نفسها اللمس (نقرة=إيقاف/تشغيل، نقرتان=إعجاب،
+  /// سحب/عجلة/أسهم=التنقل) وترسلها للتطبيق عبر postMessage بالمفتاح haigramGesture،
+  /// لأن الـ iframe يلتقط اللمس فلا تصله طبقة فلتر.
+  String playerHtml({bool short = false, bool gestures = false}) {
     final src = _jsString(url);
     final failText = _jsString(tr('تعذر تشغيل هذا الفيديو'));
     final isHls = provider == VideoProvider.hls;
     return '''<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-html,body{margin:0;height:100%;background:#000;overflow:hidden}
+html,body{margin:0;height:100%;background:#000;overflow:hidden${gestures ? ';touch-action:none;user-select:none;-webkit-user-select:none' : ''}}
 video{width:100%;height:100%;object-fit:${short ? 'cover' : 'contain'};background:#000}
 ${short ? '#pb{position:absolute;left:0;bottom:0;height:3px;width:0;background:#fff;opacity:.85;pointer-events:none}' : ''}
 #e{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
@@ -303,6 +306,35 @@ function haigramCmd(c){
 window.addEventListener('message',function(e){
   var d=e.data; if(d && d.haigramCmd) haigramCmd(d.haigramCmd);
 });
+${gestures ? r'''
+(function(){
+  function g(m){ try{ parent.postMessage({haigramGesture:m},'*'); }catch(_){} }
+  function toggle(){ haigramCmd('toggle'); g(v.paused ? 'paused' : 'playing'); }
+  var down=null, lastTap=0, tapTimer=null;
+  document.addEventListener('pointerdown',function(e){ down={x:e.clientX,y:e.clientY}; });
+  document.addEventListener('pointerup',function(e){
+    if(!down) return;
+    var dx=e.clientX-down.x, dy=e.clientY-down.y; down=null;
+    if(Math.abs(dy)>40 && Math.abs(dy)>Math.abs(dx)){ g(dy<0 ? 'next' : 'prev'); return; }
+    if(Math.abs(dx)>12 || Math.abs(dy)>12) return;
+    var now=Date.now();
+    if(now-lastTap<300){
+      clearTimeout(tapTimer); lastTap=0;
+      g('dbl:'+e.clientX+','+e.clientY);
+    } else {
+      lastTap=now;
+      tapTimer=setTimeout(toggle,300);
+    }
+  });
+  document.addEventListener('pointercancel',function(){ down=null; });
+  document.addEventListener('wheel',function(e){ e.preventDefault(); g(e.deltaY>0 ? 'next' : 'prev'); },{passive:false});
+  document.addEventListener('keydown',function(e){
+    if(e.key==='ArrowDown'){ e.preventDefault(); g('next'); }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); g('prev'); }
+    else if(e.key===' '){ e.preventDefault(); toggle(); }
+  });
+})();
+''' : ''}
 ${short ? "var pb=document.getElementById('pb'); v.addEventListener('timeupdate',function(){ if(v.duration) pb.style.width=(100*v.currentTime/v.duration)+'%'; });" : ''}
 if(isHls && !v.canPlayType('application/vnd.apple.mpegurl')){
   if(window.Hls && Hls.isSupported()){
