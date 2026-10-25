@@ -39,13 +39,21 @@ class VideoSource {
   /// بث مباشر (رابط HLS).
   final bool isLive;
 
+  /// رابط صورة غلاف الفيديو المرفوع (لقطة من الفيديو تُرفع مع المنشور).
+  /// null للمنشورات القديمة والمنصات الأخرى.
+  final String? thumb;
+
   const VideoSource._(this.provider, this.id, this.url,
-      {this.isShort = false, this.isLive = false});
+      {this.isShort = false, this.isLive = false, this.thumb});
 
   /// يعيد بناء المصدر من الحقول المحفوظة في المنشور.
   /// منشورات يوتيوب القديمة ليس فيها provider ولا url: يكفيها المعرّف.
   static VideoSource? fromStored(
-      {String? provider, String? id, String? url, bool isShort = false}) {
+      {String? provider,
+      String? id,
+      String? url,
+      bool isShort = false,
+      String? thumb}) {
     if ((provider == null || provider == 'youtube') && id != null) {
       if (!_ytId.hasMatch(id)) return null;
       // منشورات يوتيوب القديمة المعلَّمة شورتز تظهر الآن كفيديو عادي.
@@ -55,14 +63,21 @@ class VideoSource {
     final v = parse(url);
     // الفيديو المرفوع: العلامة (عمودي/أفقي) محفوظة في المنشور وليست في الرابط.
     if (v != null && isShort && v.provider == VideoProvider.file) {
-      return v.asShort();
+      return v.asShort().withThumb(thumb);
     }
-    return v;
+    return v?.withThumb(thumb);
+  }
+
+  /// نسخة من المصدر بصورة غلاف (تُهمل إن لم تكن رابط https).
+  VideoSource withThumb(String? t) {
+    if (t == null || !t.startsWith('https://')) return this;
+    return VideoSource._(provider, id, url,
+        isShort: isShort, isLive: isLive, thumb: t);
   }
 
   /// نسخة من المصدر معلَّمة كفيديو عمودي (تظهر مع الشورتز).
-  VideoSource asShort() =>
-      VideoSource._(provider, id, url, isShort: true, isLive: isLive);
+  VideoSource asShort() => VideoSource._(provider, id, url,
+      isShort: true, isLive: isLive, thumb: thumb);
 
   static final _ytId = RegExp(r'^[A-Za-z0-9_-]{11}$');
   static String youtubeWatch(String id) => 'https://www.youtube.com/watch?v=$id';
@@ -219,10 +234,19 @@ class VideoSource {
       provider == VideoProvider.hls ? tr('شاهد البث المباشر') : tr('شاهد الفيديو');
 
   /// صورة مصغّرة جاهزة إن وفّرتها المنصة برابط ثابت، وإلا null (يُرسم غلاف).
-  String? get thumbUrl => switch (provider) {
-        VideoProvider.youtube => 'https://img.youtube.com/vi/$id/hqdefault.jpg',
-        _ => null,
-      };
+  String? get thumbUrl {
+    if (provider == VideoProvider.youtube) {
+      return 'https://img.youtube.com/vi/$id/hqdefault.jpg';
+    }
+    final t = thumb;
+    if (t == null) return null;
+    // Cloudinary: نصغّر الصورة ونحسّن صيغتها لتوفير الحصة والسرعة.
+    const marker = '/image/upload/';
+    if (t.startsWith('https://res.cloudinary.com/') && t.contains(marker)) {
+      return t.replaceFirst(marker, '${marker}f_auto,q_auto,w_720/');
+    }
+    return t;
+  }
 
   /// ألوان غلاف المنصة (تدرّج).
   List<Color> get brandColors => switch (provider) {
