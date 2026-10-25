@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -16,6 +17,7 @@ import 'explore_screen.dart' show ExploreSearchScreen;
 import 'create_flow.dart' show PickedMedia, MediaError, pickAlbumMedia;
 import 'post_style.dart';
 import 'share_sheet.dart';
+import 'short_tiktok.dart';
 import 'translate_widgets.dart';
 import '../video_source.dart';
 import 'video_cover.dart';
@@ -1321,6 +1323,11 @@ class _ShortActionsBarState extends State<_ShortActionsBar> {
   }
 }
 
+/// الفيديو العمودي المرفوع (ملف) يُعرض بتصميم تيك توك على التطبيق.
+/// يوتيوب يبقى بالإطار القديم (مشغّله يلتقط اللمس)، وكذلك الويب (iframe).
+bool _isTikTokShort(Post p) =>
+    !kIsWeb && p.video?.provider == VideoProvider.file;
+
 class ShortsViewer extends StatefulWidget {
   final List<Post> shorts;
   final int initialIndex;
@@ -1436,7 +1443,22 @@ class _ShortsViewerState extends State<ShortsViewer> {
   }
 
   Widget _page(Post post, bool active, int index) {
-    return LayoutBuilder(builder: (context, c) {
+    if (_isTikTokShort(post)) {
+      return TikTokShortPage(
+        key: ValueKey('tt-${post.id}'),
+        post: post,
+        active: active,
+        onComments: () => _overlay(() => showCommentsSheet(context, post)),
+        onShare: () => _overlay(() => showPostShareSheet(
+            Navigator.of(context, rootNavigator: true).context, post)),
+        onNext: () => _go(1),
+        onPrev: () => _go(-1),
+      );
+    }
+    // الإطار القديم يبدأ تحت شريط الأعلى (56)؛ صفحة تيك توك تملأ الشاشة.
+    return Padding(
+        padding: const EdgeInsets.only(top: 56),
+        child: LayoutBuilder(builder: (context, c) {
       const actionsH = 52.0;
       const captionH = 56.0;
       final h = (c.maxHeight - actionsH - captionH - 8)
@@ -1511,7 +1533,7 @@ class _ShortsViewerState extends State<ShortsViewer> {
           ),
         ],
       );
-    });
+    }));
   }
 
   @override
@@ -1562,18 +1584,21 @@ class _ShortsViewerState extends State<ShortsViewer> {
             child: Stack(
               children: [
                 Positioned.fill(
-                  top: 56,
                   child: PageView.builder(
                     controller: _pages,
                     scrollDirection: Axis.vertical,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: widget.shorts.length,
+                    // مشغّل تيك توك لا يلتقط اللمس فلا يحتاج إخفاءً عند فتح القوائم.
                     itemBuilder: (_, i) => _page(
-                        widget.shorts[i], i == _current && !_menuOpen, i),
+                        widget.shorts[i],
+                        i == _current &&
+                            (!_menuOpen || _isTikTokShort(widget.shorts[i])),
+                        i),
                   ),
                 ),
-                strip(true),
-                strip(false),
+                // شريطا السحب لمشغّل يوتيوب فقط؛ تيك توك يلتقط السحب بنفسه.
+                if (!_isTikTokShort(post)) ...[strip(true), strip(false)],
                 Positioned(
                   top: 0,
                   left: 0,
@@ -1583,13 +1608,19 @@ class _ShortsViewerState extends State<ShortsViewer> {
                     children: [
                       IconButton(
                         icon: const Icon(Icons.arrow_back_rounded,
-                            color: Colors.white),
+                            color: Colors.white,
+                            shadows: [
+                              Shadow(blurRadius: 8, color: Colors.black87)
+                            ]),
                         onPressed: () => Navigator.of(context).pop(),
                       ),
                       const Spacer(),
                       PopupMenuButton<String>(
                         icon: const Icon(Icons.more_vert_rounded,
-                            color: Colors.white),
+                            color: Colors.white,
+                            shadows: [
+                              Shadow(blurRadius: 8, color: Colors.black87)
+                            ]),
                         onOpened: () => setState(() => _menuOpen = true),
                         onCanceled: () => setState(() => _menuOpen = false),
                         onSelected: (v) {

@@ -14,8 +14,13 @@ final _registered = <String>{};
 
 /// [onResult] يُستدعى بـ true/false عند معرفة نجاح تشغيل ملف أو بث
 /// (المنصات الأخرى لا تخبرنا بنتيجتها).
+/// [handle] و[tiktok] للتوافق مع نسخة الأندرويد؛ عرض الويب لا يستعملهما.
 Widget buildVideoEmbed(VideoSource source,
-    {Key? key, double? aspect, void Function(bool ok)? onResult}) {
+    {Key? key,
+    double? aspect,
+    void Function(bool ok)? onResult,
+    VideoHandle? handle,
+    bool tiktok = false}) {
   final viewType = 'haigram-v-${source.key}';
   if (_registered.add(viewType)) {
     ui_web.platformViewRegistry.registerViewFactory(viewType, (int viewId) {

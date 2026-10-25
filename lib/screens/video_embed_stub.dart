@@ -13,20 +13,36 @@ import '../video_source.dart';
 const _kReferer = 'https://haigram.web.app/';
 
 /// [onResult] يُستدعى بنجاح/فشل تشغيل ملف أو بث فقط (المنصات لا تخبرنا).
+///
+/// [tiktok]: نمط الشورتز العمودي (ملف مرفوع): بلا أزرار مشغّل ويملأ الإطار.
+/// [handle]: للتحكم بالتشغيل والإيقاف من خارج المشغّل.
 Widget buildVideoEmbed(VideoSource source,
-        {Key? key, double? aspect, void Function(bool ok)? onResult}) =>
+        {Key? key,
+        double? aspect,
+        void Function(bool ok)? onResult,
+        VideoHandle? handle,
+        bool tiktok = false}) =>
     _NativeVideo(
         key: key,
         source: source,
         aspect: aspect ?? source.aspect,
-        onResult: onResult);
+        onResult: onResult,
+        handle: handle,
+        tiktok: tiktok);
 
 class _NativeVideo extends StatefulWidget {
   final VideoSource source;
   final double aspect;
   final void Function(bool ok)? onResult;
+  final VideoHandle? handle;
+  final bool tiktok;
   const _NativeVideo(
-      {super.key, required this.source, required this.aspect, this.onResult});
+      {super.key,
+      required this.source,
+      required this.aspect,
+      this.onResult,
+      this.handle,
+      this.tiktok = false});
 
   @override
   State<_NativeVideo> createState() => _NativeVideoState();
@@ -61,6 +77,10 @@ class _NativeVideoState extends State<_NativeVideo> {
         },
       ));
 
+    widget.handle?.attach((cmd) {
+      _controller.runJavaScript("haigramCmd('$cmd')").catchError((_) {});
+    });
+
     final platform = _controller.platform;
     if (platform is AndroidWebViewController) {
       // يسمح بالتشغيل التلقائي بعد نقر المستخدم على الصورة المصغّرة.
@@ -68,12 +88,19 @@ class _NativeVideoState extends State<_NativeVideo> {
     }
 
     if (source.usesPlayerHtml) {
-      _controller.loadHtmlString(source.playerHtml(), baseUrl: _kReferer);
+      _controller.loadHtmlString(source.playerHtml(short: widget.tiktok),
+          baseUrl: _kReferer);
     } else {
       var url = source.embedUrl()!;
       if (source.provider == VideoProvider.youtube) url += '&fs=0';
       _controller.loadRequest(Uri.parse(url), headers: const {'Referer': _kReferer});
     }
+  }
+
+  @override
+  void dispose() {
+    widget.handle?.detach();
+    super.dispose();
   }
 
   @override

@@ -1,0 +1,466 @@
+// صفحة الفيديو العمودي المرفوع بتصميم تيك توك (للأندرويد/آيفون):
+// فيديو بملء الإطار، عمود أزرار جانبي (صورة صاحب الفيديو مع زر المتابعة،
+// إعجاب، تعليقات، حفظ، مشاركة، قرص الصوت)، والوصف أسفل اليسار.
+// نقرة = إيقاف/تشغيل، سحب عمودي = التنقل بين المقاطع (يتولاه العارض).
+import 'package:flutter/material.dart';
+
+import '../auth_gate.dart';
+import '../l10n.dart';
+import '../net_error.dart';
+import '../services/post_service.dart';
+import '../theme.dart';
+import '../video_source.dart';
+import 'common_widgets.dart';
+import 'video_cover.dart';
+import 'video_embed_stub.dart' if (dart.library.html) 'video_embed_web.dart';
+
+const _shadow = [Shadow(blurRadius: 8, color: Colors.black87)];
+
+/// عدد مختصر مثل تيك توك: 950 ، 1.2K ، 15K ، 2.4M
+String _fmt(int n) {
+  String t(double v) => v.toStringAsFixed(v < 10 ? 1 : 0).replaceFirst(
+        RegExp(r'\.0$'),
+        '',
+      );
+  if (n < 1000) return '$n';
+  if (n < 1000000) return '${t(n / 1000)}K';
+  return '${t(n / 1000000)}M';
+}
+
+class TikTokShortPage extends StatefulWidget {
+  final Post post;
+
+  /// الصفحة الظاهرة الآن (فقط لها مشغّل حيّ؛ غيرها يعرض الغلاف).
+  final bool active;
+  final VoidCallback onComments;
+  final VoidCallback onShare;
+  final VoidCallback onNext;
+  final VoidCallback onPrev;
+
+  const TikTokShortPage({
+    super.key,
+    required this.post,
+    required this.active,
+    required this.onComments,
+    required this.onShare,
+    required this.onNext,
+    required this.onPrev,
+  });
+
+  @override
+  State<TikTokShortPage> createState() => _TikTokShortPageState();
+}
+
+class _TikTokShortPageState extends State<TikTokShortPage>
+    with SingleTickerProviderStateMixin {
+  final _handle = VideoHandle();
+  bool _paused = false;
+  bool _followBusy = false;
+  double _dy = 0;
+
+  // قرص الصوت يدور أثناء التشغيل ويتوقف عند الإيقاف.
+  late final AnimationController _disc =
+      AnimationController(vsync: this, duration: const Duration(seconds: 6));
+
+  late final Stream<Post?> _live = PostService.postStream(widget.post.id);
+  late final Stream<FollowState> _follow =
+      PostService.followState(widget.post.uid);
+  late final Stream<bool> _saved = PostService.isSaved(widget.post.id);
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.active) _disc.repeat();
+  }
+
+  @override
+  void didUpdateWidget(covariant TikTokShortPage old) {
+    super.didUpdateWidget(old);
+    if (old.active != widget.active) {
+      if (widget.active) {
+        // يعود المشغّل من جديد (تشغيل تلقائي).
+        _paused = false;
+        _disc.repeat();
+      } else {
+        _disc.stop();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _disc.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    if (!widget.active) return;
+    _handle.send('toggle');
+    setState(() => _paused = !_paused);
+    if (_paused) {
+      _disc.stop();
+    } else {
+      _disc.repeat();
+    }
+  }
+
+  void _dragEnd(DragEndDetails d) {
+    final v = d.primaryVelocity ?? 0;
+    if (v < -150 || _dy < -40) {
+      widget.onNext();
+    } else if (v > 150 || _dy > 40) {
+      widget.onPrev();
+    }
+    _dy = 0;
+  }
+
+  Future<void> _doFollow() async {
+    if (_followBusy || needsLogin(context)) return;
+    _followBusy = true;
+    try {
+      await PostService.follow(widget.post.uid);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text(friendlyError(error, fallback: tr('تعذرت المتابعة')))));
+      }
+    } finally {
+      _followBusy = false;
+    }
+  }
+
+  // ───────────────────────── العناصر ─────────────────────────
+
+  Widget _action(Widget icon, String label, VoidCallback onTap) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            icon,
+            const SizedBox(height: 2),
+            Text(label,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    shadows: _shadow)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Icon _icon(IconData i, {Color color = Colors.white}) =>
+      Icon(i, size: 35, color: color, shadows: _shadow);
+
+  /// صورة صاحب الفيديو مع شارة + للمتابعة (تختفي بعد المتابعة).
+  Widget _avatar(bool mine) {
+    final p = widget.post;
+    return SizedBox(
+      width: 56,
+      height: 68,
+      child: Stack(
+        alignment: Alignment.topCenter,
+        clipBehavior: Clip.none,
+        children: [
+          GestureDetector(
+            onTap: () => openProfile(context, p.uid),
+            child: Container(
+              padding: const EdgeInsets.all(1.8),
+              decoration: const BoxDecoration(
+                  shape: BoxShape.circle, color: Colors.white),
+              child: UserAvatar(uid: p.uid, fallbackName: p.name, radius: 24),
+            ),
+          ),
+          if (!mine)
+            Positioned(
+              bottom: 0,
+              child: StreamBuilder<FollowState>(
+                stream: _follow,
+                builder: (context, s) {
+                  final st = s.data ?? FollowState.none;
+                  if (st == FollowState.following) {
+                    return const SizedBox.shrink();
+                  }
+                  final canFollow = st == FollowState.none;
+                  return GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: canFollow ? _doFollow : null,
+                    child: Container(
+                      width: 23,
+                      height: 23,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: canFollow
+                            ? AppColors.likeRed
+                            : const Color(0xFF8E929C),
+                      ),
+                      child: Icon(
+                          canFollow
+                              ? Icons.add_rounded
+                              : Icons.schedule_rounded,
+                          size: 16,
+                          color: Colors.white),
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _heart() {
+    return LikeBuilder(
+      post: widget.post,
+      builder: (context, liked, count, toggle) => _action(
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          transitionBuilder: (child, anim) => ScaleTransition(
+              scale: Tween<double>(begin: 0.6, end: 1).animate(
+                  CurvedAnimation(parent: anim, curve: Curves.elasticOut)),
+              child: child),
+          child: Icon(
+            Icons.favorite_rounded,
+            key: ValueKey(liked),
+            size: 38,
+            color: liked ? AppColors.likeRed : Colors.white,
+            shadows: _shadow,
+          ),
+        ),
+        _fmt(count),
+        toggle,
+      ),
+    );
+  }
+
+  Widget _comments() {
+    final p = widget.post;
+    return StreamBuilder<Post?>(
+      stream: _live,
+      initialData: p,
+      builder: (context, s) {
+        final n = s.data?.comments ?? p.comments;
+        return _action(_icon(Icons.mode_comment_rounded), _fmt(n),
+            widget.onComments);
+      },
+    );
+  }
+
+  Widget _save() {
+    final p = widget.post;
+    return StreamBuilder<bool>(
+      stream: _saved,
+      builder: (context, s) {
+        final saved = s.data ?? false;
+        return _action(
+          _icon(Icons.bookmark_rounded,
+              color: saved ? const Color(0xFFFFC83D) : Colors.white),
+          saved ? tr('محفوظ') : tr('حفظ'),
+          () {
+            if (needsLogin(context)) return;
+            PostService.toggleSave(p.id, saved);
+          },
+        );
+      },
+    );
+  }
+
+  /// قرص الصوت الدوّار (صورة صاحب الفيديو داخل قرص أسطواني).
+  Widget _discWidget() {
+    final p = widget.post;
+    return RotationTransition(
+      turns: _disc,
+      child: Container(
+        width: 46,
+        height: 46,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: const RadialGradient(
+              colors: [Color(0xFF3A3A3A), Color(0xFF0B0B0B)]),
+          border: Border.all(color: Colors.white24, width: 1.2),
+        ),
+        child: ClipOval(
+          child: UserAvatar(uid: p.uid, fallbackName: p.name, radius: 13),
+        ),
+      ),
+    );
+  }
+
+  Widget _caption() {
+    final p = widget.post;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTap: () => openProfile(context, p.uid),
+          child: Text('@${p.username}',
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  shadows: _shadow)),
+        ),
+        if (p.caption.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          IgnorePointer(
+            child: Text(p.caption,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    height: 1.35,
+                    shadows: _shadow)),
+          ),
+        ],
+        const SizedBox(height: 9),
+        IgnorePointer(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.music_note_rounded,
+                  size: 15, color: Colors.white, shadows: _shadow),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text('${tr('الصوت الأصلي')} · ${p.username}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        shadows: _shadow)),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.post;
+    final mine = p.uid == PostService.uidOrEmpty;
+    final source = p.video!;
+    return LayoutBuilder(builder: (context, c) {
+      // على الشاشات العريضة (تابلت) يبقى الإطار بنسبة 9:16 في الوسط.
+      final maxW = c.maxHeight * 9 / 16;
+      final w = c.maxWidth < maxW ? c.maxWidth : maxW;
+      return Center(
+        child: SizedBox(
+          width: w,
+          height: c.maxHeight,
+          child: ClipRect(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // الفيديو بملء الإطار
+                widget.active
+                    ? buildVideoEmbed(source,
+                        key: ValueKey('short-${p.id}'),
+                        handle: _handle,
+                        tiktok: true)
+                    : VideoCover(source: source),
+                // تدرّجات لقراءة النص والأيقونات
+                const Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  height: 90,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0x66000000), Color(0x00000000)],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 260,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0x00000000), Color(0xB3000000)],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // طبقة اللمس: نقرة للإيقاف/التشغيل، سحب عمودي للتنقل
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _toggle,
+                    onVerticalDragStart: (_) => _dy = 0,
+                    onVerticalDragUpdate: (d) => _dy += d.delta.dy,
+                    onVerticalDragEnd: _dragEnd,
+                  ),
+                ),
+                // أيقونة الإيقاف في الوسط
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Center(
+                      child: AnimatedOpacity(
+                        opacity: _paused ? 1 : 0,
+                        duration: const Duration(milliseconds: 150),
+                        child: const Icon(Icons.play_arrow_rounded,
+                            size: 88, color: Colors.white70, shadows: _shadow),
+                      ),
+                    ),
+                  ),
+                ),
+                // الوصف أسفل (يترك مكان عمود الأزرار)
+                Positioned(
+                  left: 12,
+                  right: 76,
+                  bottom: 16,
+                  child: _caption(),
+                ),
+                // عمود الأزرار
+                Positioned(
+                  right: 6,
+                  bottom: 12,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _avatar(mine),
+                      const SizedBox(height: 6),
+                      _heart(),
+                      _comments(),
+                      _save(),
+                      _action(
+                          _icon(Icons.share_rounded),
+                          p.shares > 0 ? _fmt(p.shares) : tr('مشاركة'),
+                          widget.onShare),
+                      const SizedBox(height: 8),
+                      _discWidget(),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    });
+  }
+}
