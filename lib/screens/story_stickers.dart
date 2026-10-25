@@ -249,3 +249,17 @@ Future<Uint8List?> bakeStickers(GlobalKey key, Uint8List original,
   if (out.length > maxBytes) out = img.encodeJpg(decoded, quality: 65);
   return out;
 }
+
+/// يلتقط طبقة النص والملصقات والرسم فقط (PNG بخلفية شفافة) لقصة الفيديو.
+/// [targetWidth] عرض الناتج بالبكسل (يطابق عرض الفيديو بحدّ أقصى 1080).
+Future<Uint8List?> bakeOverlayPng(GlobalKey key, {required int targetWidth}) async {
+  final boundary = key.currentContext?.findRenderObject();
+  if (boundary is! RenderRepaintBoundary) return null;
+  final ratio =
+      (targetWidth.clamp(360, 1080) / boundary.size.width).clamp(0.5, 4.0).toDouble();
+  final snap = await boundary.toImage(pixelRatio: ratio);
+  final png = await snap.toByteData(format: ui.ImageByteFormat.png);
+  snap.dispose();
+  if (png == null) return null;
+  return png.buffer.asUint8List(png.offsetInBytes, png.lengthInBytes);
+}

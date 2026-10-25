@@ -18,3 +18,10 @@ class VideoSize {
   /// عمودي بوضوح (مثل 9:16 أو 3:4): يُعرض مع الشورتز.
   bool get isVertical => width > 0 && height >= width * 1.2;
 }
+
+/// لقطة غلاف من الفيديو (JPEG) مع أبعاده.
+class VideoPoster {
+  final Uint8List jpeg;
+  final VideoSize size;
+  const VideoPoster(this.jpeg, this.size);
+}

@@ -10,3 +10,5 @@ Future<PreparedVideo?> prepareVideoImpl({
     null;
 
 Future<VideoSize?> probeVideoSizeImpl(String blobUrl) async => null;
+
+Future<VideoPoster?> grabVideoPosterImpl(String blobUrl) async => null;

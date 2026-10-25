@@ -31,3 +31,12 @@ Future<VideoSize?> probeVideoSize(String blobUrl) async {
     return null;
   }
 }
+
+/// لقطة غلاف وأبعاد الفيديو (لمعاينة القصة). null إن تعذّرت القراءة.
+Future<VideoPoster?> grabVideoPoster(String blobUrl) async {
+  try {
+    return await impl.grabVideoPosterImpl(blobUrl);
+  } catch (_) {
+    return null;
+  }
+}

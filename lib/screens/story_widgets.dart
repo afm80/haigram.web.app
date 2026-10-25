@@ -25,6 +25,7 @@ import 'story_poll.dart';
 import 'story_question.dart';
 import 'story_info.dart';
 import 'story_slider.dart';
+import 'story_video.dart';
 import '../route_state.dart';
 
 import '../l10n.dart';
@@ -468,6 +469,8 @@ class _StoryViewerState extends State<StoryViewer>
   late int _s;
   bool _ready = false;
   bool _hideUi = false; // أثناء الضغط المطوّل
+  bool _muted = false; // صوت قصص الفيديو
+  int _restartSeq = 0; // إعادة فيديو القصة من البداية
   double _dragDy = 0; // سحب للأسفل للإغلاق
   final Set<String> _pauseReasons = {};
   late final AnimationController _t;
@@ -614,7 +617,9 @@ class _StoryViewerState extends State<StoryViewer>
       _pc.previousPage(
           duration: const Duration(milliseconds: 350), curve: Curves.easeOut);
     } else {
+      _restartSeq++;
       _t.forward(from: 0);
+      setState(() {});
     }
   }
 
@@ -868,7 +873,15 @@ class _StoryViewerState extends State<StoryViewer>
                           key: ValueKey(story.id),
                           story: story,
                           active: active,
-                          onReady: _onReady),
+                          onReady: _onReady,
+                          // التخزين المؤقت لا يوقف الفيديو (هو فقط يوقف العدّاد).
+                          paused: _pauseReasons.any((r) => r != 'buffer'),
+                          muted: _muted,
+                          restartSeq: _restartSeq,
+                          onBuffering: (b) => _setPause('buffer', b),
+                          onAutoplayBlocked: () {
+                            if (mounted) setState(() => _muted = true);
+                          }),
                       IgnorePointer(
                         child: DecoratedBox(
                           decoration: BoxDecoration(
@@ -1128,6 +1141,13 @@ class _StoryViewerState extends State<StoryViewer>
             ),
           ),
           const Spacer(),
+          if (story.isVideoStory)
+            IconButton(
+                tooltip: _muted ? tr('تشغيل الصوت') : tr('كتم الصوت'),
+                onPressed: () => setState(() => _muted = !_muted),
+                icon: Icon(
+                    _muted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                    color: Colors.white)),
           if (mine || isLoggedIn)
             IconButton(
                 onPressed: () => mine
@@ -1528,11 +1548,21 @@ class _StoryMedia extends StatefulWidget {
   final Post story;
   final bool active;
   final void Function(Duration) onReady;
+  final bool paused;
+  final bool muted;
+  final int restartSeq;
+  final void Function(bool) onBuffering;
+  final VoidCallback onAutoplayBlocked;
   const _StoryMedia(
       {super.key,
       required this.story,
       required this.active,
-      required this.onReady});
+      required this.onReady,
+      this.paused = false,
+      this.muted = false,
+      this.restartSeq = 0,
+      required this.onBuffering,
+      required this.onAutoplayBlocked});
 
   @override
   State<_StoryMedia> createState() => _StoryMediaState();
@@ -1607,6 +1637,7 @@ class _StoryMediaState extends State<_StoryMedia> {
   Widget build(BuildContext context) {
     final bg = widget.story.bg;
     if (bg != null) return _textStory(bg);
+    final isVideo = widget.story.isVideoStory;
     // الصورة كاملة بدون قص (contain) مع خلفية مموّهة من الصورة نفسها.
     return LayoutBuilder(
       builder: (_, c) => ColoredBox(
@@ -1625,8 +1656,23 @@ class _StoryMediaState extends State<_StoryMedia> {
                   post: widget.story,
                   fit: BoxFit.contain,
                   height: c.maxHeight,
-                  onLoaded: _onLoaded),
+                  // قصة الفيديو: العدّاد يبدأ من الفيديو لا من صورة الغلاف.
+                  onLoaded: isVideo ? null : _onLoaded),
             ),
+            if (isVideo)
+              StoryVideoView(
+                url: widget.story.storyVideoUrl!,
+                overlayUrl: widget.story.storyOverlayUrl,
+                filter: widget.story.storyFilter,
+                active: widget.active,
+                paused: widget.paused,
+                muted: widget.muted,
+                restartSeq: widget.restartSeq,
+                onReady: widget.onReady,
+                onBuffering: widget.onBuffering,
+                onAutoplayBlocked: widget.onAutoplayBlocked,
+                onFailed: () {},
+              ),
           ],
         ),
       ),

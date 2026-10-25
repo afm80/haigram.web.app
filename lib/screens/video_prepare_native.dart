@@ -24,6 +24,14 @@ Future<VideoSize?> probeVideoSizeImpl(String path) async {
   return VideoSize(w, h);
 }
 
+Future<VideoPoster?> grabVideoPosterImpl(String path) async {
+  final size = await probeVideoSizeImpl(path);
+  if (size == null) return null;
+  final bytes = await VideoCompress.getByteThumbnail(path, quality: 80);
+  if (bytes.isEmpty) return null;
+  return VideoPoster(bytes, size);
+}
+
 Future<PreparedVideo?> prepareVideoImpl({
   required String blobUrl,
   required int originalSize,

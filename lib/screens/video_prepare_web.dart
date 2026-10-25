@@ -200,5 +200,40 @@ Future<VideoSize?> probeVideoSizeImpl(String blobUrl) async {
   }
 }
 
+Future<VideoPoster?> grabVideoPosterImpl(String blobUrl) async {
+  final video = html.VideoElement()
+    ..src = blobUrl
+    ..preload = 'auto'
+    ..muted = true
+    ..setAttribute('playsinline', 'true');
+  try {
+    await video.onLoadedData.first.timeout(const Duration(seconds: 15));
+    final w = video.videoWidth, h = video.videoHeight;
+    if (w == 0 || h == 0) return null;
+    try {
+      final d = video.duration.toDouble();
+      video.currentTime = d.isFinite ? math.min(0.3, d / 2) : 0.1;
+      await video.onSeeked.first.timeout(const Duration(seconds: 5));
+    } catch (_) {}
+    final scale = math.min(1.0, 1080 / math.max(w, h));
+    final cw = math.max(2, (w * scale).round());
+    final ch = math.max(2, (h * scale).round());
+    final canvas = html.CanvasElement(width: cw, height: ch);
+    canvas.context2D.drawImageScaled(video, 0, 0, cw, ch);
+    final url = canvas.toDataUrl('image/jpeg', 0.8);
+    final bytes = UriData.parse(url).contentAsBytes();
+    if (bytes.isEmpty) return null;
+    return VideoPoster(Uint8List.fromList(bytes), VideoSize(w, h));
+  } catch (_) {
+    return null;
+  } finally {
+    try {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+    } catch (_) {}
+  }
+}
+
 String _tooLongMsg(int s) =>
     trf('تعذّر تقصير الفيديو على هذا المتصفح. اختر فيديو أقصر من {0} ثانية', [s]);

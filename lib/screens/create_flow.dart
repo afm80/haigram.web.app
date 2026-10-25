@@ -25,6 +25,8 @@ import 'story_info.dart';
 import 'story_slider.dart';
 import 'story_stickers.dart';
 import 'story_text_editor.dart';
+import 'story_video.dart';
+import 'video_prepare.dart';
 import 'text_story_screen.dart';
 import 'post_style.dart';
 import 'video_cover.dart';
@@ -168,15 +170,93 @@ void showCreateSheet(BuildContext context) {
 }
 
 class PickedMedia {
+  /// الصورة، أو لقطة غلاف الفيديو (للمصغّرات وحساب النسبة).
   final Uint8List bytes;
   final String ext;
   final String mime;
   final String name;
+
+  /// قصة فيديو: الملف المختار وحجمه وأبعاده ونوعه.
+  final XFile? video;
+  final int videoBytes;
+  final VideoSize? videoSize;
+  final String videoMime;
   PickedMedia(
       {required this.bytes,
       required this.ext,
       required this.mime,
-      required this.name});
+      required this.name,
+      this.video,
+      this.videoBytes = 0,
+      this.videoSize,
+      this.videoMime = 'video/mp4'});
+
+  bool get isVideo => video != null;
+}
+
+const _videoExts = {'mp4', 'm4v', 'mov', 'webm'};
+
+String _extOf(String name) {
+  final d = name.lastIndexOf('.');
+  return d < 0 ? '' : name.substring(d + 1).toLowerCase();
+}
+
+bool _looksVideo(XFile f) =>
+    (f.mimeType?.startsWith('video/') ?? false) ||
+    _videoExts.contains(_extOf(f.name));
+
+/// يجهّز فيديو مختاراً لقصة: يتحقق من الصيغة والحجم ويلتقط غلافه وأبعاده.
+Future<PickedMedia> pickedVideoMedia(XFile f) async {
+  if (!PostService.useRemoteMedia) {
+    throw MediaError(tr('فيديو القصة يتطلب تفعيل Cloudinary أو Storage'));
+  }
+  final ext = _extOf(f.name);
+  if (!_videoExts.contains(ext)) {
+    throw MediaError(tr('صيغة الفيديو غير مدعومة (mp4 أو mov أو webm)'));
+  }
+  final size = await f.length();
+  if (size > 1024 * 1024 * 1024) {
+    throw MediaError(tr('الفيديو كبير جداً (الحد 1 غيغابايت)'));
+  }
+  final poster = await grabVideoPoster(f.path);
+  if (poster == null) throw MediaError(tr('تعذر قراءة الفيديو'));
+  return PickedMedia(
+      bytes: poster.jpeg,
+      ext: 'jpg',
+      mime: 'image/jpeg',
+      name: f.name,
+      video: f,
+      videoBytes: size,
+      videoSize: poster.size,
+      videoMime: switch (ext) {
+        'mov' => 'video/quicktime',
+        'webm' => 'video/webm',
+        _ => 'video/mp4',
+      });
+}
+
+/// معرض القصة: صور وفيديوهات معاً (حتى [max]) كما في إنستغرام.
+Future<(List<PickedMedia>, bool)> pickStoryMedia(
+  ImagePicker picker, {
+  required int max,
+}) async {
+  if (max <= 0) return (<PickedMedia>[], false);
+  final files = await picker.pickMultipleMedia(
+      maxWidth: 1080, maxHeight: 1920, imageQuality: 60);
+  final out = <PickedMedia>[];
+  for (final f in files.take(max)) {
+    if (_looksVideo(f)) {
+      out.add(await pickedVideoMedia(f));
+      continue;
+    }
+    final bytes = await f.readAsBytes();
+    if (bytes.length > maxPhotoBytes) {
+      throw MediaError(tr('إحدى الصور كبيرة جداً'));
+    }
+    out.add(PickedMedia(
+        bytes: bytes, ext: 'jpg', mime: 'image/jpeg', name: f.name));
+  }
+  return (out, files.length > max);
 }
 
 class MediaError implements Exception {
@@ -246,6 +326,36 @@ class _CaptureScreenState extends State<CaptureScreen> {
         MaterialPageRoute(builder: (_) => const TextStoryScreen()));
   }
 
+  /// ضغطة مطوّلة على زر الالتقاط: تسجيل فيديو للقصة (حتى 60 ثانية).
+  Future<void> _recordVideo() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final f = await _picker.pickVideo(
+          source: ImageSource.camera, maxDuration: const Duration(seconds: 60));
+      if (f == null || !mounted) {
+        if (mounted) setState(() => _busy = false);
+        return;
+      }
+      final media = await pickedVideoMedia(f);
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(MaterialPageRoute(
+          builder: (_) => ComposeScreen(kind: widget.kind, media: media)));
+    } on MediaError catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error =
+            friendlyError(e, fallback: tr('تعذر فتح الكاميرا أو الملفات')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _pick(ImageSource source) async {
     if (_busy) return;
     setState(() {
@@ -276,8 +386,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
       }
       // قصة من ملفات الجهاز: اختيار عدة صور تُنشر كقصص متتالية (مثل إنستغرام).
       if (source == ImageSource.gallery && widget.kind == CreateKind.story) {
-        final (picked, truncated) = await pickAlbumMedia(_picker,
-            max: ComposeScreen.maxStoryImages, tall: true);
+        final (picked, truncated) =
+            await pickStoryMedia(_picker, max: ComposeScreen.maxStoryImages);
         if (picked.isEmpty || !mounted) {
           if (mounted) setState(() => _busy = false);
           return;
@@ -392,6 +502,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
                       () => _pick(ImageSource.gallery)),
                   GestureDetector(
                     onTap: () => _pick(ImageSource.camera),
+                    onLongPress:
+                        widget.kind == CreateKind.story ? _recordVideo : null,
                     child: Container(
                       width: 78,
                       height: 78,
@@ -602,8 +714,9 @@ class _ComposeScreenState extends State<ComposeScreen> {
     final room = _maxImages - _images.length;
     if (room <= 0 || _busy) return;
     try {
-      final (picked, truncated) =
-          await pickAlbumMedia(_picker, max: room, tall: _isStory);
+      final (picked, truncated) = _isStory
+          ? await pickStoryMedia(_picker, max: room)
+          : await pickAlbumMedia(_picker, max: room, tall: false);
       if (!mounted || picked.isEmpty) return;
       setState(() {
         _images.addAll(picked);
@@ -787,7 +900,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
   /// قص الصورة الحالية وتدويرها/قلبها. تبقى ملصقاتها (مواضعها نسبية).
   Future<void> _editPhoto() async {
-    if (_busy || _images.isEmpty) return;
+    if (_busy || _images.isEmpty || _curImage.isVideo) return;
     final old = _curImage;
     final out = await editStoryPhoto(context, old.bytes, maxBytes: maxPhotoBytes);
     if (out == null || !mounted) return;
@@ -882,6 +995,63 @@ class _ComposeScreenState extends State<ComposeScreen> {
     return PickedMedia(bytes: bytes, ext: 'jpg', mime: 'image/jpeg', name: img.name);
   }
 
+  /// ينشر قصة فيديو: يلتقط طبقة الملصقات (PNG شفاف)، يضغط الفيديو ويقصّه إلى
+  /// 60 ثانية، ثم يرفع الفيديو والغلاف والطبقة وينشئ القصة.
+  Future<void> _publishVideoStory(PickedMedia m, String caption,
+      Map<String, dynamic> extra, void Function(double) progress) async {
+    final file = m.video!;
+    Uint8List? overlay;
+    if (_stickersOf(m).isNotEmpty || _strokesOf(m).isNotEmpty) {
+      if (_drawing) setState(() => _drawing = false);
+      if (_cur != 0) setState(() => _cur = 0);
+      if (_scroll.hasClients && _scroll.offset > 0) {
+        await _scroll.animateTo(0,
+            duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+      }
+      await WidgetsBinding.instance.endOfFrame;
+      await WidgetsBinding.instance.endOfFrame;
+      try {
+        overlay = await bakeOverlayPng(_captureKey,
+            targetWidth: m.videoSize?.width ?? 1080);
+      } catch (_) {
+        overlay = null;
+      }
+      if (overlay == null) {
+        throw StateError(tr('تعذر دمج الملصقات، حاول مرة أخرى'));
+      }
+    }
+    final prepared = await prepareVideo(
+      blobUrl: file.path,
+      originalSize: m.videoBytes,
+      maxSeconds: 60,
+      onProgress: (p) => progress(p * 0.5),
+    );
+    final Uint8List bytes;
+    final String mime;
+    if (prepared != null) {
+      bytes = prepared.bytes;
+      mime = prepared.mime;
+    } else {
+      if (m.videoBytes > PostService.maxVideoBytes) {
+        throw StateError(tr(
+            'تعذّر ضغط الفيديو على هذا الجهاز. اختر فيديو أصغر من 100 ميغابايت'));
+      }
+      bytes = await file.readAsBytes();
+      mime = m.videoMime;
+    }
+    await PostService.publishVideoStory(
+      video: bytes,
+      videoMime: mime,
+      poster: m.bytes,
+      overlayPng: overlay,
+      caption: caption,
+      filter: _filterOf(m),
+      closeFriends: _closeFriends,
+      extra: extra,
+      onProgress: (p) => progress(0.5 + p * 0.5),
+    );
+  }
+
   Future<void> _publish() async {
     final caption = _caption.text.trim();
     if (_textOnly && widget.kind == CreateKind.story) {
@@ -940,23 +1110,30 @@ class _ComposeScreenState extends State<ComposeScreen> {
             : null;
         while (_images.isNotEmpty) {
           final first = !_extrasSent;
-          final m = await _mediaToPublish(0);
-          await PostService.publishMedia(PostType.story, m.bytes,
-              mime: m.mime,
-              ext: m.ext,
-              caption: caption,
-              onProgress: (p) => onProgress((_publishedCount + p) / total),
-              closeFriends: _closeFriends,
-              extra: <String, dynamic>{
-                if (first && _poll != null) 'poll': _poll!.withAspect(ar).toMap(),
-                if (first && _question != null)
-                  'question': _question!.withAspect(ar).toMap(),
-                if (first && _slider != null)
-                  'slider': _slider!.withAspect(ar).toMap(),
-                if (first && !_info.isEmpty) ..._info.toExtra(),
-                if (first && _mentions.isNotEmpty)
-                  'mentions': [for (final u in _mentions) u.toMap()],
-              });
+          final extra = <String, dynamic>{
+            if (first && _poll != null) 'poll': _poll!.withAspect(ar).toMap(),
+            if (first && _question != null)
+              'question': _question!.withAspect(ar).toMap(),
+            if (first && _slider != null)
+              'slider': _slider!.withAspect(ar).toMap(),
+            if (first && !_info.isEmpty) ..._info.toExtra(),
+            if (first && _mentions.isNotEmpty)
+              'mentions': [for (final u in _mentions) u.toMap()],
+          };
+          void storyProgress(double p) =>
+              onProgress((_publishedCount + p) / total);
+          if (_images.first.isVideo) {
+            await _publishVideoStory(_images.first, caption, extra, storyProgress);
+          } else {
+            final m = await _mediaToPublish(0);
+            await PostService.publishMedia(PostType.story, m.bytes,
+                mime: m.mime,
+                ext: m.ext,
+                caption: caption,
+                onProgress: storyProgress,
+                closeFriends: _closeFriends,
+                extra: extra);
+          }
           if (first && _mentions.isNotEmpty) {
             unawaited(notifyStoryMentions(List.of(_mentions)));
           }
@@ -1119,7 +1296,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
           if (canAdd)
             _storyRoundBtn(
                 Icons.add_photo_alternate_outlined, _busy ? null : _addMore),
-          _storyRoundBtn(Icons.tune_rounded, _busy ? null : _editPhoto),
+          if (!_curImage.isVideo)
+            _storyRoundBtn(Icons.tune_rounded, _busy ? null : _editPhoto),
           _storyRoundBtn(
               Icons.brush_rounded,
               _busy
@@ -1229,11 +1407,26 @@ class _ComposeScreenState extends State<ComposeScreen> {
                 maxWidth: c.maxWidth, maxHeight: c.maxHeight),
             child: Stack(
               children: [
+                // قصة فيديو: الفيديو تحت طبقة الالتقاط، فتُلتقط الملصقات وحدها.
+                if (img.isVideo)
+                  Positioned.fill(
+                    child: EditorVideo(
+                        key: ValueKey(img),
+                        path: img.video!.path,
+                        filter: _filterOf(img)),
+                  ),
                 RepaintBoundary(
                   key: _captureKey,
                   child: Stack(
                     children: [
                       // الصورة في طبقة مستقلة: تحريك ملصق لا يعيد رسمها.
+                      if (img.isVideo)
+                        AspectRatio(
+                          aspectRatio:
+                              img.videoSize!.width / img.videoSize!.height,
+                          child: const SizedBox.expand(),
+                        )
+                      else
                       RepaintBoundary(
                         child: _filterOf(img) == 0
                             ? Image.memory(img.bytes,
