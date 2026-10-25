@@ -1667,7 +1667,19 @@ class _ComposeScreenState extends State<ComposeScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => PopScope(
+        // أثناء النشر (ضغط ورفع) لا نسمح بالرجوع حتى لا يضيع العمل.
+        canPop: !_busy,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(tr('جارٍ الرفع، انتظر حتى ينتهي'))));
+          }
+        },
+        child: _buildScreen(context),
+      );
+
+  Widget _buildScreen(BuildContext context) {
     // القصة المصوّرة: واجهة ملء الشاشة على طريقة إنستغرام.
     if (_isStory && _images.isNotEmpty) return _storyEditor(context);
     return Scaffold(

@@ -97,6 +97,8 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
     try {
       // الأبعاد قبل الضغط: الفيديو العمودي يُنشر في قسم الشورتز.
       final size = await probeVideoSize(file.path);
+      // لا نرفع فيديو لا نستطيع قراءته (قد لا يعمل عند المشاهدين ولا نعرف مدته).
+      if (size == null) throw StateError(tr('تعذر قراءة الفيديو'));
       // ضغط وقص داخل المتصفح (الويب). null = يُرفع الملف الأصلي كما هو.
       final prepared = await prepareVideo(
         blobUrl: file.path,
@@ -125,10 +127,12 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
           _status = tr('جارٍ الرفع...');
         });
       }
-      final url = await PostService.uploadVideo(bytes, mime);
+      final url = await PostService.uploadVideo(bytes, mime, onProgress: (p) {
+        if (mounted) setState(() => _progress = p);
+      });
       var video = VideoSource.parse(url);
       if (video == null) throw StateError(tr('فشل رفع الفيديو، حاول مرة أخرى'));
-      if (size != null && size.isVertical) video = video.asShort();
+      if (size.isVertical) video = video.asShort();
       await PostService.publishText(_caption.text.trim(), video: video);
       nav.popUntil((r) => r.isFirst);
       messenger.showSnackBar(SnackBar(content: Text(tr('تم النشر بنجاح'))));
@@ -147,7 +151,19 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
       : '${(b / 1024).toStringAsFixed(0)} KB';
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => PopScope(
+        // أثناء التجهيز والرفع لا نسمح بالرجوع (يضيع العمل ويُرمى المستخدم للرئيسية).
+        canPop: !_busy,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(tr('جارٍ الرفع، انتظر حتى ينتهي'))));
+          }
+        },
+        child: _screen(context),
+      );
+
+  Widget _screen(BuildContext context) {
     final colors = context.appColors;
     return Scaffold(
       appBar: AppBar(title: Text(tr('رفع فيديو'))),
