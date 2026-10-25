@@ -18,6 +18,24 @@ service cloud.firestore {
         && request.auth.uid == '7M8bvw0UUiR8Ouxx28nq4i4spQF3';
     }
 
+    // ===== التوثيق =====
+    // حقول التوثيق في users/{uid} يكتبها الأدمن وحده (لوحة التحكم). الفئة لا تُخزَّن
+    // هنا لأن ملف المستخدم مقروء للجميع؛ تبقى في verificationRequests (الأدمن وصاحبه).
+    function verifyKeys() {
+      return ['verified', 'verifiedUntil', 'verifiedAt'];
+    }
+    // هل تحاول هذه الكتابة إنشاء/تغيير حقول التوثيق؟ (تمنع المستخدم من توثيق نفسه)
+    function touchesVerification() {
+      return resource == null
+        ? request.resource.data.keys().hasAny(verifyKeys())
+        : request.resource.data.diff(resource.data).affectedKeys().hasAny(verifyKeys());
+    }
+    // التوثيق ساري الآن؟ (الشهرية تنتهي عند verifiedUntil)
+    function verifiedNow(u) {
+      return u.get('verified', false) == true
+        && (u.get('verifiedUntil', null) == null || u.verifiedUntil > request.time);
+    }
+
     function followsAfter(followerUid, followedUid) {
       return existsAfter(/databases/$(database)/documents/users/$(followerUid)/following/$(followedUid));
     }
@@ -1425,6 +1443,72 @@ service cloud.firestore {
         && request.resource.data.handledBy == request.auth.uid;
     }
 
+    // طلبات التوثيق: مستند واحد لكل مستخدم (المعرّف = uid) فيستحيل وجود طلبين معلّقين.
+    // صاحب الطلب يقرأه وينشئه (أو يعيد تقديمه بعد الرفض بـ30 يوماً / بعد انتهاء التوثيق)،
+    // والأدمن وحده يقبل أو يرفض، ولا يستطيع قبول طلبه بنفسه.
+    match /verificationRequests/{uid} {
+      function validVerifyRequest() {
+        let d = request.resource.data;
+        return d.keys().hasOnly(['uid', 'category', 'plan', 'paymentRef', 'proofUrl', 'status', 'createdAt'])
+          && d.keys().hasAll(['uid', 'category', 'plan', 'paymentRef', 'status', 'createdAt'])
+          && d.uid == request.auth.uid
+          && d.category in ['creator', 'business', 'public_figure', 'media', 'organization', 'other']
+          && d.plan in ['monthly', 'permanent']
+          && d.paymentRef is string
+          && d.paymentRef.size() >= 3
+          && d.paymentRef.size() <= 100
+          && (!('proofUrl' in d)
+              || (d.proofUrl is string
+                  && d.proofUrl.size() <= 300
+                  && d.proofUrl.matches('^https?://[^ ]+$')))
+          && d.status == 'pending'
+          && d.createdAt == request.time;
+      }
+      // عند القبول: ملف المستخدم (بعد الكتابة) يجب أن يطابق الخطة المطلوبة.
+      function approvalMatches(plan) {
+        let u = getAfter(/databases/$(database)/documents/users/$(uid)).data;
+        return u.get('verified', false) == true
+          && (plan == 'permanent'
+              ? u.get('verifiedUntil', null) == null
+              : (u.get('verifiedUntil', null) != null && u.verifiedUntil > request.time));
+      }
+
+      allow get: if isAdmin() || (isActiveUser() && request.auth.uid == uid);
+      allow list: if isAdmin();
+
+      // أول طلب. (create لا يعمل إلا إن لم يوجد مستند.)
+      allow create: if isActiveUser()
+        && request.auth.uid == uid
+        && validVerifyRequest()
+        && !verifiedNow(myProfile());
+
+      allow update: if
+        // صاحب الطلب يعيد التقديم: بعد الرفض بـ30 يوماً، أو بعد قبول سابق لم يعد ساري المفعول.
+        (isActiveUser()
+          && request.auth.uid == uid
+          && validVerifyRequest()
+          && !verifiedNow(myProfile())
+          && ((resource.data.status == 'rejected'
+                && resource.data.get('rejectedAt', null) != null
+                && request.time >= resource.data.rejectedAt + duration.value(30, 'd'))
+              || resource.data.status == 'approved'))
+        // الأدمن يقرّر في طلب معلّق، وليس طلبه هو.
+        || (isAdmin()
+          && resource.data.status == 'pending'
+          && resource.data.uid != request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['status', 'decidedAt', 'decidedBy', 'rejectedAt'])
+          && request.resource.data.decidedBy == request.auth.uid
+          && request.resource.data.decidedAt == request.time
+          && ((request.resource.data.status == 'approved'
+                && !('rejectedAt' in request.resource.data)
+                && approvalMatches(resource.data.plan))
+              || (request.resource.data.status == 'rejected'
+                && request.resource.data.rejectedAt == request.time)));
+
+      allow delete: if isAdmin();
+    }
+
     match /presence/{uid} {
       allow read: if isActiveUser();
       allow create, update: if isActiveUser()
@@ -1691,8 +1775,17 @@ service cloud.firestore {
       allow read: if isGuest();
       // لوحة التحكم: حذف ملف الحساب ضمن حذف المستخدم.
       allow delete: if isAdmin();
+      // لوحة التحكم: توثيق حساب أو إلغاء توثيقه (حقول التوثيق فقط).
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(verifyKeys())
+        && request.resource.data.get('verified', false) is bool
+        && (!('verifiedUntil' in request.resource.data)
+            || request.resource.data.verifiedUntil is timestamp)
+        && (!('verifiedAt' in request.resource.data)
+            || request.resource.data.verifiedAt is timestamp);
       allow create, update: if isActiveUser()
         && request.auth.uid == uid
+        && !touchesVerification()
         && request.resource.data.username is string
         && request.resource.data.username.matches('^[a-z0-9._]{3,24}$')
         // اسم المستخدم: إما لم يتغيّر، أو محجوز باسمي في usernames (يمنع أخذ اسم غيري).
