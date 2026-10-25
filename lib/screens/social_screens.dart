@@ -476,10 +476,10 @@ class _InboxScreenState extends State<InboxScreen> {
                   storyIndex >= 0 && StoryViewed.allSeen(stories[storyIndex]),
             ),
           ),
-          title: Text(
+          title: VerifiedName(
             user?.displayName ?? tr('مستخدم'),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+            uid: otherUid,
+            profile: user,
             style: const TextStyle(fontWeight: FontWeight.w700),
           ),
           subtitle: StreamBuilder<bool>(
@@ -1149,8 +1149,8 @@ class _MessageRequestsScreenState extends State<_MessageRequestsScreen> {
                 radius: 24,
                 showOnline: true,
               ),
-              title: Text(user?.displayName ?? tr('مستخدم'),
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              title: VerifiedName(user?.displayName ?? tr('مستخدم'),
+                  uid: user?.uid ?? '', profile: user),
               subtitle: Text('@${user?.username ?? ''}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -1932,7 +1932,8 @@ class _FriendsScreenState extends State<_FriendsScreen> {
                   radius: 23,
                   showOnline: true,
                 ),
-                title: Text(friend.displayName),
+                title: VerifiedName(friend.displayName,
+                    uid: friend.uid, profile: friend),
                 subtitle: Text('@${friend.username}',
                     style: TextStyle(color: colors.textDim)),
                 trailing: _opening
@@ -2089,8 +2090,8 @@ class _NewGroupScreenState extends State<_NewGroupScreen> {
                         fallbackName: friend.username,
                         radius: 22,
                       ),
-                      title: Text(friend.displayName,
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      title: VerifiedName(friend.displayName,
+                          uid: friend.uid, profile: friend),
                       subtitle: Text('@${friend.username}',
                           style: TextStyle(color: colors.textDim)),
                     );
@@ -3226,8 +3227,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 profile: user,
                 radius: 16,
               ),
-              title: Text(user.displayName,
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              title: VerifiedName(user.displayName,
+                  uid: user.uid, profile: user),
               subtitle: Text('@${user.username}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -4933,13 +4934,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                             CrossAxisAlignment.start,
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          Text(
+                                          VerifiedName(
                                             _nickname.isNotEmpty
                                                 ? _nickname
                                                 : (user?.displayName ??
                                                     tr('محادثة')),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
+                                            uid: widget.otherUid,
+                                            profile: user,
                                           ),
                                           if (user != null)
                                             StreamBuilder<bool>(
@@ -6986,8 +6987,8 @@ class _AddGroupMembersScreenState extends State<_AddGroupMembersScreen> {
                   fallbackName: friend.username,
                   radius: 22,
                 ),
-                title: Text(friend.displayName,
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                title: VerifiedName(friend.displayName,
+                    uid: friend.uid, profile: friend),
                 subtitle: Text('@${friend.username}',
                     style: TextStyle(color: colors.textDim)),
               );
@@ -7959,9 +7960,9 @@ class _SuggestionCard extends StatelessWidget {
             profile: user,
             radius: 24,
           ),
-          title: Text(user.displayName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+          title: VerifiedName(user.displayName,
+              uid: user.uid,
+              profile: user,
               style: const TextStyle(fontWeight: FontWeight.w700)),
           subtitle: Text('@${user.username} · ${suggestion.reason}',
               maxLines: 1,
@@ -8157,9 +8158,9 @@ class _VisitTile extends StatelessWidget {
             profile: user,
             radius: 24,
           ),
-          title: Text(user?.displayName ?? tr('مستخدم'),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+          title: VerifiedName(user?.displayName ?? tr('مستخدم'),
+              uid: user?.uid ?? '',
+              profile: user,
               style: const TextStyle(fontWeight: FontWeight.w700)),
           subtitle: Text(timeAgo(visit.at),
               style: TextStyle(color: colors.textDim, fontSize: 12)),

@@ -319,7 +319,9 @@ class _PostCardState extends State<PostCard> {
               children: [
                 UserAvatar(uid: p.uid, fallbackName: p.username, radius: 17),
                 const SizedBox(width: 10),
-                Text(p.username,
+                VerifiedName(p.username,
+                    uid: p.uid,
+                    flexible: false,
                     style: const TextStyle(
                         fontWeight: FontWeight.w700, fontSize: 14)),
               ],

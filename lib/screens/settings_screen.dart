@@ -17,6 +17,7 @@ import 'profile_screen.dart' show SavedPostsScreen;
 import 'sound_screen.dart' show SavedSoundsScreen;
 import 'social_screens.dart' show ProfileVisitsScreen, BlockedUsersScreen;
 import 'story_privacy_screen.dart';
+import 'verification_screen.dart';
 
 /// صفحة الإعدادات: المظهر والخصوصية وتسجيل الخروج.
 class SettingsScreen extends StatelessWidget {
@@ -243,6 +244,20 @@ class SettingsScreen extends StatelessWidget {
               ),
               child: Column(
                 children: [
+                  ListTile(
+                    leading: const Icon(Icons.verified_outlined),
+                    title: Text(tr('طلب توثيق الحساب')),
+                    trailing:
+                        const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                    onTap: () => Navigator.of(context).push(appRoute<void>(
+                        'verification',
+                        const {},
+                        (_) => const VerificationScreen())),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  Divider(height: 1, color: colors.text.withOpacity(0.08)),
                   ListTile(
                     leading: Icon(Icons.logout_rounded, color: colors.text),
                     title: Text(

@@ -25,6 +25,74 @@ void openProfile(BuildContext context, String uid) {
       'user', {'uid': uid}, (_) => UserProfileScreen(uid: uid)));
 }
 
+/// علامة التوثيق ✓ (شكل واحد للجميع). لا تظهر إلا إذا كان الحساب موثّقاً الآن،
+/// وتختفي تلقائياً بعد انتهاء الخطة الشهرية (تُحسب عند العرض).
+/// مرّر [profile] إن كان عندك، وإلا تُقرأ من التخزين المؤقت بحسب [uid].
+class VerifiedBadge extends StatelessWidget {
+  final String uid;
+  final AppUser? profile;
+  final double size;
+
+  /// فراغ يسبق العلامة (يظهر فقط عند وجودها).
+  final double gap;
+
+  const VerifiedBadge(
+      {super.key, required this.uid, this.profile, this.size = 16, this.gap = 0});
+
+  static const color = Color(0xFF1D9BF0);
+
+  Widget _icon() => Padding(
+        padding: EdgeInsetsDirectional.only(start: gap),
+        child: Icon(Icons.verified_rounded, size: size, color: color),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final p = profile;
+    if (p != null) return p.isVerified ? _icon() : const SizedBox.shrink();
+    if (uid.isEmpty) return const SizedBox.shrink();
+    return FutureBuilder<AppUser?>(
+      future: UserService.profileOf(uid),
+      builder: (context, snapshot) =>
+          snapshot.data?.isVerified == true ? _icon() : const SizedBox.shrink(),
+    );
+  }
+}
+
+/// نص الاسم وبجانبه علامة التوثيق إن وُجدت.
+/// [flexible] = false عندما يكون الأب بعرض غير محدود (Row داخل Row بلا Expanded).
+class VerifiedName extends StatelessWidget {
+  final String text;
+  final String uid;
+  final AppUser? profile;
+  final TextStyle? style;
+  final double badgeSize;
+  final bool flexible;
+
+  const VerifiedName(
+    this.text, {
+    super.key,
+    required this.uid,
+    this.profile,
+    this.style,
+    this.badgeSize = 15,
+    this.flexible = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final name = Text(text,
+        maxLines: 1, overflow: TextOverflow.ellipsis, style: style);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (flexible) Flexible(child: name) else name,
+        VerifiedBadge(uid: uid, profile: profile, size: badgeSize, gap: 4),
+      ],
+    );
+  }
+}
+
 /// صورة المستخدم: صورته إن وُجدت وإلا أول حرف من اسمه.
 class UserAvatar extends StatelessWidget {
   final String uid;
@@ -394,9 +462,9 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                     child: Row(
                                       children: [
                                         Flexible(
-                                            child: Text(c.username,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
+                                            child: VerifiedName(c.username,
+                                                uid: c.uid,
+                                                badgeSize: 13,
                                                 style: const TextStyle(
                                                     fontWeight: FontWeight.w700,
                                                     fontSize: 13))),

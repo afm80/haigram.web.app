@@ -511,8 +511,11 @@ class _Header extends StatelessWidget {
           const SizedBox(height: 12),
           Align(
             alignment: AlignmentDirectional.centerStart,
-            child: Text(
+            child: VerifiedName(
               u.displayName,
+              uid: u.uid,
+              profile: u,
+              badgeSize: 19,
               style: const TextStyle(
                   fontSize: 18, fontWeight: FontWeight.w800),
             ),
@@ -1145,7 +1148,9 @@ class _ProfileShareSheetState extends State<_ProfileShareSheet> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(widget.user.displayName,
+                        VerifiedName(widget.user.displayName,
+                            uid: widget.user.uid,
+                            profile: widget.user,
                             style:
                                 const TextStyle(fontWeight: FontWeight.w700)),
                         Text('@${widget.user.username}',
@@ -1244,8 +1249,8 @@ class _ProfileShareSheetState extends State<_ProfileShareSheet> {
                             radius: 21,
                             showOnline: true,
                           ),
-                          title: Text(friend.displayName,
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                          title: VerifiedName(friend.displayName,
+                              uid: friend.uid, profile: friend),
                           subtitle: Text('@${friend.username}',
                               textDirection: TextDirection.ltr,
                               style: TextStyle(color: colors.textDim)),
