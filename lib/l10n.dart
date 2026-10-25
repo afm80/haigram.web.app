@@ -23,6 +23,8 @@ String trf(String ar, List<Object?> args) {
 }
 
 const Map<String, String> _en = {
+  'جارٍ الرفع، انتظر حتى ينتهي': "Uploading, please wait until it finishes",
+  'تعذر قراءة الفيديو': "Couldn't read the video",
   // ترجمات مكمّلة (المحادثات والمجموعات والمحفوظات)
   '{0} (نُشر {1} وبقي {2})': "{0} ({1} published, {2} left)",
   '{0} إجابة · عرض': "{0} answers · View",
