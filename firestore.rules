@@ -1395,7 +1395,12 @@ service cloud.firestore {
         && request.resource.data.details.size() <= 300
         && request.resource.data.createdAt == request.time;
       allow read, delete: if isAdmin();
-      allow update: if false;
+      // لوحة التحكم: تغيير حالة البلاغ فقط (جديد / تم التعامل / مرفوض).
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'handledAt', 'handledBy'])
+        && request.resource.data.status in ['new', 'resolved', 'dismissed']
+        && request.resource.data.handledBy == request.auth.uid;
     }
 
     match /presence/{uid} {
