@@ -3366,8 +3366,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// شريط الإدخال على ترتيب إنستغرام: [كاميرا/إرسال] [حقل النص] [ميكروفون]
-  /// [معرض] [ملصقات] [+] داخل كبسولة واحدة.
+  /// شريط الإدخال على ترتيب إنستغرام: [كاميرا] [حقل النص] [ميكروفون]
+  /// [معرض] [ملصقات] [+] داخل كبسولة واحدة، ويظهر [إرسال] في نهايتها عند الكتابة.
   Widget _buildComposerPill() {
     final colors = context.appColors;
     final hasContent = _hasContent;
@@ -3391,27 +3391,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          if (!holding)
-          IconButton.filled(
-            tooltip: hasContent ? tr('إرسال') : tr('التقاط صورة'),
-            onPressed: _sending
-                ? null
-                : (hasContent
-                    ? _send
-                    : (blocked ? null : () => _pickImage(ImageSource.camera))),
-            style: IconButton.styleFrom(backgroundColor: AppColors.accent),
-            icon: _sending
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white))
-                : Icon(
-                    hasContent
-                        ? Icons.send_rounded
-                        : Icons.photo_camera_rounded,
-                    color: Colors.white),
-          ),
+          // الكاميرا في بداية الشريط عند عدم وجود نص (مثل إنستغرام).
+          if (!holding && !hasContent)
+            IconButton.filled(
+              tooltip: tr('التقاط صورة'),
+              onPressed: (_sending || blocked)
+                  ? null
+                  : () => _pickImage(ImageSource.camera),
+              style: IconButton.styleFrom(backgroundColor: AppColors.accent),
+              icon: _sending
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.photo_camera_rounded,
+                      color: Colors.white),
+            ),
           if (holding)
             Expanded(
               child: Padding(
@@ -3529,6 +3525,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             small(Icons.add_circle_outline_rounded, tr('إضافة'),
                 blocked ? null : _showPlusMenu,
                 color: _viewOnce ? AppColors.accent : null),
+          // زر الإرسال عند الكتابة في نهاية الشريط (اليسار بالعربية، اليمين
+          // بالإنجليزية) مثل إنستغرام.
+          if (hasContent && !holding)
+            IconButton.filled(
+              tooltip: tr('إرسال'),
+              onPressed: _sending ? null : _send,
+              style: IconButton.styleFrom(backgroundColor: AppColors.accent),
+              icon: _sending
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.send_rounded, color: Colors.white),
+            ),
         ],
       ),
     );
