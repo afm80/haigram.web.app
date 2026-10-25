@@ -364,7 +364,10 @@ class Post {
       videoId: m['videoId'] as String?,
       videoProvider: m['videoProvider'] as String?,
       videoUrl: m['videoUrl'] as String?,
-      isShort: m['isShort'] == true,
+      // الشورتز للفيديو المرفوع فقط؛ فيديو يوتيوب (بما فيه شورتز القديم) عادي.
+      isShort: m['isShort'] == true &&
+          m['videoProvider'] != null &&
+          m['videoProvider'] != 'youtube',
       storyVideoUrl: m['storyVideoUrl'] as String?,
       storyOverlayUrl: m['storyOverlayUrl'] as String?,
       storyFilter: (m['storyFilter'] as num?)?.toInt() ?? 0,
@@ -1192,12 +1195,6 @@ class PostService {
   static String? youtubeId(String input) {
     final v = VideoSource.parse(input);
     return v?.provider == VideoProvider.youtube ? v!.id : null;
-  }
-
-  /// هل الرابط رابط شورتز (youtube.com/shorts/ID)؟
-  static bool isShortsLink(String input) {
-    final v = VideoSource.parse(input);
-    return v?.provider == VideoProvider.youtube && v!.isShort;
   }
 
   static String youtubeWatchUrl(String id) => VideoSource.youtubeWatch(id);
