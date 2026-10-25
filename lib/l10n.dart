@@ -23,6 +23,8 @@ String trf(String ar, List<Object?> args) {
 }
 
 const Map<String, String> _en = {
+  'تعذّر تجهيز هذا الفيديو على هذا الجهاز، جرّب فيديو آخر': "Couldn't process this video on this device. Try another one",
+  'أي فيديو من جهازك: يُجهَّز تلقائياً ويُقصّ إلى دقيقة كحد أقصى': "Any video from your device: it's prepared automatically and trimmed to one minute max",
   'جارٍ الرفع، انتظر حتى ينتهي': "Uploading, please wait until it finishes",
   'تعذر قراءة الفيديو': "Couldn't read the video",
   // ترجمات مكمّلة (المحادثات والمجموعات والمحفوظات)
