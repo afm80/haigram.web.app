@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:pointer_interceptor/pointer_interceptor.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -1399,16 +1400,19 @@ class _ShortsViewerState extends State<ShortsViewer> {
                 height: 56,
                 child: Row(
                   children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back_rounded,
-                          color: Colors.white,
-                          shadows: [
-                            Shadow(blurRadius: 8, color: Colors.black87)
-                          ]),
-                      onPressed: () => Navigator.of(context).pop(),
+                    PointerInterceptor(
+                      child: IconButton(
+                        icon: const Icon(Icons.arrow_back_rounded,
+                            color: Colors.white,
+                            shadows: [
+                              Shadow(blurRadius: 8, color: Colors.black87)
+                            ]),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
                     ),
                     const Spacer(),
-                    PopupMenuButton<String>(
+                    PointerInterceptor(
+                      child: PopupMenuButton<String>(
                       icon: const Icon(Icons.more_vert_rounded,
                           color: Colors.white,
                           shadows: [
@@ -1434,6 +1438,7 @@ class _ShortsViewerState extends State<ShortsViewer> {
                           PopupMenuItem(
                               value: 'delete', child: Text(tr('حذف'))),
                       ],
+                    ),
                     ),
                   ],
                 ),

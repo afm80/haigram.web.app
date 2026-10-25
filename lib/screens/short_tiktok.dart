@@ -4,6 +4,7 @@
 // نقرة = إيقاف/تشغيل، سحب عمودي = التنقل بين المقاطع (يتولاه العارض).
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:pointer_interceptor/pointer_interceptor.dart';
 
 import '../auth_gate.dart';
 import '../l10n.dart';
@@ -352,14 +353,16 @@ class _TikTokShortPageState extends State<TikTokShortPage>
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        GestureDetector(
-          onTap: () => openProfile(context, p.uid),
-          child: Text('@${p.username}',
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  shadows: _shadow)),
+        PointerInterceptor(
+          child: GestureDetector(
+            onTap: () => openProfile(context, p.uid),
+            child: Text('@${p.username}',
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    shadows: _shadow)),
+          ),
         ),
         if (p.caption.isNotEmpty) ...[
           const SizedBox(height: 6),
@@ -561,7 +564,10 @@ class _TikTokShortPageState extends State<TikTokShortPage>
                 Positioned(
                   left: 6,
                   bottom: 12 + pad.bottom,
-                  child: Column(
+                  // PointerInterceptor: على الويب يلتقط الـ iframe النقرات فوقه،
+                  // فهذا يجعل الأزرار تصل لفلتر بدل المشغّل.
+                  child: PointerInterceptor(
+                    child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       _avatar(mine),
@@ -570,12 +576,17 @@ class _TikTokShortPageState extends State<TikTokShortPage>
                       _comments(),
                       _save(),
                       _action(
-                          _icon(Icons.share_rounded),
+                          // أيقونة المشاركة مثل تيك توك: سهم منحنٍ نحو اليمين.
+                          Transform.flip(
+                            flipX: true,
+                            child: _icon(Icons.reply_rounded),
+                          ),
                           p.shares > 0 ? _fmt(p.shares) : tr('مشاركة'),
                           widget.onShare),
                       const SizedBox(height: 8),
                       _discWidget(),
                     ],
+                  ),
                   ),
                 ),
               ],
